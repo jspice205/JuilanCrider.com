@@ -117,6 +117,7 @@ function doPost(e) {
     // ── Email every website lead (open house sign-ins only when made on the website) ──
     if (tabName === 'Website Leads' || /juliancrider\.com/.test(data.notes || '')) {
       try { notify(tabName, data, timestamp, ss); } catch (err) { console.error('Email failed', err); }
+      try { sendToFub(tabName, data); } catch (err) { console.error('Follow Up Boss failed', err); }
     }
 
     return json({status: 'success', tab: tabName});
@@ -162,6 +163,52 @@ function notify(tabName, d, stamp, ss) {
   };
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email || '')) msg.replyTo = d.email;
   MailApp.sendEmail(msg);
+}
+
+// ============================================================
+// FOLLOW UP BOSS — sends each website lead to FUB as a new lead event,
+// so FUB assigns it and starts your action plans/automations.
+// The API key lives in Project Settings > Script Properties as FUB_API_KEY
+// (never in this code). If it's missing, this step is skipped.
+// ============================================================
+function fubEventType(tabName, d) {
+  const t = (d.type || '').toLowerCase();
+  if (tabName === 'Sign-Ins') return 'Visited Open House';
+  if (/sell|home value/.test(t)) return 'Seller Inquiry';
+  if (/new construction/.test(t)) return 'Property Inquiry';
+  if (/account|guide/.test(t)) return 'Registration';
+  return 'General Inquiry';
+}
+
+function sendToFub(tabName, d) {
+  const key = PropertiesService.getScriptProperties().getProperty('FUB_API_KEY');
+  if (!key) return;
+  const parts = String(d.name || '').trim().split(/\s+/);
+  const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: ['juliancrider.com']};
+  if (d.email) person.emails = [{value: d.email}];
+  if (d.phone) person.phones = [{value: d.phone}];
+  if (d.type) person.tags.push(d.type.replace(/^Consultation:\s*/, ''));
+  const event = {
+    source: 'juliancrider.com',
+    system: 'juliancrider.com',
+    type: fubEventType(tabName, d),
+    message: [d.type, d.timeline && 'Timeline: ' + d.timeline, d.notes].filter(Boolean).join('\n'),
+    person: person
+  };
+  if (d.property) event.property = {street: d.property};
+  const res = UrlFetchApp.fetch('https://api.followupboss.com/v1/events', {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(event), muteHttpExceptions: true,
+    headers: {Authorization: 'Basic ' + Utilities.base64Encode(key + ':')}
+  });
+  const code = res.getResponseCode();
+  if (code >= 300) throw new Error('FUB ' + code + ': ' + res.getContentText().slice(0, 300));
+  console.log('Sent to Follow Up Boss (' + code + ')');
+}
+
+/** Run once after adding FUB_API_KEY: creates a "FUB Test" lead in Follow Up Boss (delete it after). */
+function testFub() {
+  sendToFub('Website Leads', {type: 'Consultation: Test', name: 'FUB Test', email: 'fub-test@example.com',
+    phone: '7025550100', timeline: 'Just exploring', notes: 'Test from the script editor — safe to delete'});
 }
 
 /** Run once from the editor to approve permissions and send yourself a test lead. */
