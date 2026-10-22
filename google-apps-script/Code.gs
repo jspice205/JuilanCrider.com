@@ -1,53 +1,145 @@
-/**
- * Lead receiver for juliancrider.com and the open house sign-in.
- * Paste into the Apps Script project behind SHEET_URL in index.html,
- * then Deploy > Manage deployments > Edit > Version: New version > Deploy
- * (editing the existing deployment keeps the same /exec URL).
- */
+// ============================================================
+// JC OPEN HOUSE LEADS — combined script
+// Receives the open house sign-in form AND juliancrider.com leads,
+// emails website leads, and serves mortgage rates to the site.
+//
+// Paste into the sheet's Extensions > Apps Script, run testLead once
+// to approve permissions, then Deploy > Manage deployments > Edit >
+// Version: New version > Deploy (keeps the same /exec URL).
+// ============================================================
+
 const SPREADSHEET_ID = '15iuFGQmmle8rrCMp1YLKhb2hUpGU23nA-dD71y-V6ws'; // JC Open House Leads
 const NOTIFY_EMAIL = 'julianc@bcolv.com';
 
-const TABS = {
-  'Sign-Ins': {
+// ── TAB DEFINITIONS ───────────────────────────────────────
+const TABS = [
+  {
+    name: 'Sign-Ins',
+    color: '#1B3168',
     headers: ['Timestamp', 'Full Name', 'Phone', 'Email', 'Open House Address', 'Interest (1–10)',
               'Currently Renting or Owning?', 'Timeline to Buy', 'How They Heard', 'Agent Notes'],
     row: d => [d.name, d.phone, d.email, d.property, d.score, d.status, d.timeline, d.source, d.notes]
   },
-  'Website Leads': {
+  {
+    name: 'Leads',
+    color: '#C0392B',
+    headers: ['Timestamp', 'Full Name', 'Phone', 'Email', 'Property Inquired About', 'Budget Range',
+              'Timeline', 'Pre-Approved?', 'Bedrooms Needed', 'Neighborhoods Interested In', 'Notes'],
+    row: d => [d.name, d.phone, d.email, d.property, d.budget, d.timeline, d.preapproved, d.bedrooms, d.neighborhoods, d.notes]
+  },
+  {
+    name: 'Pipeline',
+    color: '#2E7D32',
+    headers: ['Timestamp', 'Full Name', 'Phone', 'Email', 'Source (Open House / IG / Referral)', 'Property Shown',
+              'Interest Score', 'Follow-Up Date', 'Status', 'CRM Entered?', 'Notes'],
+    row: d => [d.name, d.phone, d.email, d.source, d.property, d.score, d.followup, d.status, d.crm || 'No', d.notes]
+  },
+  {
+    name: 'Website Leads',
+    color: '#D13438',
     headers: ['Timestamp', 'Lead Type', 'Full Name', 'Phone', 'Email', 'Property', 'Timeline', 'Source', 'Notes'],
     row: d => [d.type, d.name, d.phone, d.email, d.property, d.timeline, d.source, d.notes]
+  },
+  {
+    name: 'All Entries',
+    color: '#6A1B9A',
+    headers: ['Timestamp', 'Full Name', 'Phone', 'Email', 'Source Tab', 'Property', 'Score', 'Notes'],
+    row: d => [d.name, d.phone, d.email, d.tab, d.property, d.score, d.notes]
   }
-};
+];
+const tabDef = name => TABS.filter(t => t.name === name)[0];
 
+function getSS() {
+  return SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById(SPREADSHEET_ID);
+}
+
+// Creates a tab with styled headers if it doesn't exist yet.
+function ensureTab(ss, tab, idx) {
+  let sheet = ss.getSheetByName(tab.name);
+  if (sheet) return sheet;
+  sheet = idx == null ? ss.insertSheet(tab.name) : ss.insertSheet(tab.name, idx);
+  styleHeader(sheet, tab);
+  return sheet;
+}
+
+function styleHeader(sheet, tab) {
+  sheet.getRange(1, 1, 1, tab.headers.length).setValues([tab.headers])
+    .setBackground(tab.color).setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(11).setHorizontalAlignment('center');
+  sheet.setFrozenRows(1);
+  sheet.autoResizeColumns(1, tab.headers.length);
+  sheet.setTabColor(tab.color);
+}
+
+// ============================================================
+// SETUP — run once from the editor (safe to re-run)
+// ============================================================
+function setupSheet() {
+  const ss = getSS();
+  const defaultSheet = ss.getSheetByName('Sheet1');
+  TABS.forEach((tab, idx) => {
+    const isNew = !ss.getSheetByName(tab.name);
+    const sheet = ensureTab(ss, tab, idx);
+    if (!isNew) styleHeader(sheet, tab);
+    if (isNew) sheet.getRange(2, 1, 200, tab.headers.length).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY);
+  });
+  if (defaultSheet && ss.getSheets().length > TABS.length) {
+    try { ss.deleteSheet(defaultSheet); } catch (e) {}
+  }
+  SpreadsheetApp.getUi().alert('✅ Setup Complete!\n\nTabs: ' + TABS.map(t => t.name).join(', '));
+}
+
+// ============================================================
+// WEB APP — receives POST requests from landing pages and the website
+// Deploy as a Web App (Execute as: Me, Anyone can access)
+// ============================================================
 function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const d = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    const tabName = TABS[d.tab] ? d.tab : 'Website Leads';
-    const tab = TABS[tabName];
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    let sheet = ss.getSheetByName(tabName);
-    if (!sheet) {
-      sheet = ss.insertSheet(tabName);
-      sheet.appendRow(tab.headers);
-      sheet.setFrozenRows(1);
-      sheet.getRange(1, 1, 1, tab.headers.length).setFontWeight('bold');
-    }
-    const stamp = Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'M/d/yyyy, h:mm:ss a');
-    sheet.appendRow([stamp].concat(tab.row(d).map(cell)));
+    const data = JSON.parse(e.postData.contents);
+    const ss = getSS();
+    const timestamp = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
 
-    // Email for every website lead; open house sign-ins only when they came from the website.
-    if (tabName === 'Website Leads' || /juliancrider\.com/.test(d.notes || '')) notify(tabName, d, stamp, ss);
-    return json({ok: true});
+    // ── Route to correct tab based on form type ──────────
+    const tabName = data.tab || 'Sign-Ins';
+    const tab = tabDef(tabName);
+    if (!tab) throw new Error('Tab not found: ' + tabName);
+    const sheet = ensureTab(ss, tab);
+    sheet.appendRow([timestamp].concat(tab.row(data).map(cell)));
+
+    // ── Also log to All Entries tab ───────────────────────
+    if (tabName !== 'All Entries') {
+      const allSheet = ss.getSheetByName('All Entries');
+      const notes = tabName === 'Website Leads' ? [data.type, data.notes].filter(Boolean).join(' | ') : data.notes;
+      if (allSheet) allSheet.appendRow([timestamp].concat([data.name, data.phone, data.email, tabName, data.property, data.score, notes].map(cell)));
+    }
+
+    // ── Email every website lead (open house sign-ins only when made on the website) ──
+    if (tabName === 'Website Leads' || /juliancrider\.com/.test(data.notes || '')) {
+      try { notify(tabName, data, timestamp, ss); } catch (err) { console.error('Email failed', err); }
+    }
+
+    return json({status: 'success', tab: tabName});
   } catch (err) {
-    console.error(err);
-    return json({ok: false, error: String(err)});
+    return json({status: 'error', message: err.toString()});
   } finally {
     lock.releaseLock();
   }
 }
 
+function doGet(e) {
+  if (e && e.parameter && e.parameter.action === 'rates') return rates();
+  return json({status: 'ok', message: 'JC Leads API is running'});
+}
+
+// Store visitor input as plain text so values like "+1 702…" or "=…" are never run as formulas.
+function cell(v) { const s = v == null ? '' : String(v); return /^[=+\-@]/.test(s) ? "'" + s : s; }
+
+function json(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+
+// ============================================================
+// EMAIL NOTIFICATION
+// ============================================================
 function notify(tabName, d, stamp, ss) {
   const type = d.type || (tabName === 'Sign-Ins' ? 'Open house sign-in' : 'Website lead');
   const fields = [
@@ -72,16 +164,19 @@ function notify(tabName, d, stamp, ss) {
   MailApp.sendEmail(msg);
 }
 
-// Store visitor input as plain text so values like "+1 702…" or "=…" are never run as formulas.
-function cell(v) { const s = v == null ? '' : String(v); return /^[=+\-@]/.test(s) ? "'" + s : s; }
-
-function doGet(e) {
-  if (e && e.parameter && e.parameter.action === 'rates') return rates();
-  return json({ok: true, service: 'juliancrider.com leads'});
+/** Run once from the editor to approve permissions and send yourself a test lead. */
+function testLead() {
+  const res = doPost({postData: {contents: JSON.stringify({tab: 'Website Leads', type: 'Consultation: Test', name: 'Test Lead',
+    phone: '7025550100', email: '', property: '', timeline: 'Just exploring', source: 'juliancrider.com', notes: 'Test from the script editor'})}});
+  console.log(res.getContent());
+  console.log(rates().getContent());
 }
 
-/* ---------- Mortgage rates for the site's "Mortgage rates today" card ---------- */
-// Mortgage News Daily's daily index, cached for 3 hours. Falls back to Freddie Mac's weekly survey (30 and 15 year only).
+// ============================================================
+// MORTGAGE RATES for the site's "Mortgage rates today" card
+// Mortgage News Daily's daily index, cached for 3 hours.
+// Falls back to Freddie Mac's weekly survey (30 and 15 year only).
+// ============================================================
 function rates() {
   const cache = CacheService.getScriptCache();
   const hit = cache.get('rates');
@@ -118,12 +213,4 @@ function freddieRates() {
   if (!col('pmms30')) return null;
   return {ok: true, source: 'Freddie Mac weekly survey', asOf: last[0],
     rates: {f30: {rate: +col('pmms30'), change: null}, f15: {rate: +col('pmms15'), change: null}}};
-}
-
-function json(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-
-/** Run once from the editor to approve permissions and send yourself a test lead. */
-function testLead() {
-  doPost({postData: {contents: JSON.stringify({tab: 'Website Leads', type: 'Consultation: Test', name: 'Test Lead',
-    phone: '7025550100', email: '', property: '', timeline: 'Just exploring', source: 'juliancrider.com', notes: 'Test from the script editor'})}});
 }
