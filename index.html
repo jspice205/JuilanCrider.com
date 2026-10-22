@@ -31,8 +31,8 @@
   color-scheme:light;
 }
 :root[data-theme="dark"]{
-  --bg:#000000; --surface:#161618; --raise:#1c1c1e; --ink:#f5f5f7; --ink2:#d1d1d6; --muted:#8e8e93;
-  --hair:#2c2c2e; --red:#e5484d; --frame:#0d0d0e; --scrim:rgba(0,0,0,.6);
+  --bg:#141416; --surface:#1f1f22; --raise:#28282c; --ink:#f5f5f7; --ink2:#d1d1d6; --muted:#9a9aa0;
+  --hair:#323236; --red:#e5484d; --frame:#0e0e10; --scrim:rgba(0,0,0,.6);
   color-scheme:dark;
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -126,6 +126,10 @@ img{max-width:100%;display:block}
 .skel{width:64px;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--surface),var(--hair),var(--surface));background-size:200% 100%;animation:sh 1.6s linear infinite}
 @keyframes sh{to{background-position:-200% 0}}
 @media (prefers-reduced-motion:reduce){.skel{animation:none}}
+.rrow .rv b{font-weight:700;font-variant-numeric:tabular-nums}
+.rrow .chg{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.rrow .na{color:var(--muted)}
+.rates footer a{color:inherit}
 .rates footer{padding:10px 16px 14px;font-size:12px;color:var(--muted);border-top:1px solid var(--hair)}
 
 /* Segmented */
@@ -425,6 +429,11 @@ img{max-width:100%;display:block}
   .facts{grid-template-columns:repeat(4,1fr)}
   .rhero img{aspect-ratio:21/8}
   .band img{aspect-ratio:21/7}
+  /* Small source photos: show tall beside their content instead of stretching them wide */
+  .area{display:grid;grid-template-columns:300px 1fr;gap:8px;align-items:start}
+  .band.tall{position:sticky;top:130px}
+  .band.tall img{aspect-ratio:9/16}
+  .band.tall.wide img{aspect-ratio:3/4}
   .rnav{top:63px}
   #s-me .hero img{aspect-ratio:16/8;object-position:center 22%}
   #s-me .reviews{display:grid;grid-template-columns:repeat(3,1fr);overflow:visible}
@@ -1271,10 +1280,27 @@ function actions(title){
   return `<div class="actions"><button class="act" data-like aria-label="Like">${ICON.heart}</button><button class="act" data-share="${title.replace(/"/g,'&quot;')}" aria-label="Share">${ICON.share}</button><span class="sp"></span><button class="act" data-open="signup" data-why="Create a free account to save articles, homes and guides in one place." aria-label="Save">${ICON.save}</button></div>`;
 }
 function ratesCard(){
-  const rows = ['30-year fixed','15-year fixed','FHA 30-year','VA 30-year','Jumbo 30-year'];
+  const rows = [['f30','30-year fixed'],['f15','15-year fixed'],['fha30','FHA 30-year'],['va30','VA 30-year'],['jumbo30','Jumbo 30-year']];
   return `<div class="rates"><header><h3>Mortgage rates today</h3><span class="live"><i></i>Daily index</span></header>
-    ${rows.map(r=>`<div class="rrow"><span>${r}</span><span class="skel" aria-label="Rate loads live"></span></div>`).join('')}
-    <footer>National averages from Mortgage News Daily, updated each weekday. Live rates connect in the build. Not a commitment to lend.</footer></div>`;
+    ${rows.map(r=>`<div class="rrow"><span>${r[1]}</span><span class="rv" data-rate="${r[0]}"><span class="skel" aria-label="Rate loading"></span></span></div>`).join('')}
+    <footer data-rates-note>National averages from Mortgage News Daily, updated each weekday. Not a commitment to lend.</footer></div>`;
+}
+// Rates come through the leads Apps Script (see google-apps-script/Code.gs), which fetches and caches them.
+let ratesReq = null;
+function loadRates(scope){
+  if (!scope.querySelector('[data-rate]')) return;
+  if (!ratesReq) ratesReq = fetch(SHEET_URL + '?action=rates').then(r => r.json()).then(d => { if (!d.ok) throw new Error('no rates'); return d; });
+  ratesReq.then(d => {
+    scope.querySelectorAll('[data-rate]').forEach(el => {
+      const x = d.rates[el.dataset.rate];
+      el.innerHTML = x ? `<b>${x.rate.toFixed(2)}%</b>${x.change != null ? ` <small class="chg">${x.change > 0 ? '+' : ''}${x.change.toFixed(2)}</small>` : ''}` : '<span class="na">—</span>';
+    });
+    scope.querySelectorAll('[data-rates-note]').forEach(f => f.textContent = `${d.source}, ${d.asOf}. National averages, not a commitment to lend.`);
+  }).catch(() => {
+    ratesReq = null;
+    scope.querySelectorAll('[data-rate]').forEach(el => el.innerHTML = '<span class="na">—</span>');
+    scope.querySelectorAll('[data-rates-note]').forEach(f => f.innerHTML = 'Rates are unavailable right now. <a href="https://www.mortgagenewsdaily.com/mortgage-rates/mnd" target="_blank" rel="noopener">See today’s rates on Mortgage News Daily</a>.');
+  });
 }
 function blogCard(b,i){
   return `<article class="card reel"><div class="media"><img src="${b.img}" alt="" loading="lazy">
@@ -1298,7 +1324,7 @@ function renderFeed(){
   let html = '';
   if (storyOn === 'rates'){
     html = ratesCard() + calcHTML('feedCalc');
-    $('feed').innerHTML = html; bindCalc('feedCalc'); bindOpeners($('feed')); return;
+    $('feed').innerHTML = html; bindCalc('feedCalc'); bindOpeners($('feed')); loadRates($('feed')); return;
   }
   if (storyOn === 'all') html += ratesCard() + `<details class="calcwrap" open><summary><span>Mortgage calculator</span><small>Estimate your monthly payment</small></summary>${calcHTML('forYouCalc')}</details>`;
   let items = [];
@@ -1311,7 +1337,7 @@ function renderFeed(){
   }
   if (!items.length) html += `<p class="note">Nothing here yet. New stories appear as they’re published.</p>`;
   html += items.map(it => it.t==='b' ? blogCard(BLOGS[it.i],it.i) : newsCard(NEWS[it.i],it.i)).join('');
-  const feed = $('feed'); feed.innerHTML = html; if ($('forYouCalc')) bindCalc('forYouCalc');
+  const feed = $('feed'); feed.innerHTML = html; if ($('forYouCalc')) bindCalc('forYouCalc'); loadRates(feed);
   feed.querySelectorAll('[data-like]').forEach(b => b.onclick = () => b.classList.toggle('liked'));
   feed.querySelectorAll('[data-share]').forEach(b => b.onclick = async () => { try { if (navigator.share) await navigator.share({title:b.dataset.share, url:location.href}); } catch(e){} });
   feed.querySelectorAll('[data-blog]').forEach(b => b.onclick = () => openBlog(+b.dataset.blog));
@@ -1519,19 +1545,19 @@ function renderRelo(){
     <div class="prose">${RELO.history.map(p=>`<p>${p}</p>`).join('')}</div>
     <h3 class="grp">Ways to live here</h3><div class="hscroll">${[['custom','Custom homes','Built around how you live'],['highrise','Luxury high-rises','Strip views, full-service living'],['commercial','Commercial real estate','Investment and business property']].map(w=>`<button class="act-card" data-open="book" data-type="Buying a home"><div class="tile"><img src="${G[w[0]]}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div><div class="in"><b>${w[1]}</b><small>${w[2]}</small></div></button>`).join('')}</div></section>`;
   h += `<section class="rsec" id="r-hoods"><h2>Neighborhoods</h2><p class="sub">Tap a community to learn more.</p>
-    ${RELO.areas.map(a=>`${a.img?`<div class="band"><img src="${G[a.img]}" alt="" loading="lazy"><span>${a.name}</span></div>`:`<div class="grp">${a.name}</div>`}<div class="comm">${a.list.map(c=>`<details><summary>${c[0]}</summary><p>${c[1]}</p>
-      <a class="mini" href="sms:${PHONE}?&body=${encodeURIComponent('Hi Julián, I’d like to learn about homes in '+c[0]+'.')}">Ask about homes here</a></details>`).join('')}</div>`).join('')}</section>`;
-  h += `<section class="rsec" id="r-do"><h2>Memorable activities</h2><p class="sub">Tap any activity for details, directions and how to go.</p><div class="band"><img src="${G.wheel}" alt="" loading="lazy"><span>Get out and explore</span></div>
-    ${RELO.activities.map((g,gi)=>`<div class="grp">${g.g}</div><div class="hscroll">${g.items.map((a,ai)=>`<button class="act-card" data-act="${gi}-${ai}">${tile(g.tone,null,a.img)}<div class="in"><b>${a.n}</b><small>${a.d}</small></div></button>`).join('')}</div>`).join('')}</section>`;
+    ${RELO.areas.map(a=>`${a.img?`<div class="area"><div class="band tall"><img src="${G[a.img]}" alt="" loading="lazy"><span>${a.name}</span></div>`:`<div><div class="grp">${a.name}</div>`}<div class="comm">${a.list.map(c=>`<details><summary>${c[0]}</summary><p>${c[1]}</p>
+      <a class="mini" href="sms:${PHONE}?&body=${encodeURIComponent('Hi Julián, I’d like to learn about homes in '+c[0]+'.')}">Ask about homes here</a></details>`).join('')}</div></div>`).join('')}</section>`;
+  h += `<section class="rsec" id="r-do"><h2>Memorable activities</h2><p class="sub">Tap any activity for details, directions and how to go.</p><div class="area"><div class="band tall wide"><img src="${G.wheel}" alt="" loading="lazy"><span>Get out and explore</span></div>
+    <div>${RELO.activities.map((g,gi)=>`<div class="grp">${g.g}</div><div class="hscroll">${g.items.map((a,ai)=>`<button class="act-card" data-act="${gi}-${ai}">${tile(g.tone,null,a.img)}<div class="in"><b>${a.n}</b><small>${a.d}</small></div></button>`).join('')}</div>`).join('')}</div></div></section>`;
   h += `<section class="rsec" id="r-eat"><h2>Where locals eat</h2><p class="sub">Favorites from our guide.</p>
     <div class="dgrid">${RELO.dining.map((d,i)=>`<div class="dcard"><img src="${G[DINE_IMG[i]]}" alt="" loading="lazy"><b>${d[0]}</b><small>${d[1].join('<br>')}</small></div>`).join('')}</div></section>`;
   h += `<section class="rsec" id="r-golf"><h2>Golf</h2><p class="sub">${RELO.golf.length} private and public courses. Tap any course to visit its website.</p><div class="band"><img src="${G.golf}" alt="" loading="lazy"></div>
     <div class="pills">${RELO.golf.map(g=>`<a class="gl" href="${g[1]}" target="_blank" rel="noopener">${g[0]}</a>`).join('')}</div></section>`;
-  h += `<section class="rsec" id="r-sports"><h2>Sports and arts</h2><div class="band"><img src="${G.galleria}" alt="" loading="lazy"></div>
+  h += `<section class="rsec" id="r-sports"><h2>Sports and arts</h2><div class="area"><div class="band tall wide"><img src="${G.galleria}" alt="" loading="lazy"></div>
     <div style="padding:0 16px"><div class="list">${RELO.sports.map(s=>`<div class="row"><div class="grow"><b>${s[0]}</b><small>${s[1]}, ${s[2]}</small></div>${s[3]?`<a class="mini" href="${s[3]}" target="_blank" rel="noopener">Tickets</a>`:''}</div>`).join('')}</div>
-    <div class="list" style="margin-top:12px">${RELO.arts.map(s=>`<div class="row"><div class="grow"><b>${s[0]}</b><small>${s[1]}</small></div><a class="mini" href="${s[2]}" target="_blank" rel="noopener">Visit</a></div>`).join('')}</div></div></section>`;
+    <div class="list" style="margin-top:12px">${RELO.arts.map(s=>`<div class="row"><div class="grow"><b>${s[0]}</b><small>${s[1]}</small></div><a class="mini" href="${s[2]}" target="_blank" rel="noopener">Visit</a></div>`).join('')}</div></div></div></section>`;
   h += `<section class="rsec" id="r-health"><h2>Schools and health</h2><div class="band"><img src="${G.grads}" alt="" loading="lazy"></div>
-    <div style="padding:0 16px"><div class="list"><div class="row"><div class="grow"><b>Clark County School District</b><small>Public schools, pre-K through 12th grade</small></div><a class="mini" href="https://ccsd.net" target="_blank" rel="noopener">Search</a></div></div>
+    <div style="padding:0 16px"><div class="list"><div class="row"><div class="grow"><b>Clark County School District</b><small>Public schools, pre-K through 12th grade</small></div><a class="mini" href="https://www.niche.com/k12/d/clark-county-school-district-nv/" target="_blank" rel="noopener">Search</a></div></div>
     <p class="fine" style="margin-bottom:12px">Private schools and colleges are across the valley. Ask me about schools for any home you’re considering.</p>
     <div class="mapimg"><img src="${G.hospmap}" alt="Map of hospitals across the Las Vegas valley" loading="lazy"><small>Hospitals across the valley</small></div><div class="list">${RELO.hospitals.map(x=>`<div class="row"><div class="grow"><b>${x}</b></div><a class="mini" href="${MAP(x+' Las Vegas NV')}" target="_blank" rel="noopener">Map</a></div>`).join('')}</div></div></section>`;
   h += `<section class="rsec" id="r-move"><h2>Moving checklist</h2><div class="prose"><p>${RELO.moving.license}</p></div>
