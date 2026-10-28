@@ -193,23 +193,40 @@ function fubPerson(tabName, d) {
   const tags = tabName === 'Sign-Ins' ? ['Open House'] : ['Website Lead', 'juliancrider.com'];
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
+  scoreLead(tabName, d).forEach(t => tags.push(t));
   const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
   if (validEmail(d.email)) person.emails = [{value: String(d.email).trim()}];
   if (d.phone) person.phones = [{value: d.phone}];
   return person;
 }
 
+// Scores a new lead from what the form collected and returns tier tags
+// ("Tier A/B/C", "Likely Seller", "Has Agent"), so FUB Smart Lists and automations can act on them.
+function scoreLead(tabName, d) {
+  const notes = String(d.notes || ''), type = String(d.type || '').toLowerCase(), tl = String(d.timeline || '');
+  if (/Working with agent: Yes/.test(notes)) return ['Tier C', 'Has Agent'];
+  const tags = [];
+  let pts = ({'ASAP / Already looking': 30, 'Ready now': 30, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
+  const interest = Number(d.score) || 0;
+  pts += interest >= 8 ? 20 : interest >= 6 ? 10 : interest ? 3 : 0;
+  if (/Pre-approved: Yes|Pre-approved: Paying cash|Paying cash/.test(notes)) pts += 10;
+  if (/sell|home value/.test(type)) { tags.push('Likely Seller'); pts += 20; }
+  else if (/new construction|buying|relocat/.test(type)) pts += 10;
+  if (/^Owning/.test(String(d.status || '')) && pts >= 15) tags.push('Likely Seller');
+  tags.unshift(pts >= 45 ? 'Tier A' : pts >= 25 ? 'Tier B' : 'Tier C');
+  return tags.filter((t, i) => tags.indexOf(t) === i);
+}
+
 // FUB rejects the whole lead over a mistyped email, so send only well-formed ones and keep the rest in the note.
 function validEmail(e) { return /^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(String(e || '').trim()); }
 function badEmailNote(e) { return e && !validEmail(e) ? 'Email as entered (invalid): ' + e : ''; }
 
-function fubFetch(path, body) {
+function fubFetch(path, body, method) {
   const key = PropertiesService.getScriptProperties().getProperty('FUB_API_KEY');
   if (!key) throw new Error('FUB_API_KEY is not set in Script Properties');
-  const res = UrlFetchApp.fetch('https://api.followupboss.com/v1/' + path, {
-    method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true,
-    headers: {Authorization: 'Basic ' + Utilities.base64Encode(key + ':')}
-  });
+  const opts = {method: method || 'post', muteHttpExceptions: true, headers: {Authorization: 'Basic ' + Utilities.base64Encode(key + ':')}};
+  if (body) { opts.contentType = 'application/json'; opts.payload = JSON.stringify(body); }
+  const res = UrlFetchApp.fetch('https://api.followupboss.com/v1/' + path, opts);
   const code = res.getResponseCode();
   if (code >= 300) throw new Error('FUB ' + code + ': ' + res.getContentText().slice(0, 300));
   return JSON.parse(res.getContentText() || '{}');
@@ -281,6 +298,44 @@ function importSheetToFub() {
     }
   }
   console.log(`Done: ${sent} imported, ${skipped} skipped, ${failed} failed.`);
+}
+
+/**
+ * Adds the tags from the "Lead Scoring" sheet (Tier A/B/C, Partner, Likely Seller, Referrer,
+ * SIG – verify, Has Agent) to the matching people in Follow Up Boss. Finds each person by email,
+ * then phone, and keeps every tag they already have. Remembers its place, so it's safe to re-run.
+ */
+const SCORING_SHEET_ID = '1ohzgr9LgEfQZCF6Dvb_mrlcvzHL7lgqDsxIG-rQfp54';
+function tagScoredLeadsInFub() {
+  const props = PropertiesService.getScriptProperties(), started = Date.now();
+  const values = SpreadsheetApp.openById(SCORING_SHEET_ID).getSheets()[0].getDataRange().getDisplayValues();
+  const head = values[0];
+  let tagged = 0, notFound = 0, failed = 0;
+  for (let r = Number(props.getProperty('FUB_TAGGED_ROW') || 1); r < values.length; r++) {
+    if (Date.now() - started > 5 * 60 * 1000) { console.log(`Paused at row ${r + 1}. Run tagScoredLeadsInFub again to continue.`); break; }
+    const get = name => String(values[r][head.indexOf(name)] || '').trim();
+    const tier = get('Tier'), flags = get('Flags');
+    const want = [tier === 'Partner' ? 'Partner' : 'Tier ' + tier];
+    if (get('Seller')) want.push('Likely Seller');
+    if (get('Referrer')) want.push('Referrer');
+    if (/SIG/.test(flags)) want.push('SIG – verify');
+    if (/signed agent/i.test(flags)) want.push('Has Agent');
+    try {
+      const email = get('Email'), phone = get('Phone').replace(/\D/g, '');
+      let found = validEmail(email) ? fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people : [];
+      if (!(found && found.length) && phone) found = fubFetch('people?limit=1&phone=' + phone, null, 'get').people;
+      if (!(found && found.length)) { notFound++; console.warn(`Not in FUB: ${get('Name')}`); }
+      else {
+        const person = found[0], tags = (person.tags || []).slice();
+        want.forEach(t => { if (tags.indexOf(t) < 0) tags.push(t); });
+        fubFetch('people/' + person.id, {tags: tags}, 'put');
+        tagged++;
+      }
+    } catch (err) { failed++; console.error(`${get('Name')}: ${err}`); }
+    props.setProperty('FUB_TAGGED_ROW', String(r + 1));
+    Utilities.sleep(150);
+  }
+  console.log(`Tagged ${tagged}, not found ${notFound}, failed ${failed}.`);
 }
 
 /** Start the sheet import over from the top (only needed if you want to re-send everything). */
