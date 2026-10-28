@@ -194,10 +194,14 @@ function fubPerson(tabName, d) {
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
   const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
-  if (d.email) person.emails = [{value: d.email}];
+  if (validEmail(d.email)) person.emails = [{value: String(d.email).trim()}];
   if (d.phone) person.phones = [{value: d.phone}];
   return person;
 }
+
+// FUB rejects the whole lead over a mistyped email, so send only well-formed ones and keep the rest in the note.
+function validEmail(e) { return /^[^@\s,;]+@[^@\s,;]+\.[a-z]{2,}$/i.test(String(e || '').trim()); }
+function badEmailNote(e) { return e && !validEmail(e) ? 'Email as entered (invalid): ' + e : ''; }
 
 function fubFetch(path, body) {
   const key = PropertiesService.getScriptProperties().getProperty('FUB_API_KEY');
@@ -218,7 +222,7 @@ function sendToFub(tabName, d) {
     source: fubSource(tabName),
     system: 'juliancrider.com',
     type: fubEventType(tabName, d),
-    message: [d.type, d.timeline && 'Timeline: ' + d.timeline, d.notes].filter(Boolean).join('\n'),
+    message: [d.type, d.timeline && 'Timeline: ' + d.timeline, d.notes, badEmailNote(d.email)].filter(Boolean).join('\n'),
     person: person
   };
   if (d.property) event.property = {street: d.property};
@@ -256,7 +260,7 @@ function importSheetToFub() {
         : {type: get('Lead Type'), name: get('Full Name'), phone: get('Phone'), email: get('Email'), property: get('Property'),
            timeline: get('Timeline'), source: get('Source'), notes: get('Notes')};
       if ((!d.name && !d.phone && !d.email) || /^test\b/i.test(d.name)) { skipped++; props.setProperty(doneKey, String(r + 1)); continue; }
-      if (!/@/.test(d.email)) d.email = '';
+      const emailNote = badEmailNote(d.email);
       try {
         const person = fubPerson(tabName, d);
         person.source = fubSource(tabName);
@@ -265,7 +269,7 @@ function importSheetToFub() {
           ? [['Signed in', get('Timestamp')], ['Open house', d.property], ['Interest (1–10)', d.score], ['Renting or owning', d.status],
              ['Timeline', d.timeline], ['How they heard', d.source], ['Notes', d.notes]]
           : [['Submitted', get('Timestamp')], ['Lead type', d.type], ['Property', d.property], ['Timeline', d.timeline], ['Notes', d.notes]];
-        const body = lines.filter(l => l[1]).map(l => l[0] + ': ' + l[1]).join('\n');
+        const body = lines.filter(l => l[1]).map(l => l[0] + ': ' + l[1]).concat(emailNote ? [emailNote] : []).join('\n');
         if (created.id && body) fubFetch('notes', {personId: created.id, subject: 'Imported from ' + tabName + ' sheet', body: body});
         sent++;
       } catch (err) {
