@@ -117,6 +117,9 @@ function doPost(e) {
     // ── Email every website lead (open house sign-ins only when made on the website) ──
     if (tabName === 'Website Leads' || /juliancrider\.com/.test(data.notes || '')) {
       try { notify(tabName, data, timestamp, ss); } catch (err) { console.error('Email failed', err); }
+    }
+    // ── Every website lead and every open house sign-in goes to Follow Up Boss ──
+    if (tabName === 'Website Leads' || tabName === 'Sign-Ins') {
       try { sendToFub(tabName, data); } catch (err) { console.error('Follow Up Boss failed', err); }
     }
 
@@ -166,8 +169,11 @@ function notify(tabName, d, stamp, ss) {
 }
 
 // ============================================================
-// FOLLOW UP BOSS — sends each website lead to FUB as a new lead event,
-// so FUB assigns it and starts your action plans/automations.
+// FOLLOW UP BOSS — sends each website lead and open house sign-in to FUB
+// as a new lead event, so FUB assigns it and starts your action plans.
+// Source and tags show where each lead came from:
+//   Open house sign-ins → source "Open House", tag "Open House"
+//   Website leads       → source "juliancrider.com", tags "Website Lead" + lead type
 // The API key lives in Project Settings > Script Properties as FUB_API_KEY
 // (never in this code). If it's missing, this step is skipped.
 // ============================================================
@@ -180,29 +186,102 @@ function fubEventType(tabName, d) {
   return 'General Inquiry';
 }
 
-function sendToFub(tabName, d) {
-  const key = PropertiesService.getScriptProperties().getProperty('FUB_API_KEY');
-  if (!key) return;
+function fubSource(tabName) { return tabName === 'Sign-Ins' ? 'Open House' : 'juliancrider.com'; }
+
+function fubPerson(tabName, d) {
   const parts = String(d.name || '').trim().split(/\s+/);
-  const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: ['juliancrider.com']};
+  const tags = tabName === 'Sign-Ins' ? ['Open House'] : ['Website Lead', 'juliancrider.com'];
+  if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
+  if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
+  const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
   if (d.email) person.emails = [{value: d.email}];
   if (d.phone) person.phones = [{value: d.phone}];
-  if (d.type) person.tags.push(d.type.replace(/^Consultation:\s*/, ''));
+  return person;
+}
+
+function fubFetch(path, body) {
+  const key = PropertiesService.getScriptProperties().getProperty('FUB_API_KEY');
+  if (!key) throw new Error('FUB_API_KEY is not set in Script Properties');
+  const res = UrlFetchApp.fetch('https://api.followupboss.com/v1/' + path, {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true,
+    headers: {Authorization: 'Basic ' + Utilities.base64Encode(key + ':')}
+  });
+  const code = res.getResponseCode();
+  if (code >= 300) throw new Error('FUB ' + code + ': ' + res.getContentText().slice(0, 300));
+  return JSON.parse(res.getContentText() || '{}');
+}
+
+function sendToFub(tabName, d) {
+  if (!PropertiesService.getScriptProperties().getProperty('FUB_API_KEY')) return;
+  const person = fubPerson(tabName, d);
   const event = {
-    source: 'juliancrider.com',
+    source: fubSource(tabName),
     system: 'juliancrider.com',
     type: fubEventType(tabName, d),
     message: [d.type, d.timeline && 'Timeline: ' + d.timeline, d.notes].filter(Boolean).join('\n'),
     person: person
   };
   if (d.property) event.property = {street: d.property};
-  const res = UrlFetchApp.fetch('https://api.followupboss.com/v1/events', {
-    method: 'post', contentType: 'application/json', payload: JSON.stringify(event), muteHttpExceptions: true,
-    headers: {Authorization: 'Basic ' + Utilities.base64Encode(key + ':')}
-  });
-  const code = res.getResponseCode();
-  if (code >= 300) throw new Error('FUB ' + code + ': ' + res.getContentText().slice(0, 300));
-  console.log('Sent to Follow Up Boss (' + code + ')');
+  fubFetch('events', event);
+  console.log('Sent to Follow Up Boss');
+}
+
+/**
+ * One-time import of the leads already in this sheet (Sign-Ins and Website Leads) into Follow Up Boss.
+ * Uses FUB's people import (not lead events), so it does NOT start your new-lead automations,
+ * and FUB matches existing people by email/phone instead of duplicating them.
+ * Each person gets a note with everything from their row. Rows named "Test…" are skipped.
+ * Safe to re-run: it remembers where it stopped and continues (Apps Script stops runs after 6 minutes).
+ */
+function importSheetToFub() {
+  const ss = getSS(), props = PropertiesService.getScriptProperties(), started = Date.now();
+  let sent = 0, skipped = 0, failed = 0;
+  for (const tabName of ['Sign-Ins', 'Website Leads']) {
+    const sheet = ss.getSheetByName(tabName);
+    if (!sheet) continue;
+    const values = sheet.getDataRange().getDisplayValues();
+    const head = values[0].map(h => String(h).trim());
+    const doneKey = 'FUB_IMPORT_' + tabName;
+    for (let r = Number(props.getProperty(doneKey) || 1); r < values.length; r++) {
+      if (Date.now() - started > 5 * 60 * 1000) {
+        console.log(`Stopped at ${tabName} row ${r + 1} to stay under Google's time limit. Run importSheetToFub again to continue.`);
+        console.log(`So far: ${sent} imported, ${skipped} skipped, ${failed} failed.`);
+        return;
+      }
+      const row = values[r], get = name => { const i = head.indexOf(name); return i < 0 ? '' : String(row[i]).trim(); };
+      const extra = row.slice(head.length).concat(head.map((h, i) => h ? '' : row[i])).filter(Boolean).join(' | ');
+      const d = tabName === 'Sign-Ins'
+        ? {name: get('Full Name'), phone: get('Phone'), email: get('Email'), property: get('Open House Address'), score: get('Interest (1–10)'),
+           status: get('Currently Renting or Owning?'), timeline: get('Timeline to Buy'), source: get('How They Heard'), notes: [get('Agent Notes'), extra].filter(Boolean).join(' | ')}
+        : {type: get('Lead Type'), name: get('Full Name'), phone: get('Phone'), email: get('Email'), property: get('Property'),
+           timeline: get('Timeline'), source: get('Source'), notes: get('Notes')};
+      if ((!d.name && !d.phone && !d.email) || /^test\b/i.test(d.name)) { skipped++; props.setProperty(doneKey, String(r + 1)); continue; }
+      if (!/@/.test(d.email)) d.email = '';
+      try {
+        const person = fubPerson(tabName, d);
+        person.source = fubSource(tabName);
+        const created = fubFetch('people?deduplicate=true', person);
+        const lines = tabName === 'Sign-Ins'
+          ? [['Signed in', get('Timestamp')], ['Open house', d.property], ['Interest (1–10)', d.score], ['Renting or owning', d.status],
+             ['Timeline', d.timeline], ['How they heard', d.source], ['Notes', d.notes]]
+          : [['Submitted', get('Timestamp')], ['Lead type', d.type], ['Property', d.property], ['Timeline', d.timeline], ['Notes', d.notes]];
+        const body = lines.filter(l => l[1]).map(l => l[0] + ': ' + l[1]).join('\n');
+        if (created.id && body) fubFetch('notes', {personId: created.id, subject: 'Imported from ' + tabName + ' sheet', body: body});
+        sent++;
+      } catch (err) {
+        failed++;
+        console.error(`${tabName} row ${r + 1} (${d.name}): ${err}`);
+      }
+      props.setProperty(doneKey, String(r + 1));
+      Utilities.sleep(200);
+    }
+  }
+  console.log(`Done: ${sent} imported, ${skipped} skipped, ${failed} failed.`);
+}
+
+/** Start the sheet import over from the top (only needed if you want to re-send everything). */
+function resetSheetImport() {
+  ['Sign-Ins', 'Website Leads'].forEach(t => PropertiesService.getScriptProperties().deleteProperty('FUB_IMPORT_' + t));
 }
 
 /** Run once after adding FUB_API_KEY: creates a "FUB Test" lead in Follow Up Boss (delete it after). */
