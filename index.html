@@ -508,7 +508,7 @@ img{max-width:100%;display:block}
     </div>
 
     <div class="pane" id="h-search">
-      <a class="pill block" style="margin-bottom:12px" href="https://las.mlsmatrix.com/Matrix/public/IDX.aspx?idx=c761e32" target="_blank" rel="noopener">Open live MLS search</a>
+      <div class="duo" style="margin-bottom:12px"><a class="pill block" href="https://las.mlsmatrix.com/Matrix/public/IDX.aspx?idx=c761e32" target="_blank" rel="noopener">Open live MLS search</a><button class="pill ghost block" data-open="showing">Request a showing</button></div>
       <div class="idx" id="idxBox"><a class="idxmap" href="https://las.mlsmatrix.com/Matrix/public/IDX.aspx?idx=c761e32" target="_blank" rel="noopener"><img src="img/mls-search-map.jpg" alt="Map of Las Vegas home search area"><span class="idxcta"><b>Search live MLS listings</b><small>Opens the Las Vegas MLS map search</small></span></a></div>
       <p class="fine">Live listings from the Las Vegas MLS. If the search doesn’t load, <a href="https://las.mlsmatrix.com/Matrix/public/IDX.aspx?idx=c761e32" target="_blank" rel="noopener">open it in a new tab</a>.</p>
     </div>
@@ -1691,6 +1691,28 @@ function openSheet(kind, opt={}){
       <div class="field"><span class="lab">Timeline</span><div class="chips" data-chips="tl2" data-opts="Ready now|1–3 months|3–6 months|Just exploring"></div></div>
       <p class="err" id="fErr">Add your first name and phone.</p><button class="pill block" id="go">Send me info</button>`);
     $('go').onclick = () => { if (!requireContact()) return; sendLead({tab:'Website Leads', type:'New construction info', ...contactVals(), property:opt.prop, timeline:chipVal(sheet,'tl2'), source:'juliancrider.com', notes:''}); $('sheetBody').innerHTML = doneHTML('Request sent','Julián will send details on '+opt.prop+' within one business day.'); };
+  }
+  if (kind==='showing'){
+    openRaw('Request a showing', `<p style="color:var(--ink2);margin-bottom:14px">Found a home you’d like to see? Send the address and Julián will confirm a time.</p>
+      <div class="field"><label for="sProp">Property address or MLS #</label><input id="sProp" autocomplete="street-address" value="${(opt.prop||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><span class="lab">When would you like to see it?</span><div class="chips" data-chips="swhen" data-opts="Today or tomorrow|This week|This weekend|Flexible"></div></div>
+      <div class="field"><label for="sTime">Preferred day and time (optional)</label><input id="sTime" placeholder="e.g. Saturday after 2 pm"></div>
+      <div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="spre" data-opts="Yes|Not yet|Paying cash"></div></div>
+      <div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="sagent" data-opts="No|Yes, with a signed agreement|Yes, informally"></div></div>
+      ${contactFields}
+      <p class="fine" style="margin:-4px 0 14px">Before any tour, Nevada buyers sign a short written agreement. For a single showing, Julián uses a non-exclusive agreement that covers only this one home, so you’re free to work with anyone else. He’ll text you a link to sign it in about a minute.</p>
+      <p class="err" id="sErr">Add the property address.</p><p class="err" id="fErr">Add your first name and phone.</p>
+      <button class="pill block" id="go">Request showing</button>`);
+    $('go').onclick = () => {
+      const prop = $('sProp').value.trim(); $('sErr').style.display = prop ? 'none' : 'block';
+      const okContact = requireContact(); if (!prop || !okContact) return;
+      const agent = chipVal(sheet,'sagent');
+      sendLead({tab:'Website Leads', type:'Showing request', ...contactVals(), property:prop, timeline:chipVal(sheet,'swhen'), source:'juliancrider.com',
+        notes: joinNotes(['Preferred time: '+$('sTime').value.trim(), 'Pre-approved: '+chipVal(sheet,'spre'), 'Working with agent: '+agent])});
+      $('sheetBody').innerHTML = doneHTML('Showing requested', /signed/.test(agent)
+        ? 'Thanks! Since you have a signed agreement with another agent, they should schedule this tour for you. Julián is happy to answer questions anytime.'
+        : 'Julián will confirm a time and text you the one-home agreement to sign before the tour.');
+    };
   }
   if (kind==='calc'){ openRaw('', calcHTML('sheetCalc')); bindCalc('sheetCalc'); }
   if (kind==='buyer') openBuyer();

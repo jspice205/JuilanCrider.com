@@ -181,7 +181,7 @@ function fubEventType(tabName, d) {
   const t = (d.type || '').toLowerCase();
   if (tabName === 'Sign-Ins') return 'Visited Open House';
   if (/sell|home value/.test(t)) return 'Seller Inquiry';
-  if (/new construction/.test(t)) return 'Property Inquiry';
+  if (/new construction|showing/.test(t)) return 'Property Inquiry';
   if (/account|guide/.test(t)) return 'Registration';
   return 'General Inquiry';
 }
@@ -204,13 +204,14 @@ function fubPerson(tabName, d) {
 // ("Tier A/B/C", "Likely Seller", "Has Agent"), so FUB Smart Lists and automations can act on them.
 function scoreLead(tabName, d) {
   const notes = String(d.notes || ''), type = String(d.type || '').toLowerCase(), tl = String(d.timeline || '');
-  if (/Working with agent: Yes/.test(notes)) return ['Tier C', 'Has Agent'];
+  if (/Working with agent: Yes, with a signed/.test(notes)) return ['Tier C', 'Has Agent'];
   const tags = [];
   let pts = ({'ASAP / Already looking': 30, 'Ready now': 30, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
   const interest = Number(d.score) || 0;
   pts += interest >= 8 ? 20 : interest >= 6 ? 10 : interest ? 3 : 0;
   if (/Pre-approved: Yes|Pre-approved: Paying cash|Paying cash/.test(notes)) pts += 10;
-  if (/sell|home value/.test(type)) { tags.push('Likely Seller'); pts += 20; }
+  if (/showing/.test(type)) { tags.push('Showing requested'); pts += 45; }
+  else if (/sell|home value/.test(type)) { tags.push('Likely Seller'); pts += 20; }
   else if (/new construction|buying|relocat/.test(type)) pts += 10;
   if (/^Owning/.test(String(d.status || '')) && pts >= 15) tags.push('Likely Seller');
   tags.unshift(pts >= 45 ? 'Tier A' : pts >= 25 ? 'Tier B' : 'Tier C');
