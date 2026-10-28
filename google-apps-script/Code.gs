@@ -118,6 +118,10 @@ function doPost(e) {
     if (tabName === 'Website Leads' || /juliancrider\.com/.test(data.notes || '')) {
       try { notify(tabName, data, timestamp, ss); } catch (err) { console.error('Email failed', err); }
     }
+    // ── Showing requests: send the buyer a confirmation right away ──
+    if (tabName === 'Website Leads' && /showing/i.test(data.type || '') && validEmail(data.email)) {
+      try { confirmShowing(data); } catch (err) { console.error('Buyer confirmation failed', err); }
+    }
     // ── Every website lead and every open house sign-in goes to Follow Up Boss ──
     if (tabName === 'Website Leads' || tabName === 'Sign-Ins') {
       try { sendToFub(tabName, data); } catch (err) { console.error('Follow Up Boss failed', err); }
@@ -348,6 +352,48 @@ function resetSheetImport() {
 function testFub() {
   sendToFub('Website Leads', {type: 'Consultation: Test', name: 'FUB Test', email: 'fub-test@example.com',
     phone: '7025550100', timeline: 'Just exploring', notes: 'Test from the script editor — safe to delete'});
+}
+
+// ============================================================
+// BUYER CONFIRMATION — branded email to the buyer after a showing request
+// ============================================================
+function confirmShowing(d) {
+  const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const first = esc(String(d.name || '').trim().split(/\s+/)[0] || 'there');
+  const when = [d.timeline, (String(d.notes || '').match(/Preferred time: ([^|]+)/) || [])[1]].filter(Boolean).map(s => esc(s.trim())).join(', ');
+  const hasAgent = /Working with agent: Yes, with a signed/.test(d.notes || '');
+  const body = hasAgent
+    ? `<p>Thanks for your interest in <b>${esc(d.property)}</b>. Since you have a signed agreement with another agent, they should schedule this tour for you, and they'll be able to get you in quickly.</p>
+       <p>If anything changes, or you have questions about the home or the neighborhood, I'm always happy to help.</p>`
+    : `<p>Thanks for requesting a showing of <b>${esc(d.property)}</b>${when ? ` (${when})` : ''}. I'll confirm a time with you shortly.</p>
+       <p style="margin:18px 0 6px"><b>What happens next</b></p>
+       <ol style="margin:0 0 14px 18px;padding:0">
+         <li style="margin-bottom:6px">I confirm the day and time with you.</li>
+         <li style="margin-bottom:6px">You get a short buyer agreement to e-sign. It's <b>non-exclusive and covers only this one home</b>, so you're free to work with anyone else. Nevada requires a written agreement before any tour, and it takes about a minute.</li>
+         <li>We meet at the home. If you're financing, bring your pre-approval letter if you have one.</li>
+       </ol>`;
+  const html = `<div style="background:#f4f4f5;padding:24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+    <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden">
+      <div style="background:#000;color:#fff;padding:20px 24px;font-size:18px;font-weight:700">Julián J. Crider <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#d13438;margin-left:4px"></span></div>
+      <div style="padding:24px;color:#1c1c1e;font-size:15px;line-height:1.55">
+        <p style="font-size:20px;font-weight:700;margin:0 0 12px">Hi ${first}, your showing request is in.</p>
+        ${body}
+        <p style="margin:18px 0 0">Talk soon,<br><b>Julián J. Crider</b><br><span style="color:#6e6e73">Las Vegas Realtor® · <a href="tel:+17024982571" style="color:#6e6e73">702-498-2571</a> · <a href="https://juliancrider.com" style="color:#6e6e73">juliancrider.com</a></span></p>
+      </div>
+    </div>
+    <p style="max-width:560px;margin:12px auto 0;text-align:center;color:#8e8e93;font-size:11px">You're receiving this because you requested a showing on juliancrider.com. Reply to this email with any questions.</p>
+  </div>`;
+  MailApp.sendEmail({
+    to: String(d.email).trim(), replyTo: NOTIFY_EMAIL, name: 'Julián J. Crider',
+    subject: hasAgent ? 'About your showing request' : 'Your showing request: ' + String(d.property || '').slice(0, 60),
+    htmlBody: html, body: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  });
+}
+
+/** Sends the buyer confirmation to you so you can see it (uses your notification email). */
+function testShowingConfirmation() {
+  confirmShowing({name: 'Julián Test', email: NOTIFY_EMAIL, property: '11616 Zagarolo Ln', timeline: 'This weekend',
+    notes: 'Preferred time: Saturday after 2 pm | Pre-approved: Yes | Working with agent: No'});
 }
 
 /** Run once from the editor to approve permissions and send yourself a test lead. */
