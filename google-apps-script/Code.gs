@@ -547,7 +547,7 @@ function testFub() {
 }
 
 // ============================================================
-// EMAIL TEMPLATES — run loadFubTemplates once to add the Hot/Warm plan emails to Follow Up Boss.
+// EMAIL TEMPLATES — run loadFubTemplates once to add the Hot/Warm/Legacy plan emails to Follow Up Boss.
 // Safe to run again: templates that already exist (same name) are skipped.
 // ============================================================
 const SIG_FULL = 'Julián J. Crider<br>702-498-2571 · juliancrider.com', SIG = 'Julián';
@@ -586,7 +586,29 @@ const FUB_TEMPLATES = [
   ['Warm 4 - What makes the difference', 'What finally made the difference', [
     'Hi %contact_first_name%,',
     'Most of the families I help were "just looking" for months. What finally made the difference was usually one thing: the right home that never hit Zillow, a payment that finally worked, or a change in life that made the timing obvious.',
-    'How close are you to your version of that?', SIG]]
+    'How close are you to your version of that?', SIG]],
+  // Legacy re-introduction (old sphere contacts): reconnect, website, home value, socials, referral.
+  ['Legacy 1 - It\'s been a while', 'It\'s been a while, %contact_first_name%', [
+    'Hi %contact_first_name%,',
+    'It\'s been a while, and I\'ll admit this email is overdue.',
+    'I\'m still helping people buy and sell here in Las Vegas, now with Boeckle & Co., and I just finished building a new home base: <a href="https://juliancrider.com">juliancrider.com</a>. Homes, neighborhood guides, and a quick home-value check, all in one place.',
+    'No ask here. I just didn\'t want to be the person who only reaches out when they need something.',
+    'What\'s new with you?', SIG_FULL]],
+  ['Legacy 2 - Equity check', 'You might be sitting on more than you think', [
+    'Hi %contact_first_name%,',
+    'A lot of people I\'ve worked with over the years are sitting on more equity than they realize, and most have never had anyone run a real number for them.',
+    'Would it be a bad idea for me to put one together for your place? Not a Zestimate. It takes me a day, and there\'s no obligation.',
+    'Or if you\'re curious first, there\'s a quick home-value check on <a href="https://juliancrider.com">juliancrider.com</a>.', SIG]],
+  ['Legacy 3 - Where I share the good stuff', 'Where I share the good stuff', [
+    'Hi %contact_first_name%,',
+    'I\'ve started sharing what I see every day: new homes before they get crowded, honest market updates, and the Las Vegas spots locals actually go to.',
+    'It\'s all on <a href="https://juliancrider.com">juliancrider.com</a>, with links to my Instagram and YouTube.',
+    'What would you want to see more of?', SIG]],
+  ['Legacy 4 - A small favor', 'Would you be against a small favor?', [
+    'Hi %contact_first_name%,',
+    'Most of my business comes from people like you, so I\'ll just ask.',
+    'If someone you know mentions moving to, from, or around Las Vegas, would you be opposed to passing along my name? I\'ll take great care of them, and I\'ll keep you in the loop.',
+    'Either way, it\'s good to be back in touch.', SIG_FULL]]
 ];
 
 function loadFubTemplates() {
