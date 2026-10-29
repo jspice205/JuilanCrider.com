@@ -465,15 +465,12 @@ function confirmShowing(d, signUrl) {
 
 // ============================================================
 // BUYER AGREEMENT — single-property, non-exclusive, signed on juliancrider.com/sign.html
-// ⚠ DRAFT WORDING: your broker must approve agreementHtml() before you set the
-// Script Property AGREEMENT_LIVE to "yes". Until then no buyer is sent a link;
-// previewAgreement() creates a test link you and your broker can review.
-// Script Properties used (Project Settings > Script Properties):
-//   AGREEMENT_LIVE      "yes" to start sending signing links with showing confirmations
-//   BUYER_FEE           e.g. "2.5% of the purchase price" (shown in the agreement)
-//   AGREEMENT_TERM_DAYS default 30      PROTECTION_DAYS  default 30
-//   LICENSEE_NAME       default "Julián J. Crider"   LICENSE_NUMBER   your Nevada license #
-//   BROKERAGE           default "Boeckle & Co."      DUTIES_OWED_URL  link to the Duties Owed form
+// Broker-approved (3% fee). Live by default; set the Script Property AGREEMENT_LIVE to "no" to pause.
+// The buyer also acknowledges Nevada's Duties Owed by a Nevada Real Estate Licensee (form 525)
+// with the same signature. previewAgreement() creates a test link.
+// Optional Script Properties (Project Settings > Script Properties) override the defaults:
+//   AGREEMENT_LIVE "no" to pause · BUYER_FEE · AGREEMENT_TERM_DAYS (30) · PROTECTION_DAYS (30)
+//   LICENSEE_NAME · LICENSE_NUMBER · BROKERAGE · BROKER_NAME (the designated broker, for form 525)
 // ============================================================
 const SIGN_PAGE = 'https://juliancrider.com/sign.html';
 const AGREEMENT_TAB = {name: 'Buyer Agreements', color: '#000000',
@@ -481,9 +478,9 @@ const AGREEMENT_TAB = {name: 'Buyer Agreements', color: '#000000',
 
 function agreementSettings() {
   const p = PropertiesService.getScriptProperties(), g = (k, d) => p.getProperty(k) || d;
-  return {live: g('AGREEMENT_LIVE', '') === 'yes', fee: g('BUYER_FEE', '[fee to be set by Broker]'), termDays: Number(g('AGREEMENT_TERM_DAYS', 30)),
-    protectDays: Number(g('PROTECTION_DAYS', 30)), licensee: g('LICENSEE_NAME', 'Julián J. Crider'), licenseNo: g('LICENSE_NUMBER', ''),
-    brokerage: g('BROKERAGE', 'Boeckle & Co.'), dutiesUrl: g('DUTIES_OWED_URL', '')};
+  return {live: g('AGREEMENT_LIVE', 'yes') !== 'no', fee: g('BUYER_FEE', '3% of the purchase price'), termDays: Number(g('AGREEMENT_TERM_DAYS', 30)),
+    protectDays: Number(g('PROTECTION_DAYS', 30)), licensee: g('LICENSEE_NAME', 'Julián J. Crider'), licenseNo: g('LICENSE_NUMBER', 'S.0177760'),
+    brokerage: g('BROKERAGE', 'Boeckle & Co.'), brokerName: g('BROKER_NAME', '')};
 }
 
 function createAgreement(d) {
@@ -509,10 +506,10 @@ function getAgreement(id) {
   const a = findAgreement(id);
   if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
   const s = agreementSettings();
-  return json({ok: true, live: s.live, status: a.data.status, buyer: a.data.buyer, property: a.data.property, html: agreementHtml(a.data, s)});
+  return json({ok: true, live: s.live, status: a.data.status, buyer: a.data.buyer, property: a.data.property, html: agreementHtml(a.data, s), duties: dutiesHtml(a.data, s, '')});
 }
 
-// The agreement wording (shared by the signing page and the signed PDF). DRAFT: broker approval required.
+// The agreement wording (shared by the signing page and the signed PDF).
 function agreementHtml(a, s) {
   const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<h1>Single-Property Non-Exclusive Buyer Representation Agreement</h1>
@@ -522,11 +519,31 @@ function agreementHtml(a, s) {
 <h2>3. Broker's services</h2><p>Broker will make good-faith efforts to show the Property, share information about it, and, if Buyer chooses, help Buyer prepare, negotiate and complete an offer and purchase.</p>
 <h2>4. Broker's compensation</h2><p>If Buyer buys the Property during this agreement, or within ${s.protectDays} days after it ends, Buyer agrees Broker is owed <b>${e(s.fee)}</b>, due at closing. <b>This fee is not set by law and is fully negotiable.</b> Buyer may ask that the seller pay all or part of it as part of the offer, and Broker will help negotiate that. Broker will not accept more than this amount from all sources combined.</p>
 <h2>5. Other buyers and dual agency</h2><p>Broker may work with other buyers interested in the same or similar properties. If Broker would also represent the seller of the Property, Broker must first obtain Buyer's written consent on Nevada's Consent to Act form.</p>
-<h2>6. Nevada disclosures</h2><p>Buyer acknowledges receiving the Nevada <i>Duties Owed by a Nevada Real Estate Licensee</i> disclosure${s.dutiesUrl ? ` (<a href="${e(s.dutiesUrl)}" target="_blank" rel="noopener">view the form</a>)` : ''}.</p>
+<h2>6. Nevada disclosures</h2><p>Buyer acknowledges receiving the Nevada <i>Duties Owed by a Nevada Real Estate Licensee</i> disclosure (form 525), included with this agreement.</p>
 <h2>7. Wire fraud warning</h2><p>Criminals target real estate payments. Broker will never send wiring instructions by email. Always confirm wiring instructions by phone with the title or escrow company, using a number you find independently, before sending money.</p>
 <h2>8. Fair housing</h2><p>Broker follows all federal, state and local fair housing laws and does not discriminate against anyone.</p>
 <h2>9. Nevada law</h2><p>Nevada law governs this agreement.</p>
 <h2>10. Electronic signature</h2><p>Buyer agrees to sign electronically and agrees that an electronic signature has the same effect as a handwritten one. Buyer will receive a signed copy by email.</p>`;
+}
+
+// Nevada Real Estate Division form 525, filled in for the buyer side.
+function dutiesHtml(a, s, dual, initials) {
+  const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const box = on => on ? '&#9746;' : '&#9744;';
+  const ini = initials ? e(initials) : '______';
+  return `<h1>Duties Owed by a Nevada Real Estate Licensee</h1>
+<p><i>This form does not constitute a contract for services nor an agreement to pay compensation.</i></p>
+<p>In Nevada, a real estate licensee is required to provide a form setting forth the duties owed by the licensee to: a) each party for whom the licensee is acting as an agent in the real estate transaction, and b) each unrepresented party to the real estate transaction, if any.</p>
+<p><b>Licensee:</b> The licensee in the real estate transaction is <b>${e(s.licensee)}</b> whose license/permit number is <b>${e(s.licenseNo)}</b>.<br>
+The licensee is acting for <b>${e(a.buyer)}</b>, who is/are the ${box(false)} Seller/Landlord ${box(true)} Buyer/Tenant.<br>
+<b>Broker:</b> The Broker is <b>${s.brokerName ? e(s.brokerName) : 'the designated broker of ' + e(s.brokerage)}</b>, whose company is <b>${e(s.brokerage)}</b>.<br>
+Are there additional licensees involved in this transaction? ${box(false)} Yes ${box(true)} No</p>
+<h2>Licensee's duties owed to all parties</h2><p>A Nevada real estate licensee shall: 1. Not deal with any party to a real estate transaction in a manner which is deceitful, fraudulent or dishonest. 2. Exercise reasonable skill and care with respect to all parties to the real estate transaction. 3. Disclose to each party to the real estate transaction as soon as practicable: a. any material and relevant facts, data or information which licensee knows, or with reasonable care and diligence the licensee should know, about the property; b. each source from which licensee will receive compensation. 4. Abide by all other duties, responsibilities and obligations required of the licensee in law or regulations.</p>
+<h2>Licensee's duties owed to the client</h2><p>A Nevada real estate licensee shall: 1. Exercise reasonable skill and care to carry out the terms of the brokerage agreement and the licensee's duties in the brokerage agreement or property management agreement; 2. Not disclose, except to the licensee's broker, confidential information relating to a client for 1 year after the revocation or termination of the brokerage agreement, unless licensee is required to do so by court order or the client gives written permission; 3. Seek a sale, purchase, option, rental or lease of real property at the price and terms stated in the brokerage agreement or at a price acceptable to the client; 4. Present all offers made to, or by the client as soon as practicable, unless the client chooses to waive the duty of the licensee to present all offers and signs a waiver of the duty on a form prescribed by the Division; 5. Disclose to the client material facts of which the licensee has knowledge concerning the real estate transaction; 6. Advise the client to obtain advice from an expert relating to matters which are beyond the expertise of the licensee; and 7. Account to the client for all money and property the licensee receives in which the client may have an interest.</p>
+<h2>Duties owed by a broker who assigns different licensees affiliated with the brokerage to separate parties</h2><p>Each licensee shall not disclose, except to the real estate broker, confidential information relating to client.</p>
+<h2>Licensee acting for both parties</h2><p>The Licensee <b>MAY [${dual === 'MAY' ? ini : '______'}]</b> OR <b>MAY NOT [${dual === 'MAY NOT' ? ini : '______'}]</b> in the future act for two or more parties who have interests adverse to each other. In acting for these parties, the licensee has a conflict of interest. Before a licensee may act for two or more parties, the licensee must give you a "Consent to Act" form to sign.</p>
+<p><b>I/We acknowledge receipt of a copy of this list of licensee duties, and have read and understand this disclosure.</b></p>
+<p style="font-size:12px;color:#666">Nevada Real Estate Division form 525, revised 10/03/2023.</p>`;
 }
 
 function signAgreement(d) {
@@ -534,8 +551,11 @@ function signAgreement(d) {
   if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
   if (a.data.status === 'Signed') return json({ok: true, already: true});
   const name = String(d.typedName || '').trim(), sig = String(d.signature || '');
-  if (name.length < 2 || d.consent !== true) return json({ok: false, error: 'Please type your full name and check both boxes.'});
+  if (name.length < 2 || d.consent !== true) return json({ok: false, error: 'Please type your full name and check all the boxes.'});
   if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sig) || sig.length > 400000) return json({ok: false, error: 'Please draw your signature in the box.'});
+  const dual = String(d.dualAgency || '');
+  if (d.dutiesAck !== true || ['MAY', 'MAY NOT'].indexOf(dual) < 0) return json({ok: false, error: 'Please choose MAY or MAY NOT and acknowledge the Duties Owed form.'});
+  const initials = name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 4);
   const s = agreementSettings(), when = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
   const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const doc = `<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#111}h1{font-size:16pt}h2{font-size:11.5pt;margin:14px 0 4px}.sig{margin-top:22px;border-top:1px solid #000;padding-top:10px}.audit{margin-top:18px;font-size:8.5pt;color:#555}</style></head><body>
@@ -543,7 +563,10 @@ ${s.live ? '' : '<p style="color:#b00;font-weight:bold">DRAFT FOR BROKER REVIEW:
 ${agreementHtml(a.data, s)}
 <div class="sig"><p><b>Buyer signature</b></p><img src="${sig}" style="height:70px"><p>${e(name)}<br>Signed ${e(when)} (Pacific)</p>
 <p><b>Broker:</b> ${e(s.brokerage)}, by ${e(s.licensee)}${s.licenseNo ? `, Nevada license #${e(s.licenseNo)}` : ''}</p></div>
-<div class="audit">Signed electronically on juliancrider.com. Agreement ID ${e(a.data.id)}. Buyer email ${e(a.data.email)}. Device: ${e(String(d.ua || '').slice(0, 200))}.</div></body></html>`;
+<div style="page-break-before:always"></div>
+${dutiesHtml(a.data, s, dual, initials)}
+<div class="sig"><p><b>Buyer/Tenant</b></p><img src="${sig}" style="height:70px"><p>${e(name)}<br>Date/time: ${e(when)} (Pacific)</p></div>
+<div class="audit">Signed electronically on juliancrider.com. Buyer chose: licensee ${e(dual)} act for two or more parties (initials ${e(initials)}). Agreement ID ${e(a.data.id)}. Buyer email ${e(a.data.email)}. Device: ${e(String(d.ua || '').slice(0, 200))}.</div></body></html>`;
   const pdf = Utilities.newBlob(doc, 'text/html', 'agreement.html').getAs('application/pdf')
     .setName(`Buyer Agreement - ${name} - ${String(a.data.property).slice(0, 60)}.pdf`.replace(/[\\/:*?"<>|]/g, ''));
   const file = driveFolder('Signed Buyer Agreements').createFile(pdf);
