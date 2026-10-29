@@ -48,15 +48,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Tags: every scored contact has one of `Tier A` (Hot) / `Tier B` (Warm) / `Tier C` (Nurture or Cold), refreshed
   nightly. `Intake Tier A/B/C` = how strong their sign-up was (an input, never overwritten). `Hot`/`Warm` tags are
   never added automatically for Farm, Legacy or "Not DNC checked" contacts.
-- Funnel (`runFunnel`, after nightly scoring): the script itself starts FUB action plans by name (POST
-  actionPlansPeople), max 50/night: Hot → "JC Hot", Warm → "JC Warm", Legacy → "JC Legacy Re-Intro",
-  Farm – Best → "JC Farm Best", Tier C (not farm/legacy) → "JC Long-Term Nurture"; after 25/65/25/60 days they move
-  to Long-Term Nurture (3 years, templates "JC Nurture 01–24"). Skips no/bad email, clients, Has Agent, and anyone
-  who replied or was called in 30 days. "Funnel" sheet tab tracks stage. People tagged `Text OK` (website
-  leads, whose forms carry text consent; added in `fubPerson`) get "<plan> + Text" when that plan exists. Text
-  templates: JC Hot Text 1–3 (31–33), JC Warm Text 1–2 (34–35), JC Nurture Text 1–8 (36–43).
-  `juliancrider.com/?book` opens Book a consultation directly (link for Instagram/text auto-replies). **No FUB automations on Hot/Warm/Tier tags**
-  (they would double-start plans).
+- Funnel (`runFunnel`, after nightly scoring), max 50/night. FUB moved Action Plans to Automations 2.0 (Oct 29)
+  and the API can't start automations (403 on automations/automationsPeople), so the script adds a **trigger tag**
+  and Julián's FUB Automation of the same name starts on "Tag added": Hot → `JC Hot`, Warm → `JC Warm`, Legacy →
+  `JC Legacy Re-Intro`, Farm – Best → `JC Farm Best`, Tier C (not farm/legacy) → `JC Long-Term Nurture`; after
+  25/65/25/60 days they move to Long-Term Nurture (old JC tag removed). `Text OK` people get "<tag> + Text" for stages
+  in `FUNNEL.textLive`. Nothing is tagged for a stage until it's in `FUNNEL.live` — flip those in Code.gs when Julián
+  says an automation is built (auto-update deploys it within the hour). Skips no/bad email, clients, Has Agent, and
+  anyone who replied or was called in 30 days. "Funnel" sheet tab tracks stage. Text templates: JC Hot Text 1–3
+  (31–33), JC Warm Text 1–2 (34–35), JC Nurture Text 1–8 (36–43). `juliancrider.com/?book` opens Book a consultation
+  directly (link for Instagram/text auto-replies); site has no sms: links (they open the booking flow).
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
@@ -71,8 +72,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   compliance approval first.
 
 ## Open to-dos (as of Oct 2026)
-1. Templates loaded: Hot/Warm/Legacy 1–4 (141–152), JC Nurture 01–24, JC Farm Best 1–4. Julián builds the 5 JC
-   plans in FUB (emails only, "pause when contacted" on); then the nightly funnel starts people automatically.
+1. Templates loaded: Hot/Warm/Legacy 1–4 (141–152), JC Nurture 01–24, JC Farm Best 1–4. Julián builds the JC
+   Automations in FUB (trigger: tag added; build sheet in his Drive); then set FUNNEL.live and the nightly funnel runs.
 2. Texts only for `Text OK` (open house sign-in form has no text-consent line yet); SIG content only after compliance approval.
 3. Smart list cleanup (7 lists: Call Today, New Not Contacted, Active on Site, Warm Check-in,
    Likely Sellers, Under Contract, Past Clients & Sphere) and pause unused starter plans.
