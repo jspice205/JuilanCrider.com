@@ -23,7 +23,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "JC Open House Leads" Google Sheet, deployed as the web app the site posts to (`SHEET_URL`).
   Handles: website leads → sheet tabs + email + Follow Up Boss; mortgage rates; buyer agreements
   (PDF to Drive, emails); FUB Inbox auto-import from Google Drive; lead scoring; FUB Scorecard +
-  Hot/Warm tagging (`scoreFubDatabase`, nightly via `setupNightlyScoring`); Monday digest; `loadFubTemplates` (Hot/Warm emails).
+  Hot/Warm tagging (`scoreFubDatabase`, nightly via `setupNightlyScoring`; `activityScore` adds lead-side activity:
+  replies, calls in, DMs, new inquiries, site/IDX visits, email clicks, RealScout views, fading after 90 days, and
+  -10 for "quiet: no reply after 3+ touches"); Monday digest; `loadFubTemplates` (Hot/Warm emails).
   Keys live in Script Properties (`FUB_API_KEY`, etc.), never in code.
   After changing it, Julián must paste it in and redeploy (Deploy → Manage → Edit → New version).
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
