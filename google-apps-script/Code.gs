@@ -416,6 +416,102 @@ function processFubInbox() {
   } finally { lock.releaseLock(); }
 }
 
+// ============================================================
+// FUB SCORECARD — reads everyone in Follow Up Boss, ranks them, writes the
+// "FUB Scorecard" tab and (weekly) emails you who to call.
+//   scoreFubDatabase()   run anytime to refresh the scorecard tab
+//   setupWeeklyDigest()  run once: emails the summary every Monday ~7am
+//   weeklyFubDigest()    what the Monday trigger runs (also safe to run by hand)
+// Tiers: Hot · Warm · Nurture · Cold · Past client / sphere · Partner · Do not contact
+// ============================================================
+function fubAllPeople() {
+  const people = [];
+  for (let offset = 0; offset < 10000; offset += 100) {
+    const res = fubFetch(`people?limit=100&offset=${offset}&sort=created&fields=allFields`, null, 'get');
+    const page = res.people || [];
+    people.push(...page);
+    if (page.length < 100) break;
+    Utilities.sleep(150);
+  }
+  return people;
+}
+
+function daysAgo(iso) { const t = iso ? new Date(iso).getTime() : NaN; return isNaN(t) ? null : Math.floor((Date.now() - t) / 864e5); }
+
+function scorePerson(p) {
+  const tags = (p.tags || []).map(String), has = t => tags.some(x => x.toLowerCase() === t.toLowerCase());
+  const stage = String(p.stage || ''), source = String(p.source || '');
+  const sinceActive = daysAgo(p.lastActivity), sinceCreated = daysAgo(p.created);
+  const contacted = p.contacted === true || p.contacted === 1 || Number(p.contacted) > 0;
+  const why = []; let score = 0;
+  if (/trash|unresponsive|do not/i.test(stage) || has('Has Agent')) return {tier: 'Do not contact', score: 0, why: stage || 'Working with another agent', next: 'Leave out of campaigns'};
+  if (/past client|sphere/i.test(stage) || has('Past Client')) return {tier: 'Past client / sphere', score: 0, why: stage || 'Past client', next: 'Referral and anniversary touches'};
+  if (has('Partner') || /agent|lender|vendor/i.test(stage)) return {tier: 'Partner', score: 0, why: 'Agent / industry / vendor', next: 'Agent Network, not client campaigns'};
+  if (/active client|pending|under contract/i.test(stage)) return {tier: 'Active client', score: 100, why: stage, next: 'Keep the deal moving'};
+  if (/hot/i.test(stage)) { score += 40; why.push('stage: ' + stage); }
+  if (has('Showing requested')) { score += 40; why.push('requested a showing'); }
+  if (has('Agreement signed')) { score += 30; why.push('signed a buyer agreement'); }
+  if (has('Tier A')) { score += 30; why.push('Tier A'); } else if (has('Tier B')) { score += 15; why.push('Tier B'); }
+  if (has('Legacy – High')) { score += 20; why.push('high-value legacy seed'); } else if (has('Legacy – Seed')) { score += 10; why.push('legacy seed'); }
+  if (has('Farm Rank A')) { score += 10; why.push('farm rank A (possible seller)'); }
+  if (has('Likely Seller')) { score += 10; why.push('likely seller'); }
+  if (sinceActive !== null && sinceActive <= 7) { score += 30; why.push(`active ${sinceActive}d ago`); }
+  else if (sinceActive !== null && sinceActive <= 30) { score += 15; why.push(`active ${sinceActive}d ago`); }
+  if (sinceCreated !== null && sinceCreated <= 14) { score += 15; why.push(`new lead (${sinceCreated}d)`); }
+  if (/juliancrider|website|zillow|realtor|open house/i.test(source)) { score += 5; }
+  if (Number(p.price) >= 1000000) { score += 5; why.push('$' + Math.round(Number(p.price) / 1e5) / 10 + 'M price range'); }
+  const tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
+  let next = {Hot: 'Call today', Warm: 'Personal text or email this week', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
+  if (!contacted && sinceCreated !== null && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
+  else if (tier !== 'Cold' && sinceActive !== null && sinceActive > 45) why.push(`quiet ${sinceActive}d`);
+  return {tier, score, why: why.join('; ') || 'no recent signals', next};
+}
+
+const SCORECARD_TAB = {name: 'FUB Scorecard', color: '#d13438',
+  headers: ['Tier', 'Score', 'Name', 'Phone', 'Email', 'Stage', 'Source', 'Why', 'Next step', 'Last activity', 'Created', 'Tags', 'FUB link']};
+const TIER_ORDER = ['Active client', 'Hot', 'Warm', 'Nurture', 'Cold', 'Past client / sphere', 'Partner', 'Do not contact'];
+
+function scoreFubDatabase() {
+  const people = fubAllPeople();
+  const rows = people.map(p => ({p, s: scorePerson(p)}))
+    .sort((a, b) => TIER_ORDER.indexOf(a.s.tier) - TIER_ORDER.indexOf(b.s.tier) || b.s.score - a.s.score);
+  const ss = getSS(); let sheet = ss.getSheetByName(SCORECARD_TAB.name);
+  if (sheet) sheet.clearContents(); else sheet = ensureTab(ss, SCORECARD_TAB);
+  styleHeader(sheet, SCORECARD_TAB);
+  const d = iso => iso ? Utilities.formatDate(new Date(iso), 'America/Los_Angeles', 'M/d/yyyy') : '';
+  const values = rows.map(({p, s}) => [s.tier, s.score, p.name || [p.firstName, p.lastName].join(' '), ((p.phones || [])[0] || {}).value || '',
+    ((p.emails || [])[0] || {}).value || '', p.stage || '', p.source || '', s.why, s.next, d(p.lastActivity), d(p.created), (p.tags || []).join(', '),
+    'https://app.followupboss.com/2/people/view/' + p.id].map(cell));
+  if (values.length) sheet.getRange(2, 1, values.length, SCORECARD_TAB.headers.length).setValues(values);
+  const counts = {}; rows.forEach(r => counts[r.s.tier] = (counts[r.s.tier] || 0) + 1);
+  console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
+  return {rows, counts};
+}
+
+function weeklyFubDigest() {
+  const {rows, counts} = scoreFubDatabase();
+  const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const line = ({p, s}) => `<tr><td style="padding:6px 10px 6px 0"><a href="https://app.followupboss.com/2/people/view/${p.id}" style="color:#111;font-weight:600">${e(p.name || p.firstName)}</a></td><td style="padding:6px 10px 6px 0;color:#444">${e(((p.phones || [])[0] || {}).value || '')}</td><td style="padding:6px 0;color:#666">${e(s.why)}</td></tr>`;
+  const section = (title, list) => list.length ? `<h3 style="margin:18px 0 6px">${title} (${list.length})</h3><table style="border-collapse:collapse;font-size:14px">${list.slice(0, 15).map(line).join('')}</table>` : '';
+  const notContacted = rows.filter(r => /NOT CONTACTED/.test(r.s.next));
+  const hot = rows.filter(r => r.s.tier === 'Hot' && notContacted.indexOf(r) < 0);
+  const quiet = rows.filter(r => r.s.tier === 'Warm' && /quiet/.test(r.s.why));
+  const signed = rows.filter(r => /signed a buyer agreement/.test(r.s.why));
+  const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:720px">
+    <h2 style="margin:0 0 6px">Your week in Follow Up Boss</h2>
+    <p style="color:#555;margin:0 0 10px">${TIER_ORDER.filter(t => counts[t]).map(t => `<b>${counts[t]}</b> ${t}`).join(' · ')}</p>
+    ${section('Call today: new leads not contacted yet', notContacted)}${section('Hot', hot)}${section('Signed buyer agreements', signed)}${section('Warm but going quiet', quiet)}
+    <p style="margin-top:18px"><a href="${getSS().getUrl()}">Open the full FUB Scorecard</a></p></div>`;
+  MailApp.sendEmail({to: NOTIFY_EMAIL, subject: `Who to call this week: ${(counts.Hot || 0) + notContacted.length} priority leads`, htmlBody: html, name: 'juliancrider.com'});
+}
+
+/** Run once: sends the digest every Monday morning. */
+function setupWeeklyDigest() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'weeklyFubDigest').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('weeklyFubDigest').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).inTimezone('America/Los_Angeles').create();
+  console.log('Weekly digest scheduled for Mondays around 7am Pacific.');
+}
+
 /** Start the sheet import over from the top (only needed if you want to re-send everything). */
 function resetSheetImport() {
   ['Sign-Ins', 'Website Leads'].forEach(t => PropertiesService.getScriptProperties().deleteProperty('FUB_IMPORT_' + t));
@@ -470,7 +566,7 @@ function confirmShowing(d, signUrl) {
 // with the same signature. previewAgreement() creates a test link.
 // Optional Script Properties (Project Settings > Script Properties) override the defaults:
 //   AGREEMENT_LIVE "no" to pause · BUYER_FEE · AGREEMENT_TERM_DAYS (30) · PROTECTION_DAYS (30)
-//   LICENSEE_NAME · LICENSE_NUMBER · BROKERAGE · BROKER_NAME (the designated broker, for form 525)
+//   LICENSEE_NAME · LICENSE_NUMBER · BROKERAGE · BROKER_NAME (Landon Boeckle) · BROKER_LICENSE (B.1001882)
 // ============================================================
 const SIGN_PAGE = 'https://juliancrider.com/sign.html';
 const AGREEMENT_TAB = {name: 'Buyer Agreements', color: '#000000',
@@ -480,7 +576,7 @@ function agreementSettings() {
   const p = PropertiesService.getScriptProperties(), g = (k, d) => p.getProperty(k) || d;
   return {live: g('AGREEMENT_LIVE', 'yes') !== 'no', fee: g('BUYER_FEE', '3% of the purchase price'), termDays: Number(g('AGREEMENT_TERM_DAYS', 30)),
     protectDays: Number(g('PROTECTION_DAYS', 30)), licensee: g('LICENSEE_NAME', 'Julián J. Crider'), licenseNo: g('LICENSE_NUMBER', 'S.0177760'),
-    brokerage: g('BROKERAGE', 'Boeckle & Co.'), brokerName: g('BROKER_NAME', '')};
+    brokerage: g('BROKERAGE', 'Boeckle & Co.'), brokerName: g('BROKER_NAME', 'Landon Boeckle'), brokerLicense: g('BROKER_LICENSE', 'B.1001882')};
 }
 
 function createAgreement(d) {
@@ -513,7 +609,7 @@ function getAgreement(id) {
 function agreementHtml(a, s) {
   const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return `<h1>Single-Property Non-Exclusive Buyer Representation Agreement</h1>
-<p><b>Buyer:</b> ${e(a.buyer)}<br><b>Broker:</b> ${e(s.brokerage)}, through licensee ${e(s.licensee)}${s.licenseNo ? ` (Nevada license #${e(s.licenseNo)})` : ''}<br><b>Property:</b> ${e(a.property)}</p>
+<p><b>Buyer:</b> ${e(a.buyer)}<br><b>Broker:</b> ${e(s.brokerage)} (${e(s.brokerName)}, broker, license ${e(s.brokerLicense)}), through licensee ${e(s.licensee)}${s.licenseNo ? ` (Nevada license #${e(s.licenseNo)})` : ''}<br><b>Property:</b> ${e(a.property)}</p>
 <h2>1. What this covers</h2><p>Buyer engages Broker to show and provide services for <b>only the Property listed above</b>. This agreement is <b>non-exclusive</b>: Buyer is free to work with any other agent on any other property, and nothing here limits that.</p>
 <h2>2. How long it lasts</h2><p>This agreement starts when Buyer signs it and ends ${a.termDays} days later at 11:59 p.m., or at closing if Buyer is under contract to buy the Property, whichever is later. Either party may cancel at any time with written notice (email is fine), unless Buyer is already under contract to buy the Property.</p>
 <h2>3. Broker's services</h2><p>Broker will make good-faith efforts to show the Property, share information about it, and, if Buyer chooses, help Buyer prepare, negotiate and complete an offer and purchase.</p>
@@ -562,7 +658,7 @@ function signAgreement(d) {
 ${s.live ? '' : '<p style="color:#b00;font-weight:bold">DRAFT FOR BROKER REVIEW: not a binding agreement.</p>'}
 ${agreementHtml(a.data, s)}
 <div class="sig"><p><b>Buyer signature</b></p><img src="${sig}" style="height:70px"><p>${e(name)}<br>Signed ${e(when)} (Pacific)</p>
-<p><b>Broker:</b> ${e(s.brokerage)}, by ${e(s.licensee)}${s.licenseNo ? `, Nevada license #${e(s.licenseNo)}` : ''}</p></div>
+<p><b>Broker:</b> ${e(s.brokerage)} (broker ${e(s.brokerName)}, license ${e(s.brokerLicense)}), by ${e(s.licensee)}${s.licenseNo ? `, Nevada license #${e(s.licenseNo)}` : ''}</p></div>
 <div style="page-break-before:always"></div>
 ${dutiesHtml(a.data, s, dual, initials)}
 <div class="sig"><p><b>Buyer/Tenant</b></p><img src="${sig}" style="height:70px"><p>${e(name)}<br>Date/time: ${e(when)} (Pacific)</p></div>
