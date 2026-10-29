@@ -1944,9 +1944,27 @@ function openSheet(kind, opt={}){
 function bindOpeners(scope){ scope.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSheet(b.dataset.open, {type:b.dataset.type, prop:b.dataset.prop, why:b.dataset.why})); }
 ['s-homes','s-relo','s-me'].forEach(id => bindOpeners($(id))); bindOpeners(document.querySelector('.top'));
 
-// Google Calendar booking page (Calendar → Create → Appointment schedule → Share → copy link). When set, people
-// who pass the two screening questions pick their own time; when empty, the request goes in and Julián confirms.
-const BOOKING_URL = '';
+// After the screening questions, people pick an open time from Julián's Google Calendar (the Apps Script serves
+// free slots and books them). If times can't load, the request still goes in and Julián confirms by reply.
+function pickTime(c, note){
+  const tz = {timeZone:'America/Los_Angeles'}, requested = () => { $('sheetBody').innerHTML = doneHTML('Consultation requested','Julián will confirm a time within one business day.'); };
+  openRaw('Pick a time', `<p class="fine">Loading open times…</p>`);
+  fetch(SHEET_URL + '?action=slots').then(r => r.json()).then(d => {
+    const days = {}; (d.slots || []).forEach(s => { const k = new Date(s).toLocaleDateString('en-US', {...tz, weekday:'long', month:'short', day:'numeric'}); (days[k] = days[k] || []).push(s); });
+    const keys = Object.keys(days).slice(0, 5); if (!keys.length) return requested();
+    openRaw('Pick a time', (note ? `<p class="err" style="display:block">${note}</p>` : '') + `<p class="fine" style="margin:0 0 12px">30 minutes, Pacific time.</p>` +
+      keys.map(k => `<span class="lab">${k}</span><div class="chips" style="margin-bottom:12px">${days[k].map(s => `<button type="button" class="chip" data-slot="${s}">${new Date(s).toLocaleTimeString('en-US', {...tz, hour:'numeric', minute:'2-digit'})}</button>`).join('')}</div>`).join(''));
+    document.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => {
+      $('sheetBody').innerHTML = `<p class="fine">Booking…</p>`;
+      fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'book', slot:b.dataset.slot, ...c})})
+        .then(r => r.json()).then(res => {
+          if (res.status === 'taken') return pickTime(c, res.message);
+          if (res.status !== 'success') return requested();
+          $('sheetBody').innerHTML = doneHTML('You’re booked', `${res.label} (Pacific time).${c.email ? ' A calendar invite is on its way.' : ''} Julián will call you at ${c.phone}.`);
+        }).catch(requested);
+    });
+  }).catch(requested);
+}
 function bookFlow(preset){
   const st = {type:preset||'', step:1};
   const types = ['Buying a home','Selling or home value','New construction','Relocating to Las Vegas','Just a question'];
@@ -1978,8 +1996,7 @@ function bookFlow(preset){
         notes: joinNotes(['When: '+(st.when||''), 'Meet by: '+(st.how||''), 'Pre-approved: '+(st.pa||''),
           'Working with agent: '+(st.ag==='Yes, signed with one'?'Yes, with a signed agreement':(st.ag||'')), 'Note: '+$('fNote').value.trim()])});
       if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
-      if (BOOKING_URL) { $('sheetBody').innerHTML = doneHTML('One last step','Pick a time that works for you on my calendar.').replace('<button class="pill ghost"', `<a class="pill block" href="${BOOKING_URL}" target="_blank" rel="noopener" style="margin-top:16px">Pick a time</a><button class="pill ghost"`); return; }
-      $('sheetBody').innerHTML = doneHTML('Consultation requested','Julián will confirm a time within one business day.'); };
+      pickTime({...contactVals(), type: st.type, notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl].filter(Boolean).join(' · ')}); };
   }
   s1();
 }
