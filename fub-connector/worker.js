@@ -131,6 +131,17 @@ const TOOLS = [
       Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
       return fub(env, 'templates/' + a.template_id, {method: 'PUT', body});
     }},
+  {name: 'fub_api', description: 'Call any Follow Up Boss API endpoint directly, for anything the other tools don\'t cover ' +
+      '(e.g. GET templates, POST templates, GET smartLists, GET users, GET appointments, POST appointments, GET textMessages, PUT tasks/{id}). ' +
+      'Path is relative to https://api.followupboss.com/v1/. DELETE needs confirm: true; only delete when Julián asks.',
+    inputSchema: {type: 'object', properties: {method: {type: 'string', enum: ['GET', 'POST', 'PUT', 'DELETE']}, path: {type: 'string', description: 'e.g. templates?limit=100'},
+      body: {type: 'object', description: 'JSON body for POST or PUT'}, confirm: {type: 'boolean'}}, required: ['method', 'path']},
+    run: async (env, a) => {
+      const path = String(a.path).replace(/^\/+/, '').replace(/^v1\//, '');
+      if (/^[a-z]+:|\.\./i.test(path)) throw new Error('Use a path like "templates", not a full URL.');
+      if (a.method === 'DELETE' && a.confirm !== true) throw new Error('DELETE needs confirm: true.');
+      return fub(env, path, {method: a.method, body: a.method === 'GET' || a.method === 'DELETE' ? undefined : a.body});
+    }},
   {name: 'list_pipelines', description: 'List deal pipelines and their stages (ids needed for create_deal).',
     inputSchema: {type: 'object', properties: {}},
     run: async env => ((await fub(env, 'pipelines')).pipelines || []).map(p => ({id: p.id, name: p.name, stages: (p.stages || []).map(s => ({id: s.id, name: s.name}))}))},
@@ -164,7 +175,7 @@ async function handle(msg, env) {
   const {id, method, params = {}} = msg;
   if (method === 'initialize') return rpc(id, {protocolVersion: params.protocolVersion || PROTOCOL, capabilities: {tools: {}},
     serverInfo: {name: 'follow-up-boss', version: '1.0.0'},
-    instructions: 'Tools for Julián Crider\'s Follow Up Boss: rank leads, search people, update stages and tags, add notes, log calls, create tasks and deals, create email templates, and start existing action plans. Automations and action plans themselves cannot be created through the API.'});
+    instructions: 'Tools for Julián Crider\'s Follow Up Boss: rank leads, search people, update stages and tags, add notes, log calls, create tasks and deals, create email templates, and start existing action plans. fub_api reaches any other Follow Up Boss endpoint. Automations and action plans themselves cannot be created through the API.'});
   if (method === 'ping') return rpc(id, {});
   if (method === 'tools/list') return rpc(id, {tools: TOOLS.map(({name, description, inputSchema}) => ({name, description, inputSchema}))});
   if (method === 'tools/call') {

@@ -39,6 +39,7 @@ as a Cloudflare secret, never in this repo or in chat.
 | `log_call` | Log a call with its outcome |
 | `create_task` | Create a follow-up task with a due date |
 | `list_action_plans` / `start_action_plan` | Start an existing action plan for one or more people |
+| `fub_api` | Any other Follow Up Boss endpoint (smart lists, users, appointments, templates…). Deletes need confirm |
 | `list_pipelines` / `create_pipeline` | See your deal flows, or build a new one with its stages |
 | `list_email_templates` / `create_email_template` / `update_email_template` | Load ready-to-use email templates (with merge fields) for action plans |
 | `create_deal` / `update_deal` / `list_deals` | Create deals, move them through stages, update price and close date |
