@@ -305,6 +305,7 @@ function fubPerson(tabName, d) {
   const tags = tabName === 'Sign-Ins' ? ['Open House'] : ['Website Lead', 'juliancrider.com'];
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
+  if (tabName !== 'Sign-Ins') tags.push('Text OK');  // website forms carry the "agree to be contacted by text" line
   scoreLead(tabName, d).forEach(t => tags.push(t));
   const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
   if (validEmail(d.email)) person.emails = [{value: String(d.email).trim()}];
@@ -693,7 +694,7 @@ function scoreFubDatabase() {
 // Skipped: no good email, clients/past clients/trash, Has Agent, and anyone who replied or you called in the last
 // 30 days (you're talking; the plan pauses itself when they reply if "Pause when contacted" is on in the plan).
 // Plans are found by name, so build them in Follow Up Boss with exactly these names. A plan that doesn't exist yet
-// is simply skipped. The "Funnel" tab shows who is in which stage.
+// is simply skipped. Optional "JC Hot + Text" etc. (same emails plus texts) are used for people tagged "Text OK". The "Funnel" tab shows who is in which stage.
 // ============================================================
 const FUNNEL = {
   perNight: 50,
@@ -728,7 +729,9 @@ function runFunnel(people) {
     if (used >= FUNNEL.perNight || !planId(stage)) return;
     const cur = rows[p.id];
     if (cur && cur.run) { try { fubFetch('actionPlansPeople/' + cur.run, {status: 'Paused'}, 'put'); } catch (e) {} }
-    const res = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: planId(stage)});
+    // People who agreed to texts (tag "Text OK") get the "<plan> + Text" version when it exists.
+    const withText = has(p, 'Text OK') && ids[(FUNNEL.plans[stage] + ' + Text').toLowerCase()];
+    const res = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: withText || planId(stage)});
     const vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, res.id || '', why];
     if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
     rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today, run: res.id};

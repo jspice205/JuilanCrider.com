@@ -2063,6 +2063,8 @@ function askIntent(){
 }
 // Shows until the visitor picks an answer (up to 3 visits). juliancrider.com/?start always shows it.
 (function(){
+  // juliancrider.com/?book opens Book a consultation right away (the link sent in Instagram and text auto-replies).
+  if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
   const force = /[?&]start\b/.test(location.search);
   let chosen = null, shown = 0;
   try { chosen = localStorage.getItem('jc_intent'); if (chosen === 'asked') chosen = null; shown = +localStorage.getItem('jc_intent_shown') || 0; } catch(e) {}
