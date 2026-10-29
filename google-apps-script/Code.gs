@@ -642,7 +642,9 @@ function scoreFubContinue() { scoreFubDatabase(); }
 function scoreFubDatabase() {
   const started = Date.now();
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'scoreFubContinue').forEach(t => ScriptApp.deleteTrigger(t));
-  const people = fubAllPeople();
+  // Shared brokerage account: score and tag only contacts assigned to Julián (the owner of the API key).
+  const me = fubFetch('me', null, 'get').id;
+  const people = fubAllPeople().filter(p => !p.assignedUserId || p.assignedUserId === me);
   const rows = people.map(p => ({p, s: scorePerson(p)}))
     .sort((a, b) => TIER_ORDER.indexOf(a.s.tier) - TIER_ORDER.indexOf(b.s.tier) || b.s.score - a.s.score);
   const ss = getSS(); let sheet = ss.getSheetByName(SCORECARD_TAB.name);
