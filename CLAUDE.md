@@ -45,6 +45,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   in Cloudflare → Edit code → Deploy.
 
 ## Follow Up Boss facts
+- Shared brokerage account: Joey DeBenedetto (Broker, admin, user 1), Julián (Agent, user 2), Tana Cogan (Agent, 3).
+  Julián can't create Automations or enable texting (admin must submit texting registration); his email isn't
+  connected to FUB yet. Scoring and funnel only touch contacts assigned to user 2 (checked via GET me).
 - Tags: every scored contact has one of `Tier A` (Hot) / `Tier B` (Warm) / `Tier C` (Nurture or Cold), refreshed
   nightly. `Intake Tier A/B/C` = how strong their sign-up was (an input, never overwritten). `Hot`/`Warm` tags are
   never added automatically for Farm, Legacy or "Not DNC checked" contacts.
