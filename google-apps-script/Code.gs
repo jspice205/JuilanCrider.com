@@ -97,6 +97,7 @@ function doPost(e) {
   lock.waitLock(20000);
   try {
     const data = JSON.parse(e.postData.contents);
+    if (data.action === 'signAgreement') return signAgreement(data);
     const ss = getSS();
     const timestamp = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
 
@@ -120,7 +121,11 @@ function doPost(e) {
     }
     // ── Showing requests: send the buyer a confirmation right away ──
     if (tabName === 'Website Leads' && /showing/i.test(data.type || '') && validEmail(data.email)) {
-      try { confirmShowing(data); } catch (err) { console.error('Buyer confirmation failed', err); }
+      let signUrl = '';
+      if (agreementSettings().live && !/Working with agent: Yes, with a signed/.test(data.notes || '')) {
+        try { signUrl = createAgreement(data); } catch (err) { console.error('Agreement not created', err); }
+      }
+      try { confirmShowing(data, signUrl); } catch (err) { console.error('Buyer confirmation failed', err); }
     }
     // ── Every website lead and every open house sign-in goes to Follow Up Boss ──
     if (tabName === 'Website Leads' || tabName === 'Sign-Ins') {
@@ -137,6 +142,7 @@ function doPost(e) {
 
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
+  if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   return json({status: 'ok', message: 'JC Leads API is running'});
 }
 
@@ -424,7 +430,7 @@ function testFub() {
 // ============================================================
 // BUYER CONFIRMATION — branded email to the buyer after a showing request
 // ============================================================
-function confirmShowing(d) {
+function confirmShowing(d, signUrl) {
   const esc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const first = esc(String(d.name || '').trim().split(/\s+/)[0] || 'there');
   const when = [d.timeline, (String(d.notes || '').match(/Preferred time: ([^|]+)/) || [])[1]].filter(Boolean).map(s => esc(s.trim())).join(', ');
@@ -436,7 +442,7 @@ function confirmShowing(d) {
        <p style="margin:18px 0 6px"><b>What happens next</b></p>
        <ol style="margin:0 0 14px 18px;padding:0">
          <li style="margin-bottom:6px">I confirm the day and time with you.</li>
-         <li style="margin-bottom:6px">You get a short buyer agreement to e-sign. It's <b>non-exclusive and covers only this one home</b>, so you're free to work with anyone else. Nevada requires a written agreement before any tour, and it takes about a minute.</li>
+         <li style="margin-bottom:6px">${signUrl ? 'Sign' : 'You get'} a short buyer agreement${signUrl ? '' : ' to e-sign'}. It's <b>non-exclusive and covers only this one home</b>, so you're free to work with anyone else. Nevada requires a written agreement before any tour, and it takes about a minute.${signUrl ? `<br><a href="${signUrl}" style="display:inline-block;margin-top:10px;background:#000;color:#fff;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:999px">Review &amp; sign</a>` : ''}</li>
          <li>We meet at the home. If you're financing, bring your pre-approval letter if you have one.</li>
        </ol>`;
   const html = `<div style="background:#f4f4f5;padding:24px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
@@ -455,6 +461,115 @@ function confirmShowing(d) {
     subject: hasAgent ? 'About your showing request' : 'Your showing request: ' + String(d.property || '').slice(0, 60),
     htmlBody: html, body: html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
   });
+}
+
+// ============================================================
+// BUYER AGREEMENT — single-property, non-exclusive, signed on juliancrider.com/sign.html
+// ⚠ DRAFT WORDING: your broker must approve agreementHtml() before you set the
+// Script Property AGREEMENT_LIVE to "yes". Until then no buyer is sent a link;
+// previewAgreement() creates a test link you and your broker can review.
+// Script Properties used (Project Settings > Script Properties):
+//   AGREEMENT_LIVE      "yes" to start sending signing links with showing confirmations
+//   BUYER_FEE           e.g. "2.5% of the purchase price" (shown in the agreement)
+//   AGREEMENT_TERM_DAYS default 30      PROTECTION_DAYS  default 30
+//   LICENSEE_NAME       default "Julián J. Crider"   LICENSE_NUMBER   your Nevada license #
+//   BROKERAGE           default "Boeckle & Co."      DUTIES_OWED_URL  link to the Duties Owed form
+// ============================================================
+const SIGN_PAGE = 'https://juliancrider.com/sign.html';
+const AGREEMENT_TAB = {name: 'Buyer Agreements', color: '#000000',
+  headers: ['Created', 'Agreement ID', 'Buyer', 'Email', 'Phone', 'Property', 'Fee', 'Term (days)', 'Status', 'Signed at', 'Signed name', 'Signed PDF']};
+
+function agreementSettings() {
+  const p = PropertiesService.getScriptProperties(), g = (k, d) => p.getProperty(k) || d;
+  return {live: g('AGREEMENT_LIVE', '') === 'yes', fee: g('BUYER_FEE', '[fee to be set by Broker]'), termDays: Number(g('AGREEMENT_TERM_DAYS', 30)),
+    protectDays: Number(g('PROTECTION_DAYS', 30)), licensee: g('LICENSEE_NAME', 'Julián J. Crider'), licenseNo: g('LICENSE_NUMBER', ''),
+    brokerage: g('BROKERAGE', 'Boeckle & Co.'), dutiesUrl: g('DUTIES_OWED_URL', '')};
+}
+
+function createAgreement(d) {
+  const s = agreementSettings(), id = Utilities.getUuid();
+  ensureTab(getSS(), AGREEMENT_TAB).appendRow([new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'}), id, d.name, d.email, d.phone, d.property,
+    s.fee, s.termDays, 'Sent', '', '', ''].map(cell));
+  return SIGN_PAGE + '?id=' + id;
+}
+
+function findAgreement(id) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const sheet = getSS().getSheetByName(AGREEMENT_TAB.name);
+  if (!sheet) return null;
+  const v = sheet.getDataRange().getDisplayValues();
+  for (let r = 1; r < v.length; r++) if (v[r][1] === id) {
+    const [created, , buyer, email, phone, property, fee, termDays, status, signedAt, signedName, pdf] = v[r];
+    return {sheet, row: r + 1, data: {created, id, buyer, email, phone, property, fee, termDays: Number(termDays) || 30, status, signedAt, signedName, pdf}};
+  }
+  return null;
+}
+
+function getAgreement(id) {
+  const a = findAgreement(id);
+  if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
+  const s = agreementSettings();
+  return json({ok: true, live: s.live, status: a.data.status, buyer: a.data.buyer, property: a.data.property, html: agreementHtml(a.data, s)});
+}
+
+// The agreement wording (shared by the signing page and the signed PDF). DRAFT: broker approval required.
+function agreementHtml(a, s) {
+  const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<h1>Single-Property Non-Exclusive Buyer Representation Agreement</h1>
+<p><b>Buyer:</b> ${e(a.buyer)}<br><b>Broker:</b> ${e(s.brokerage)}, through licensee ${e(s.licensee)}${s.licenseNo ? ` (Nevada license #${e(s.licenseNo)})` : ''}<br><b>Property:</b> ${e(a.property)}</p>
+<h2>1. What this covers</h2><p>Buyer engages Broker to show and provide services for <b>only the Property listed above</b>. This agreement is <b>non-exclusive</b>: Buyer is free to work with any other agent on any other property, and nothing here limits that.</p>
+<h2>2. How long it lasts</h2><p>This agreement starts when Buyer signs it and ends ${a.termDays} days later at 11:59 p.m., or at closing if Buyer is under contract to buy the Property, whichever is later. Either party may cancel at any time with written notice (email is fine), unless Buyer is already under contract to buy the Property.</p>
+<h2>3. Broker's services</h2><p>Broker will make good-faith efforts to show the Property, share information about it, and, if Buyer chooses, help Buyer prepare, negotiate and complete an offer and purchase.</p>
+<h2>4. Broker's compensation</h2><p>If Buyer buys the Property during this agreement, or within ${s.protectDays} days after it ends, Buyer agrees Broker is owed <b>${e(s.fee)}</b>, due at closing. <b>This fee is not set by law and is fully negotiable.</b> Buyer may ask that the seller pay all or part of it as part of the offer, and Broker will help negotiate that. Broker will not accept more than this amount from all sources combined.</p>
+<h2>5. Other buyers and dual agency</h2><p>Broker may work with other buyers interested in the same or similar properties. If Broker would also represent the seller of the Property, Broker must first obtain Buyer's written consent on Nevada's Consent to Act form.</p>
+<h2>6. Nevada disclosures</h2><p>Buyer acknowledges receiving the Nevada <i>Duties Owed by a Nevada Real Estate Licensee</i> disclosure${s.dutiesUrl ? ` (<a href="${e(s.dutiesUrl)}" target="_blank" rel="noopener">view the form</a>)` : ''}.</p>
+<h2>7. Wire fraud warning</h2><p>Criminals target real estate payments. Broker will never send wiring instructions by email. Always confirm wiring instructions by phone with the title or escrow company, using a number you find independently, before sending money.</p>
+<h2>8. Fair housing</h2><p>Broker follows all federal, state and local fair housing laws and does not discriminate against anyone.</p>
+<h2>9. Nevada law</h2><p>Nevada law governs this agreement.</p>
+<h2>10. Electronic signature</h2><p>Buyer agrees to sign electronically and agrees that an electronic signature has the same effect as a handwritten one. Buyer will receive a signed copy by email.</p>`;
+}
+
+function signAgreement(d) {
+  const a = findAgreement(String(d.id || ''));
+  if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
+  if (a.data.status === 'Signed') return json({ok: true, already: true});
+  const name = String(d.typedName || '').trim(), sig = String(d.signature || '');
+  if (name.length < 2 || d.consent !== true) return json({ok: false, error: 'Please type your full name and check both boxes.'});
+  if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sig) || sig.length > 400000) return json({ok: false, error: 'Please draw your signature in the box.'});
+  const s = agreementSettings(), when = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
+  const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const doc = `<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#111}h1{font-size:16pt}h2{font-size:11.5pt;margin:14px 0 4px}.sig{margin-top:22px;border-top:1px solid #000;padding-top:10px}.audit{margin-top:18px;font-size:8.5pt;color:#555}</style></head><body>
+${s.live ? '' : '<p style="color:#b00;font-weight:bold">DRAFT FOR BROKER REVIEW: not a binding agreement.</p>'}
+${agreementHtml(a.data, s)}
+<div class="sig"><p><b>Buyer signature</b></p><img src="${sig}" style="height:70px"><p>${e(name)}<br>Signed ${e(when)} (Pacific)</p>
+<p><b>Broker:</b> ${e(s.brokerage)}, by ${e(s.licensee)}${s.licenseNo ? `, Nevada license #${e(s.licenseNo)}` : ''}</p></div>
+<div class="audit">Signed electronically on juliancrider.com. Agreement ID ${e(a.data.id)}. Buyer email ${e(a.data.email)}. Device: ${e(String(d.ua || '').slice(0, 200))}.</div></body></html>`;
+  const pdf = Utilities.newBlob(doc, 'text/html', 'agreement.html').getAs('application/pdf')
+    .setName(`Buyer Agreement - ${name} - ${String(a.data.property).slice(0, 60)}.pdf`.replace(/[\\/:*?"<>|]/g, ''));
+  const file = driveFolder('Signed Buyer Agreements').createFile(pdf);
+  a.sheet.getRange(a.row, 9, 1, 4).setValues([['Signed', when, cell(name), file.getUrl()]]);
+  MailApp.sendEmail({to: a.data.email, cc: NOTIFY_EMAIL, replyTo: NOTIFY_EMAIL, name: 'Julián J. Crider',
+    subject: 'Your signed buyer agreement: ' + String(a.data.property).slice(0, 60), attachments: [pdf],
+    htmlBody: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#1c1c1e"><p>Hi ${e(String(a.data.buyer).split(/\s+/)[0])},</p><p>Thanks for signing. Your copy of the one-home buyer agreement for <b>${e(a.data.property)}</b> is attached. I'll see you at the showing.</p><p>Julián J. Crider<br><span style="color:#6e6e73">702-498-2571 · juliancrider.com</span></p></div>`});
+  try { tagInFub(a.data.email, ['Agreement signed'], `Signed single-property buyer agreement for ${a.data.property} on ${when}. PDF: ${file.getUrl()}`); }
+  catch (err) { console.error('FUB tag failed', err); }
+  return json({ok: true});
+}
+
+function tagInFub(email, tags, note) {
+  if (!PropertiesService.getScriptProperties().getProperty('FUB_API_KEY') || !validEmail(email)) return;
+  const found = fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people;
+  if (!(found && found.length)) return;
+  const merged = (found[0].tags || []).slice();
+  tags.forEach(t => { if (merged.indexOf(t) < 0) merged.push(t); });
+  fubFetch('people/' + found[0].id, {tags: merged}, 'put');
+  if (note) fubFetch('notes', {personId: found[0].id, subject: 'Buyer agreement', body: note});
+}
+
+/** Creates a test agreement (works before AGREEMENT_LIVE) and logs the link for you and your broker to review. */
+function previewAgreement() {
+  const url = createAgreement({name: 'Test Buyer', email: NOTIFY_EMAIL, phone: '702-555-0100', property: '11616 Zagarolo Ln, Las Vegas, NV'});
+  console.log('Open this to review and test-sign: ' + url);
 }
 
 /** Sends the buyer confirmation to you so you can see it (uses your notification email). */
