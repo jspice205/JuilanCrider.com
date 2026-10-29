@@ -116,6 +116,21 @@ const TOOLS = [
       for (const id of a.person_ids) done.push(await fub(env, 'actionPlansPeople', {method: 'POST', body: {personId: id, actionPlanId: a.action_plan_id}}));
       return {started: done.length};
     }},
+  {name: 'list_email_templates', description: 'List your Follow Up Boss email templates (id, name, subject).',
+    inputSchema: {type: 'object', properties: {}},
+    run: async env => ((await fub(env, 'templates?limit=100')).templates || []).map(t => ({id: t.id, name: t.name, subject: t.subject}))},
+  {name: 'create_email_template', description: 'Create an email template in Follow Up Boss, ready to use in action plans. ' +
+      'Body is HTML; merge fields like %contact_first_name% work. Write short, plain emails and sign as Julián.',
+    inputSchema: {type: 'object', properties: {name: {type: 'string'}, subject: {type: 'string'}, body: {type: 'string', description: 'HTML, e.g. <p>Hi %contact_first_name%,</p>'}},
+      required: ['name', 'subject', 'body']},
+    run: async (env, a) => fub(env, 'templates', {method: 'POST', body: {name: a.name, subject: a.subject, body: a.body}})},
+  {name: 'update_email_template', description: 'Change the name, subject or body of an existing email template.',
+    inputSchema: {type: 'object', properties: {template_id: {type: 'number'}, name: {type: 'string'}, subject: {type: 'string'}, body: {type: 'string'}}, required: ['template_id']},
+    run: async (env, a) => {
+      const body = {name: a.name, subject: a.subject, body: a.body};
+      Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+      return fub(env, 'templates/' + a.template_id, {method: 'PUT', body});
+    }},
   {name: 'list_pipelines', description: 'List deal pipelines and their stages (ids needed for create_deal).',
     inputSchema: {type: 'object', properties: {}},
     run: async env => ((await fub(env, 'pipelines')).pipelines || []).map(p => ({id: p.id, name: p.name, stages: (p.stages || []).map(s => ({id: s.id, name: s.name}))}))},
@@ -149,7 +164,7 @@ async function handle(msg, env) {
   const {id, method, params = {}} = msg;
   if (method === 'initialize') return rpc(id, {protocolVersion: params.protocolVersion || PROTOCOL, capabilities: {tools: {}},
     serverInfo: {name: 'follow-up-boss', version: '1.0.0'},
-    instructions: 'Tools for Julián Crider\'s Follow Up Boss: rank leads, search people, update stages and tags, add notes, log calls, create tasks and deals, and start existing action plans. Automations and action plans themselves cannot be created through the API.'});
+    instructions: 'Tools for Julián Crider\'s Follow Up Boss: rank leads, search people, update stages and tags, add notes, log calls, create tasks and deals, create email templates, and start existing action plans. Automations and action plans themselves cannot be created through the API.'});
   if (method === 'ping') return rpc(id, {});
   if (method === 'tools/list') return rpc(id, {tools: TOOLS.map(({name, description, inputSchema}) => ({name, description, inputSchema}))});
   if (method === 'tools/call') {

@@ -40,10 +40,16 @@ as a Cloudflare secret, never in this repo or in chat.
 | `create_task` | Create a follow-up task with a due date |
 | `list_action_plans` / `start_action_plan` | Start an existing action plan for one or more people |
 | `list_pipelines` / `create_pipeline` | See your deal flows, or build a new one with its stages |
+| `list_email_templates` / `create_email_template` / `update_email_template` | Load ready-to-use email templates (with merge fields) for action plans |
 | `create_deal` / `update_deal` / `list_deals` | Create deals, move them through stages, update price and close date |
 
 ## What it can't do
 
 Follow Up Boss doesn't allow these through its API, so they stay manual in FUB:
-creating or editing **action plans**, **automations**, **smart lists**, and **sending texts or emails**.
+creating or editing **action plans**, **automations**, **smart lists**, and **text templates**, and **sending texts or emails**.
 Claude can still start plans you've already built, which then send the messages.
+
+## Updating the connector
+
+When `worker.js` changes: open the Worker in Cloudflare → **Edit code** → select all, paste the new file → **Deploy**.
+Your secrets and link stay the same. Start a new Claude conversation to see new tools.
