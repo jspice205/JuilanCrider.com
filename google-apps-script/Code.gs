@@ -692,31 +692,33 @@ function scoreFubDatabase() {
 }
 
 // ============================================================
-// FUNNEL — moves everyone through your action plans for you, a few dozen people a night (so it reads as personal
-// and protects your email reputation). Runs after the nightly scoring; you never click "start plan".
+// FUNNEL — moves everyone through your Follow Up Boss automations for you, a few dozen people a night (so it reads
+// as personal and protects your email reputation). Runs after the nightly scoring; you never start anything by hand.
 //   Hot (Tier A) or Warm (Tier B) or Legacy re-intro or Farm – Best  →  then the 3-year Long-Term Nurture.
 //   Tier C (not farm/legacy) goes straight to Long-Term Nurture. Hot upgrades anyone in Warm or Nurture.
+// How it starts them: Follow Up Boss Automations can't be started through the API, so the script adds a trigger tag
+// (e.g. "JC Hot") and the Automation named the same starts on "Tag added". Moving to a new stage removes the old tag.
+// People tagged "Text OK" get the "+ Text" tag (e.g. "JC Hot + Text") once that automation is live.
 // Skipped: no good email, clients/past clients/trash, Has Agent, and anyone who replied or you called in the last
-// 30 days (you're talking; the plan pauses itself when they reply if "Pause when contacted" is on in the plan).
-// Plans are found by name, so build them in Follow Up Boss with exactly these names. A plan that doesn't exist yet
-// is simply skipped. Optional "JC Hot + Text" etc. (same emails plus texts) are used for people tagged "Text OK". The "Funnel" tab shows who is in which stage.
+// 30 days. LIVE lists which automations Julián has built; nothing is tagged for a stage until it's listed there.
+// The "Funnel" tab shows who is in which stage.
 // ============================================================
 const FUNNEL = {
   perNight: 50,
-  plans: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
+  tags: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
+  live: [],      // stages whose automation exists, e.g. ['hot', 'warm', 'legacy', 'farm', 'nurture']
+  textLive: [],  // stages whose "+ Text" automation exists, e.g. ['hot', 'warm', 'nurture']
   handoffDays: {hot: 25, warm: 65, legacy: 25, farm: 60}  // days after starting, move on to Long-Term Nurture
 };
-const FUNNEL_TAB = {name: 'Funnel', color: '#0B8043', headers: ['Person ID', 'Name', 'Stage', 'Started', 'Plan run ID', 'Why']};
+const FUNNEL_TAB = {name: 'Funnel', color: '#0B8043', headers: ['Person ID', 'Name', 'Stage', 'Started', 'Trigger tag', 'Why']};
 
 function runFunnel(people) {
-  const ids = {};
-  (fubFetch('actionPlans?limit=100', null, 'get').actionPlans || []).forEach(a => ids[String(a.name).trim().toLowerCase()] = a.id);
-  const planId = k => ids[FUNNEL.plans[k].toLowerCase()];
-  if (!Object.keys(FUNNEL.plans).some(planId)) { console.log('Funnel: none of the JC plans exist yet, so nobody was started.'); return 0; }
+  if (!FUNNEL.live.length) { console.log('Funnel: no automations are marked live yet, so nobody was started.'); return 0; }
+  const allTags = Object.keys(FUNNEL.tags).reduce((list, k) => list.concat([FUNNEL.tags[k], FUNNEL.tags[k] + ' + Text']), []);
   const sheet = ensureTab(getSS(), FUNNEL_TAB), last = sheet.getLastRow();
   const rows = {};
   (last > 1 ? sheet.getRange(2, 1, last - 1, FUNNEL_TAB.headers.length).getValues() : [])
-    .forEach((r, i) => rows[r[0]] = {row: i + 2, stage: r[2], started: r[3], run: r[4]});
+    .forEach((r, i) => rows[r[0]] = {row: i + 2, stage: r[2], started: r[3]});
   const props = PropertiesService.getScriptProperties();
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
   let used = props.getProperty('FUNNEL_DAY') === today ? Number(props.getProperty('FUNNEL_COUNT')) || 0 : 0, started = 0;
@@ -731,15 +733,13 @@ function runFunnel(people) {
     return !talked.some(d => d < 30);
   };
   const start = (p, stage, why) => {
-    if (used >= FUNNEL.perNight || !planId(stage)) return;
-    const cur = rows[p.id];
-    if (cur && cur.run) { try { fubFetch('actionPlansPeople/' + cur.run, {status: 'Paused'}, 'put'); } catch (e) {} }
-    // People who agreed to texts (tag "Text OK") get the "<plan> + Text" version when it exists.
-    const withText = has(p, 'Text OK') && ids[(FUNNEL.plans[stage] + ' + Text').toLowerCase()];
-    const res = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: withText || planId(stage)});
-    const vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, res.id || '', why];
+    if (used >= FUNNEL.perNight || FUNNEL.live.indexOf(stage) < 0) return;
+    const tag = FUNNEL.tags[stage] + (has(p, 'Text OK') && FUNNEL.textLive.indexOf(stage) >= 0 ? ' + Text' : '');
+    const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0).concat(tag);
+    fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next;
+    const cur = rows[p.id], vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, tag, why];
     if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
-    rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today, run: res.id};
+    rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today};
     used++; started++; Utilities.sleep(120);
   };
   const has = (p, t) => (p.tags || []).indexOf(t) >= 0, stageOf = p => (rows[p.id] || {}).stage;
@@ -755,7 +755,7 @@ function runFunnel(people) {
   eligible.filter(p => !stageOf(p) && has(p, 'Tier C') && !has(p, 'Farm') && !(p.tags || []).some(t => /^Legacy/.test(t)))
     .forEach(p => start(p, 'nurture', 'Tier C'));
   props.setProperty('FUNNEL_DAY', today); props.setProperty('FUNNEL_COUNT', String(used));
-  console.log(`Funnel: started ${started} people in plans tonight (${used}/${FUNNEL.perNight} for today).`);
+  console.log(`Funnel: started ${started} people tonight (${used}/${FUNNEL.perNight} for today).`);
   return started;
 }
 
