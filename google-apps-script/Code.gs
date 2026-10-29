@@ -699,8 +699,11 @@ function scoreFubDatabase() {
 // How it starts them: Follow Up Boss Automations can't be started through the API, so the script adds a trigger tag
 // (e.g. "JC Hot") and the Automation named the same starts on "Tag added". Moving to a new stage removes the old tag.
 // People tagged "Text OK" get the "+ Text" tag (e.g. "JC Hot + Text") once that automation is live.
-// Skipped: no good email, clients/past clients/trash, Has Agent, and anyone who replied or you called in the last
-// 30 days. LIVE lists which automations Julián has built; nothing is tagged for a stage until it's listed there.
+// Replies don't stop anything: the automation keeps going until they book or you pause it.
+// Pause: someone in a deal (stage Active Client, Pending, Under Contract or Closed) or tagged "Pause" gets their JC
+// tag removed. When that changes (deal fell through, you removed "Pause"), they restart in Long-Term Nurture.
+// Never started: no good email, past clients/sphere/trash, Has Agent. LIVE lists which automations Julián has built;
+// nothing is tagged for a stage until it's listed there.
 // The "Funnel" tab shows who is in which stage.
 // ============================================================
 const FUNNEL = {
@@ -723,26 +726,33 @@ function runFunnel(people) {
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
   let used = props.getProperty('FUNNEL_DAY') === today ? Number(props.getProperty('FUNNEL_COUNT')) || 0 : 0, started = 0;
 
+  const paused = p => /active client|pending|under contract|closed/i.test(String(p.stage || '')) || has(p, 'Pause');
   const ok = p => {
     const tags = p.tags || [], stage = String(p.stage || '');
     if (!(p.emails || []).some(e => validEmail(e.value) && !/invalid|bounce|bad/i.test(e.status || ''))) return false;
-    if (/trash|unresponsive|do not|past client|sphere|active client|pending|under contract|closed/i.test(stage)) return false;
-    if (tags.some(t => /^(Has Agent|Partner|Do Not Contact)$/i.test(t))) return false;
-    const talked = [p.lastReceivedText, p.lastReceivedEmail, p.lastIncomingCall, p.lastReceivedInboxAppMessage, p.lastOutgoingCall]
-      .map(daysAgo).filter(d => d !== null);
-    return !talked.some(d => d < 30);
+    if (/trash|unresponsive|do not|past client|sphere/i.test(stage) || paused(p)) return false;
+    return !tags.some(t => /^(Has Agent|Partner|Do Not Contact)$/i.test(t));
+  };
+  const record = (p, stage, tag, why) => {
+    const cur = rows[p.id], vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, tag, why];
+    if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
+    rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today};
   };
   const start = (p, stage, why) => {
     if (used >= FUNNEL.perNight || FUNNEL.live.indexOf(stage) < 0) return;
     const tag = FUNNEL.tags[stage] + (has(p, 'Text OK') && FUNNEL.textLive.indexOf(stage) >= 0 ? ' + Text' : '');
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0).concat(tag);
     fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next;
-    const cur = rows[p.id], vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, tag, why];
-    if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
-    rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today};
+    record(p, stage, tag, why);
     used++; started++; Utilities.sleep(120);
   };
   const has = (p, t) => (p.tags || []).indexOf(t) >= 0, stageOf = p => (rows[p.id] || {}).stage;
+  // Pause anyone now in a deal or tagged "Pause" (doesn't count toward tonight's limit; nothing is sent).
+  people.filter(p => stageOf(p) && stageOf(p) !== 'paused' && paused(p)).forEach(p => {
+    const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0);
+    if (next.length !== (p.tags || []).length) { fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; }
+    record(p, 'paused', '', 'paused from ' + stageOf(p) + (has(p, 'Pause') ? ' (Pause tag)' : ' (' + p.stage + ')'));
+  });
   const eligible = people.filter(ok);
   // In priority order, until tonight's limit is used up.
   // Hot/Warm tags stay on for good, so only a tag added tonight moves someone up from Warm or Nurture.
@@ -750,6 +760,7 @@ function runFunnel(people) {
   eligible.filter(p => has(p, 'Warm') && !has(p, 'Hot') && (!stageOf(p) || (p.newWarm && stageOf(p) === 'nurture'))).forEach(p => start(p, 'warm', 'Tier B'));
   eligible.filter(p => FUNNEL.handoffDays[stageOf(p)] && daysAgo(rows[p.id].started) >= FUNNEL.handoffDays[stageOf(p)])
     .forEach(p => start(p, 'nurture', 'finished ' + stageOf(p)));
+  eligible.filter(p => stageOf(p) === 'paused').forEach(p => start(p, 'nurture', 'resumed after pause'));
   eligible.filter(p => !stageOf(p) && (p.tags || []).some(t => /^Legacy/.test(t))).forEach(p => start(p, 'legacy', 'Legacy contact'));
   eligible.filter(p => !stageOf(p) && has(p, 'Farm – Best')).forEach(p => start(p, 'farm', 'Farm – Best'));
   eligible.filter(p => !stageOf(p) && has(p, 'Tier C') && !has(p, 'Farm') && !(p.tags || []).some(t => /^Legacy/.test(t)))
