@@ -211,10 +211,11 @@ function fubPerson(tabName, d) {
 }
 
 // Scores a new lead from what the form collected and returns tier tags
-// ("Tier A/B/C", "Likely Seller", "Has Agent"), so FUB Smart Lists and automations can act on them.
+// ("Intake Tier A/B/C" = how strong the sign-up looked, plus today's "Tier A/B/C" and "Hot"/"Warm" so a strong new
+// lead starts its action plan right away; the nightly scoreFubDatabase keeps Tier and Hot/Warm current after that).
 function scoreLead(tabName, d) {
   const notes = String(d.notes || ''), type = String(d.type || '').toLowerCase(), tl = String(d.timeline || '');
-  if (/Working with agent: Yes, with a signed/.test(notes)) return ['Tier C', 'Has Agent'];
+  if (/Working with agent: Yes, with a signed/.test(notes)) return ['Intake Tier C', 'Tier C', 'Has Agent'];
   const tags = [];
   let pts = ({'ASAP / Already looking': 30, 'Ready now': 30, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
   const interest = Number(d.score) || 0;
@@ -224,7 +225,9 @@ function scoreLead(tabName, d) {
   else if (/sell|home value/.test(type)) { tags.push('Likely Seller'); pts += 20; }
   else if (/new construction|buying|relocat/.test(type)) pts += 10;
   if (/^Owning/.test(String(d.status || '')) && pts >= 15) tags.push('Likely Seller');
-  tags.unshift(pts >= 45 ? 'Tier A' : pts >= 25 ? 'Tier B' : 'Tier C');
+  const t = pts >= 45 ? 'A' : pts >= 25 ? 'B' : 'C';
+  tags.unshift('Intake Tier ' + t, 'Tier ' + t);
+  if (t !== 'C') tags.push(t === 'A' ? 'Hot' : 'Warm');
   return tags.filter((t, i) => tags.indexOf(t) === i);
 }
 
@@ -326,7 +329,7 @@ function tagScoredLeadsInFub() {
     if (Date.now() - started > 5 * 60 * 1000) { console.log(`Paused at row ${r + 1}. Run tagScoredLeadsInFub again to continue.`); break; }
     const get = name => String(values[r][head.indexOf(name)] || '').trim();
     const tier = get('Tier'), flags = get('Flags');
-    const want = [tier === 'Partner' ? 'Partner' : 'Tier ' + tier];
+    const want = [tier === 'Partner' ? 'Partner' : 'Intake Tier ' + tier];
     if (get('Seller')) want.push('Likely Seller');
     if (get('Referrer')) want.push('Referrer');
     if (/SIG/.test(flags)) want.push('SIG – verify');
@@ -455,7 +458,8 @@ function scorePerson(p) {
   if (/hot/i.test(stage)) { score += 40; why.push('stage: ' + stage); }
   if (has('Showing requested')) { score += 40; why.push('requested a showing'); }
   if (has('Agreement signed')) { score += 30; why.push('signed a buyer agreement'); }
-  if (has('Tier A')) { score += 30; why.push('Tier A'); } else if (has('Tier B')) { score += 15; why.push('Tier B'); }
+  // Intake Tier = how strong their sign-up was. (Plain "Tier A/B/C" is this score's own output, so it isn't an input.)
+  if (has('Intake Tier A')) { score += 30; why.push('strong sign-up (intake A)'); } else if (has('Intake Tier B')) { score += 15; why.push('good sign-up (intake B)'); }
   if (has('Legacy – High')) { score += 20; why.push('high-value legacy seed'); } else if (has('Legacy – Seed')) { score += 10; why.push('legacy seed'); }
   if (has('Farm Rank A')) { score += 10; why.push('farm rank A (possible seller)'); }
   if (has('Likely Seller')) { score += 10; why.push('likely seller'); }
@@ -476,7 +480,12 @@ const SCORECARD_TAB = {name: 'FUB Scorecard', color: '#d13438',
   headers: ['Tier', 'Score', 'Name', 'Phone', 'Email', 'Stage', 'Source', 'Why', 'Next step', 'Last activity', 'Created', 'Tags', 'FUB link']};
 const TIER_ORDER = ['Active client', 'Hot', 'Warm', 'Nurture', 'Cold', 'Past client / sphere', 'Partner', 'Do not contact'];
 
+/** Continues a scoring run that hit Apps Script's time limit (scheduled automatically). */
+function scoreFubContinue() { scoreFubDatabase(); }
+
 function scoreFubDatabase() {
+  const started = Date.now();
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'scoreFubContinue').forEach(t => ScriptApp.deleteTrigger(t));
   const people = fubAllPeople();
   const rows = people.map(p => ({p, s: scorePerson(p)}))
     .sort((a, b) => TIER_ORDER.indexOf(a.s.tier) - TIER_ORDER.indexOf(b.s.tier) || b.s.score - a.s.score);
@@ -489,24 +498,34 @@ function scoreFubDatabase() {
     'https://app.followupboss.com/2/people/view/' + p.id].map(cell));
   if (values.length) sheet.getRange(2, 1, values.length, SCORECARD_TAB.headers.length).setValues(values);
   const counts = {}; rows.forEach(r => counts[r.s.tier] = (counts[r.s.tier] || 0) + 1);
-  // Tag Hot / Warm in FUB so your action-plan automations start. Only adds what's missing; Hot replaces Warm,
-  // and nobody is moved down from Hot automatically (the Hot plan hands off to Warm itself).
-  // Set the Script Property SCORECARD_TAGS to "no" to turn this off.
-  let tagged = 0;
+  // Keep tags current in FUB. Everyone scored gets exactly one of Tier A (Hot) / Tier B (Warm) / Tier C (Nurture or
+  // Cold); "Do not contact" loses its Tier tag. Hot/Warm tags start your action-plan automations, so they're only
+  // added, never removed (Hot replaces Warm; the Hot plan hands off to Warm itself), and never for Farm,
+  // Legacy or not-DNC-checked contacts. Set the Script Property SCORECARD_TAGS to "no" to turn this off.
+  const TIERS = {Hot: 'Tier A', Warm: 'Tier B', Nurture: 'Tier C', Cold: 'Tier C', 'Do not contact': ''};
+  let tagged = 0, unfinished = false;
   if (PropertiesService.getScriptProperties().getProperty('SCORECARD_TAGS') !== 'no') {
-    rows.forEach(({p, s}) => {
-      if (s.tier !== 'Hot' && s.tier !== 'Warm') return;
-      const tags = (p.tags || []).slice(), hasT = t => tags.indexOf(t) >= 0;
-      if (hasT('Farm') || hasT('Not DNC checked')) return;  // these tags start plans that text
-      let next = null;
-      if (s.tier === 'Hot' && !hasT('Hot')) next = tags.filter(t => t !== 'Warm').concat('Hot');
-      if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next = tags.concat('Warm');
-      if (!next) return;
+    for (const {p, s} of rows) {
+      if (!(s.tier in TIERS)) continue;  // past clients, partners and active clients keep their own tags
+      const old = (p.tags || []).slice(), hasT = t => old.indexOf(t) >= 0;
+      let next = old.filter(t => !/^Tier [ABC]$/.test(t));
+      if (TIERS[s.tier]) next.push(TIERS[s.tier]);
+      // Farm, legacy and not-DNC-checked contacts get a Tier but never an automatic plan (legacy goes out in batches).
+      if (!hasT('Farm') && !hasT('Not DNC checked') && !old.some(t => /^Legacy/.test(t))) {
+        if (s.tier === 'Hot' && !hasT('Hot')) next = next.filter(t => t !== 'Warm').concat('Hot');
+        if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next.push('Warm');
+      }
+      if (next.length === old.length && next.every(t => hasT(t))) continue;
+      if (Date.now() - started > 5 * 60 * 1000) { unfinished = true; break; }
       try { fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; tagged++; Utilities.sleep(120); }
       catch (err) { console.error(`Tagging ${p.name}: ${err}`); }
-    });
+    }
   }
-  console.log(`Tagged ${tagged} people Hot/Warm in Follow Up Boss.`);
+  console.log(`Updated tags on ${tagged} people in Follow Up Boss.`);
+  if (unfinished) {  // big first run: pick up where we left off in a minute
+    ScriptApp.newTrigger('scoreFubContinue').timeBased().after(60 * 1000).create();
+    console.log('Ran out of time; continuing automatically in about a minute.');
+  }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
 }

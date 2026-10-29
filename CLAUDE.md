@@ -34,6 +34,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   in Cloudflare → Edit code → Deploy.
 
 ## Follow Up Boss facts
+- Tags: every scored contact has one of `Tier A` (Hot) / `Tier B` (Warm) / `Tier C` (Nurture or Cold), refreshed
+  nightly. `Intake Tier A/B/C` = how strong their sign-up was (an input, never overwritten). `Hot`/`Warm` tags are
+  the only automation triggers, and are never added automatically for Farm, Legacy or "Not DNC checked" contacts.
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
