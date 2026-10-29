@@ -124,6 +124,18 @@ const TOOLS = [
       price: {type: 'number'}, projected_close_date: {type: 'string', description: 'YYYY-MM-DD'}}, required: ['name', 'stage_id']},
     run: async (env, a) => fub(env, 'deals', {method: 'POST', body: {name: a.name, stageId: a.stage_id, peopleIds: a.person_ids || [],
       price: a.price, projectedCloseDate: a.projected_close_date}})},
+  {name: 'update_deal', description: 'Move a deal to another stage, or change its name, price, close date or people.',
+    inputSchema: {type: 'object', properties: {deal_id: {type: 'number'}, stage_id: {type: 'number'}, name: {type: 'string'}, price: {type: 'number'},
+      projected_close_date: {type: 'string', description: 'YYYY-MM-DD'}, person_ids: {type: 'array', items: {type: 'number'}}}, required: ['deal_id']},
+    run: async (env, a) => {
+      const body = {stageId: a.stage_id, name: a.name, price: a.price, projectedCloseDate: a.projected_close_date, peopleIds: a.person_ids};
+      Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+      return fub(env, 'deals/' + a.deal_id, {method: 'PUT', body});
+    }},
+  {name: 'create_pipeline', description: 'Create a new deal pipeline (deal flow) with its stages in order, e.g. Buyers: Showing, Offer, Under Contract, Closed.',
+    inputSchema: {type: 'object', properties: {name: {type: 'string'}, stages: {type: 'array', items: {type: 'string'}, description: 'Stage names, first to last'}},
+      required: ['name', 'stages']},
+    run: async (env, a) => fub(env, 'pipelines', {method: 'POST', body: {name: a.name, stages: a.stages.map(name => ({name}))}})},
   {name: 'list_deals', description: 'List open deals (optionally for one pipeline).',
     inputSchema: {type: 'object', properties: {pipeline_id: {type: 'number'}}},
     run: async (env, a) => ((await fub(env, `deals?limit=100${a.pipeline_id ? '&pipelineId=' + a.pipeline_id : ''}`)).deals || [])

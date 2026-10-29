@@ -10,7 +10,7 @@ as a Cloudflare secret, never in this repo or in chat.
 ## Set up (about 10 minutes, one time)
 
 1. **Make a free Cloudflare account** at https://dash.cloudflare.com/sign-up.
-2. **Create the Worker:** Compute (Workers) → **Create** → **Start with Hello World** → name it `fub-claude` → **Deploy**.
+2. **Create the Worker:** in the left menu click **Workers & Pages** (not anything under AI) → **Create** → **Start with Hello World** → name it `fub-claude` → **Deploy**.
 3. **Paste the code:** click **Edit code**, delete everything, paste all of `worker.js`, then click **Deploy**.
 4. **Add two secrets:** go to the Worker's **Settings → Variables and Secrets → Add**, type **Secret**:
    - `FUB_API_KEY`: your Follow Up Boss API key (the same one in your Google Apps Script).
@@ -39,7 +39,8 @@ as a Cloudflare secret, never in this repo or in chat.
 | `log_call` | Log a call with its outcome |
 | `create_task` | Create a follow-up task with a due date |
 | `list_action_plans` / `start_action_plan` | Start an existing action plan for one or more people |
-| `list_pipelines` / `create_deal` / `list_deals` | Work with deals |
+| `list_pipelines` / `create_pipeline` | See your deal flows, or build a new one with its stages |
+| `create_deal` / `update_deal` / `list_deals` | Create deals, move them through stages, update price and close date |
 
 ## What it can't do
 
