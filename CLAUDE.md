@@ -31,6 +31,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Self-updates hourly from GitHub `main` (`updateFromGitHub`/`setupAutoUpdate`: Apps Script API puts Code + manifest,
   makes a version, repoints the web-app deployment). If an update adds OAuth scopes, the hourly run emails Julián to
   run `updateFromGitHub` once by hand. Until he has run setupAutoUpdate, he pastes and redeploys manually.
+  Oct 29: the installer hit 403 "Apps Script API has not been used in project 580055367952" (the script's hidden
+  default GCP project). Self-update only works if that API can be enabled there or the script is moved to a standard
+  GCP project; otherwise give Julián the raw-link paste steps (raw.githubusercontent.com/.../Code.gs, Ctrl+A/C,
+  paste, Deploy > Manage deployments > New version).
   Booking: `bookingSlots`/`bookSlot` (GET ?action=slots, POST action=book) read free time from his default Google
   Calendar (Mon–Sat 9–6 PT, 30 min, 3 h notice) and create the event + FUB note/task.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
