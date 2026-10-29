@@ -443,6 +443,10 @@ function scorePerson(p) {
   const stage = String(p.stage || ''), source = String(p.source || '');
   const sinceActive = daysAgo(p.lastActivity), sinceCreated = daysAgo(p.created);
   const contacted = p.contacted === true || p.contacted === 1 || Number(p.contacted) > 0;
+  // Imported lists (farm, legacy, purchased) aren't new inbound leads, and the import itself
+  // shows up as "activity", so only count activity that happened more than an hour after creation.
+  const bulk = /farm|legacy|import|purchased|list/i.test(source) || has('Farm') || has('Legacy – Seed') || has('Legacy – High');
+  const realActive = sinceActive !== null && (new Date(p.lastActivity) - new Date(p.created)) > 36e5;
   const why = []; let score = 0;
   if (/trash|unresponsive|do not/i.test(stage) || has('Has Agent')) return {tier: 'Do not contact', score: 0, why: stage || 'Working with another agent', next: 'Leave out of campaigns'};
   if (/past client|sphere/i.test(stage) || has('Past Client')) return {tier: 'Past client / sphere', score: 0, why: stage || 'Past client', next: 'Referral and anniversary touches'};
@@ -455,15 +459,16 @@ function scorePerson(p) {
   if (has('Legacy – High')) { score += 20; why.push('high-value legacy seed'); } else if (has('Legacy – Seed')) { score += 10; why.push('legacy seed'); }
   if (has('Farm Rank A')) { score += 10; why.push('farm rank A (possible seller)'); }
   if (has('Likely Seller')) { score += 10; why.push('likely seller'); }
-  if (sinceActive !== null && sinceActive <= 7) { score += 30; why.push(`active ${sinceActive}d ago`); }
-  else if (sinceActive !== null && sinceActive <= 30) { score += 15; why.push(`active ${sinceActive}d ago`); }
-  if (sinceCreated !== null && sinceCreated <= 14) { score += 15; why.push(`new lead (${sinceCreated}d)`); }
+  if (realActive && sinceActive <= 7) { score += 30; why.push(`active ${sinceActive}d ago`); }
+  else if (realActive && sinceActive <= 30) { score += 15; why.push(`active ${sinceActive}d ago`); }
+  if (!bulk && sinceCreated !== null && sinceCreated <= 14) { score += 15; why.push(`new lead (${sinceCreated}d)`); }
   if (/juliancrider|website|zillow|realtor|open house/i.test(source)) { score += 5; }
   if (Number(p.price) >= 1000000) { score += 5; why.push('$' + Math.round(Number(p.price) / 1e5) / 10 + 'M price range'); }
   const tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
   let next = {Hot: 'Call today', Warm: 'Personal text or email this week', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
-  if (!contacted && sinceCreated !== null && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
-  else if (tier !== 'Cold' && sinceActive !== null && sinceActive > 45) why.push(`quiet ${sinceActive}d`);
+  if (has('Not DNC checked')) { next = 'Mail or email only until the phone is DNC-checked'; why.push('DNC not checked'); }
+  else if (!bulk && !contacted && sinceCreated !== null && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
+  else if (tier !== 'Cold' && realActive && sinceActive > 45) why.push(`quiet ${sinceActive}d`);
   return {tier, score, why: why.join('; ') || 'no recent signals', next};
 }
 
@@ -492,6 +497,7 @@ function scoreFubDatabase() {
     rows.forEach(({p, s}) => {
       if (s.tier !== 'Hot' && s.tier !== 'Warm') return;
       const tags = (p.tags || []).slice(), hasT = t => tags.indexOf(t) >= 0;
+      if (hasT('Farm') || hasT('Not DNC checked')) return;  // these tags start plans that text
       let next = null;
       if (s.tier === 'Hot' && !hasT('Hot')) next = tags.filter(t => t !== 'Warm').concat('Hot');
       if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next = tags.concat('Warm');
