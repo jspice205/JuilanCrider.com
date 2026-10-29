@@ -61,8 +61,14 @@ fetch(API + '?action=agreement&id=' + encodeURIComponent(id))
 function render(a) {
   app.innerHTML = `${a.live ? '' : '<div class="draft"><b>Draft for broker review.</b> This page is not in use with buyers yet.</div>'}
     <div class="card doc">${a.html}</div>
+    <div class="card doc">${a.duties}</div>
     <div class="card">
-      <label class="chk"><input type="checkbox" id="c1"> I have read this agreement.</label>
+      <p style="font-weight:600;margin-bottom:6px">Duties Owed: in the future, the licensee…</p>
+      <label class="chk"><input type="radio" name="dual" value="MAY"> <span><b>MAY</b> act for two or more parties who have interests adverse to each other (only with a signed Consent to Act).</span></label>
+      <label class="chk"><input type="radio" name="dual" value="MAY NOT"> <span><b>MAY NOT</b> act for two or more parties who have interests adverse to each other.</span></label>
+      <hr style="border:0;border-top:1px solid var(--hair);margin:12px 0">
+      <label class="chk"><input type="checkbox" id="c1"> I have read the buyer agreement.</label>
+      <label class="chk"><input type="checkbox" id="c3"> I acknowledge receipt of a copy of the Duties Owed disclosure, and have read and understand it.</label>
       <label class="chk"><input type="checkbox" id="c2"> I agree to sign electronically, and that my electronic signature is legally binding.</label>
       <div class="field"><span>Type your full name</span><input type="text" id="nm" autocomplete="name" value=""></div>
       <div class="field"><span>Sign below</span>
@@ -84,11 +90,13 @@ function render(a) {
   document.getElementById('clr').onclick = () => { ctx.clearRect(0, 0, cv.width, cv.height); drawn = false; };
   document.getElementById('go').onclick = () => {
     const err = document.getElementById('err'), name = document.getElementById('nm').value.trim();
-    if (!document.getElementById('c1').checked || !document.getElementById('c2').checked) return err.textContent = 'Please check both boxes.';
+    const dual = (document.querySelector('input[name=dual]:checked') || {}).value;
+    if (!dual) return err.textContent = 'Please choose MAY or MAY NOT on the Duties Owed form.';
+    if (!['c1','c2','c3'].every(k => document.getElementById(k).checked)) return err.textContent = 'Please check all three boxes.';
     if (name.length < 2) return err.textContent = 'Please type your full name.';
     if (!drawn) return err.textContent = 'Please sign in the box.';
     err.textContent = ''; const btn = document.getElementById('go'); btn.disabled = true; btn.textContent = 'Signing…';
-    fetch(API, {method: 'POST', body: JSON.stringify({action: 'signAgreement', id, typedName: name, consent: true, signature: cv.toDataURL('image/png'), ua: navigator.userAgent})})
+    fetch(API, {method: 'POST', body: JSON.stringify({action: 'signAgreement', id, typedName: name, consent: true, signature: cv.toDataURL('image/png'), dualAgency: dual, dutiesAck: true, ua: navigator.userAgent})})
       .then(r => r.json())
       .then(res => {
         if (res.ok) return msg('Signed. Thank you!', 'A signed copy is on its way to your email. Julián will confirm your showing time.');
