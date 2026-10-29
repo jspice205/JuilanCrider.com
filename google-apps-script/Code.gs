@@ -6,6 +6,8 @@
 // Paste into the sheet's Extensions > Apps Script, run testLead once
 // to approve permissions, then Deploy > Manage deployments > Edit >
 // Version: New version > Deploy (keeps the same /exec URL).
+// After setupAutoUpdate (see SELF-UPDATE below), it updates itself from GitHub
+// every hour, so pasting is only needed this one last time.
 // ============================================================
 
 const SPREADSHEET_ID = '15iuFGQmmle8rrCMp1YLKhb2hUpGU23nA-dD71y-V6ws'; // JC Open House Leads
@@ -98,6 +100,7 @@ function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
     if (data.action === 'signAgreement') return signAgreement(data);
+    if (data.action === 'book') return json(bookSlot(data));
     const ss = getSS();
     const timestamp = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
 
@@ -143,7 +146,99 @@ function doPost(e) {
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
+  if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots().map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
+}
+
+// ============================================================
+// BOOKING — "Book a consultation" on the site shows open times from your Google Calendar and books them.
+// Anything timed on your main calendar (Tao shifts, showings, appointments) blocks that time. Change hours here.
+// ============================================================
+const BOOKING = {days: 10, minutes: 30, startHour: 9, endHour: 18, weekdays: [1, 2, 3, 4, 5, 6], noticeHours: 3, tz: 'America/Los_Angeles'};
+
+function bookingSlots() {
+  const now = new Date(), until = new Date(now.getTime() + (BOOKING.days + 1) * 864e5);
+  const busy = CalendarApp.getDefaultCalendar().getEvents(now, until).filter(ev => !ev.isAllDayEvent())
+    .map(ev => [ev.getStartTime().getTime(), ev.getEndTime().getTime()]);
+  const earliest = now.getTime() + BOOKING.noticeHours * 36e5, len = BOOKING.minutes * 6e4, slots = [];
+  for (let d = 0; d < BOOKING.days; d++) {
+    const day = new Date(now.getTime() + d * 864e5);
+    if (BOOKING.weekdays.indexOf(Number(Utilities.formatDate(day, BOOKING.tz, 'u')) % 7) < 0) continue;  // u: 1 = Monday … 7 = Sunday
+    const ymd = Utilities.formatDate(day, BOOKING.tz, 'yyyy-MM-dd');
+    for (let m = BOOKING.startHour * 60; m + BOOKING.minutes <= BOOKING.endHour * 60; m += BOOKING.minutes) {
+      const start = Utilities.parseDate(`${ymd} ${Math.floor(m / 60)}:${m % 60}`, BOOKING.tz, 'yyyy-MM-dd H:m'), t = start.getTime();
+      if (t >= earliest && !busy.some(b => b[0] < t + len && b[1] > t)) slots.push(start);
+    }
+  }
+  return slots;
+}
+
+function bookSlot(d) {
+  const slot = bookingSlots().filter(s => s.toISOString() === d.slot)[0];
+  if (!slot) return {status: 'taken', message: 'That time was just taken. Please pick another.'};
+  if (!String(d.name || '').trim() || !String(d.phone || '').trim()) return {status: 'error', message: 'Name and phone are required.'};
+  const end = new Date(slot.getTime() + BOOKING.minutes * 6e4), email = validEmail(d.email) ? String(d.email).trim() : '';
+  const label = Utilities.formatDate(slot, BOOKING.tz, "EEE, MMM d 'at' h:mm a");
+  CalendarApp.getDefaultCalendar().createEvent(`Consultation: ${d.name} (${d.type || 'juliancrider.com'})`, slot, end, {
+    description: [`Booked on juliancrider.com`, `Phone: ${d.phone}`, email && `Email: ${email}`, d.notes].filter(Boolean).join('\n'),
+    guests: email, sendInvites: !!email});
+  try {  // log it on their Follow Up Boss contact (the lead itself arrives through the normal website form)
+    const phone = String(d.phone).replace(/\D/g, '');
+    const found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
+                  (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
+    if (found.length) {
+      fubFetch('notes', {personId: found[0].id, subject: 'Booked a consultation', body: `${label} (${BOOKING.minutes} min), booked on juliancrider.com`});
+      createCallTask(found[0].id, `booked consultation ${label}`);
+    }
+  } catch (err) { console.error('Booking note: ' + err); }
+  return {status: 'success', label: label};
+}
+
+// ============================================================
+// SELF-UPDATE — after the one-time setup, this script keeps itself current with GitHub, so you never paste again.
+//   One time: turn on "Google Apps Script API" at script.google.com/home/usersettings, then run setupAutoUpdate.
+//   It checks GitHub every hour, installs the new Code.gs, and points the website's deployment at it.
+//   If an update needs new Google permissions, it emails you instead: open Apps Script and run updateFromGitHub once.
+// ============================================================
+const GITHUB_RAW = 'https://raw.githubusercontent.com/jspice205/JuilanCrider.com/main/google-apps-script/';
+
+function setupAutoUpdate() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'autoUpdateFromGitHub').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('autoUpdateFromGitHub').timeBased().everyHours(1).create();
+  console.log(updateFromGitHub());
+}
+
+function autoUpdateFromGitHub() { console.log(updateFromGitHub(true)); }
+
+function updateFromGitHub(auto) {
+  const raw = f => UrlFetchApp.fetch(GITHUB_RAW + f + '?nocache=' + Date.now()).getContentText();
+  const code = raw('Code.gs'), manifest = raw('appsscript.json');
+  const id = ScriptApp.getScriptId(), base = 'https://script.googleapis.com/v1/projects/' + id;
+  const api = (method, path, body) => JSON.parse(UrlFetchApp.fetch(base + path, {method: method, contentType: 'application/json',
+    headers: {Authorization: 'Bearer ' + ScriptApp.getOAuthToken()}, payload: body ? JSON.stringify(body) : undefined}).getContentText() || '{}');
+  const files = api('get', '/content').files || [];
+  const cur = name => (files.filter(f => f.name === name)[0] || {}).source;
+  if (cur('Code') === undefined) return 'No file named "Code" in this project, so nothing was changed.';
+  if (cur('Code') === code && cur('appsscript') === manifest) return 'Already up to date.';
+  const scopes = s => JSON.stringify(((s && JSON.parse(s).oauthScopes) || []).slice().sort());
+  if (auto && scopes(cur('appsscript')) !== scopes(manifest)) {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty('UPDATE_SCOPES_EMAILED') !== scopes(manifest)) {
+      MailApp.sendEmail(NOTIFY_EMAIL, 'Your website script has an update that needs one click',
+        'An update to your JC Open House Leads script needs new Google permissions. Open the sheet, then Extensions > Apps Script, ' +
+        'pick updateFromGitHub in the menu at the top and click Run, then approve. Everything else updates on its own.');
+      props.setProperty('UPDATE_SCOPES_EMAILED', scopes(manifest));
+    }
+    return 'Update waiting for new permissions; emailed you.';
+  }
+  // Replace Code and the manifest; keep any other files in the project as they are.
+  api('put', '/content', {files: files.filter(f => f.name !== 'Code' && f.name !== 'appsscript').concat(
+    [{name: 'appsscript', type: 'JSON', source: manifest}, {name: 'Code', type: 'SERVER_JS', source: code}])});
+  const version = api('post', '/versions', {description: 'Update from GitHub'}).versionNumber;
+  (api('get', '/deployments').deployments || []).filter(dep => (dep.entryPoints || []).some(e => e.entryPointType === 'WEB_APP'))
+    .forEach(dep => api('put', '/deployments/' + dep.deploymentId,
+      {deploymentConfig: {scriptId: id, versionNumber: version, manifestFileName: 'appsscript', description: 'Update from GitHub'}}));
+  return 'Updated to version ' + version + ' and pointed the website at it.';
 }
 
 // Store visitor input as plain text so values like "+1 702…" or "=…" are never run as formulas.
