@@ -204,8 +204,13 @@ const GITHUB_RAW = 'https://raw.githubusercontent.com/jspice205/JuilanCrider.com
 
 function setupAutoUpdate() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'autoUpdateFromGitHub').forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('autoUpdateFromGitHub').timeBased().everyHours(1).create();
-  console.log(updateFromGitHub());
+  try { console.log(updateFromGitHub()); } catch (err) {
+    // The script's built-in Google project can't use the Apps Script API; it has to be linked to a project you own.
+    throw new Error('Auto-update is not on, and nothing was changed. Link this script to your own Google Cloud project ' +
+      'with the Apps Script API enabled (Project Settings > Google Cloud Platform (GCP) Project), then run setupAutoUpdate again. ' +
+      'Details: ' + String(err).slice(0, 200));
+  }
+  ScriptApp.newTrigger('autoUpdateFromGitHub').timeBased().everyHours(1).create();  // only once updates actually work
 }
 
 function autoUpdateFromGitHub() { console.log(updateFromGitHub(true)); }
