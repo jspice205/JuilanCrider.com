@@ -815,7 +815,7 @@ img{max-width:100%;display:block}
     </div>
     <div style="display:flex;gap:8px;padding:14px 16px">
       <a class="pill ghost" style="flex:1;text-align:center;text-decoration:none" href="tel:+17024982571">Call</a>
-      <a class="pill ghost" style="flex:1;text-align:center;text-decoration:none" href="sms:+17024982571">Text</a>
+      <button class="pill ghost" style="flex:1" data-open="book">Message</button>
       <button class="pill" style="flex:1" data-open="book">Book</button>
     </div>
     <div class="stats">
@@ -1737,9 +1737,8 @@ function loadCommunityMap(){
     const pts = [];
     RELO.areas.forEach(a => a.list.forEach(c => {
       const ll = COMMUNITY_PINS[c[0]]; if (!ll) return; pts.push(ll);
-      const sms = 'sms:' + PHONE + '?&body=' + encodeURIComponent('Hi Julián, I’d like to learn about homes in ' + c[0] + '.');
       L.circleMarker(ll, {radius: 8, color: '#fff', weight: 2, fillColor: AREA_COLOR[a.name] || '#888', fillOpacity: .95}).addTo(map)
-        .bindPopup(`<b>${c[0]}</b><span style="color:#6e6e73">${a.name}</span><br>${c[1]}<br><a href="${sms}">Ask about homes here ›</a>`, {maxWidth: 240});
+        .bindPopup(`<b>${c[0]}</b><span style="color:#6e6e73">${a.name}</span><br>${c[1]}<br><a href="#" data-book="Buying a home">Ask about homes here ›</a>`, {maxWidth: 240});
     }));
     map.fitBounds(pts, {padding: [24, 24]});
   };
@@ -1762,7 +1761,7 @@ function renderRelo(){
     <div class="cmap" id="cmap"><button class="cmap-load" id="cmapLoad" type="button"><b>Show the community map</b><small>Interactive map from OpenStreetMap</small></button></div>
     <div class="cmap-legend">${RELO.areas.map(a=>`<span><i style="background:${AREA_COLOR[a.name]||'#888'}"></i>${a.name}</span>`).join('')}</div>
     ${RELO.areas.map(a=>`${a.img?`<div class="area"><div class="band tall"><img src="${G[a.img]}" alt="" loading="lazy"><span>${a.name}</span></div>`:`<div><div class="grp">${a.name}</div>`}<div class="comm">${a.list.map(c=>`<details><summary>${c[0]}</summary><p>${c[1]}</p>
-      <a class="mini" href="sms:${PHONE}?&body=${encodeURIComponent('Hi Julián, I’d like to learn about homes in '+c[0]+'.')}">Ask about homes here</a></details>`).join('')}</div></div>`).join('')}</section>`;
+      <a class="mini" href="#" data-book="Buying a home">Ask about homes here</a></details>`).join('')}</div></div>`).join('')}</section>`;
   h += `<section class="rsec" id="r-do"><h2>Memorable activities</h2><p class="sub">Tap any activity for details, directions and how to go.</p><div class="area"><div class="band tall wide"><img src="${G.wheel}" alt="" loading="lazy"><span>Get out and explore</span></div>
     <div>${RELO.activities.map((g,gi)=>`<div class="grp">${g.g}</div><div class="hscroll">${g.items.map((a,ai)=>`<button class="act-card" data-act="${gi}-${ai}">${tile(g.tone,null,a.img)}<div class="in"><b>${a.n}</b><small>${a.d}</small></div></button>`).join('')}</div>`).join('')}</div></div></section>`;
   h += `<section class="rsec" id="r-eat"><h2>Where locals eat</h2><p class="sub">Favorites from our guide.</p>
@@ -1829,7 +1828,7 @@ function openGuide(k){
 /* ---------- Homes data ---------- */
 const SOON = {'Las Vegas':['Queensridge','Spanish Hills','Red Rock Country Club'], 'Henderson':['Sun City Anthem','Anthem Country Club','MacDonald Highlands','Green Valley','Legacy']};
 $('soon').innerHTML = Object.entries(SOON).map(([city,list]) => `<div class="group"><h4>${city}</h4><div class="list">
-  ${list.map(c=>`<div class="row"><div class="grow"><b>${c}</b><small>Under construction</small></div><a class="mini" href="sms:${PHONE}?&body=${encodeURIComponent('Hi Julián, I’d like details on upcoming homes in '+c+'.')}">Text me</a></div>`).join('')}</div></div>`).join('');
+  ${list.map(c=>`<div class="row"><div class="grow"><b>${c}</b><small>Under construction</small></div><a class="mini" href="#" data-book="New construction">Ask me</a></div>`).join('')}</div></div>`).join('');
 
 /* ---------- Chips ---------- */
 function buildChips(scope){
@@ -1941,6 +1940,8 @@ function openSheet(kind, opt={}){
   if (kind==='net') openNet();
   if (kind==='book') bookFlow(opt.type);
 }
+// Text-me style links go through Book a consultation (qualify, then pick a time) instead of a text to Julián's cell.
+document.addEventListener('click', e => { const b = e.target.closest('[data-book]'); if (b) { e.preventDefault(); openSheet('book', {type: b.dataset.book}); } });
 function bindOpeners(scope){ scope.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSheet(b.dataset.open, {type:b.dataset.type, prop:b.dataset.prop, why:b.dataset.why})); }
 ['s-homes','s-relo','s-me'].forEach(id => bindOpeners($(id))); bindOpeners(document.querySelector('.top'));
 
