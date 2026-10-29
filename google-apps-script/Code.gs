@@ -198,6 +198,12 @@ function fubEventType(tabName, d) {
 
 function fubSource(tabName) { return tabName === 'Sign-Ins' ? 'Open House' : 'juliancrider.com'; }
 
+/** A "Call" task due today (Pacific) in Follow Up Boss, assigned to the account owner. */
+function createCallTask(personId, reason) {
+  const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+  return fubFetch('tasks', {personId: personId, type: 'Call', name: ('Call: ' + reason).slice(0, 250), dueDate: today});
+}
+
 function fubPerson(tabName, d) {
   const parts = String(d.name || '').trim().split(/\s+/);
   const tags = tabName === 'Sign-Ins' ? ['Open House'] : ['Website Lead', 'juliancrider.com'];
@@ -257,8 +263,20 @@ function sendToFub(tabName, d) {
     person: person
   };
   if (d.property) event.property = {street: d.property};
-  fubFetch('events', event);
+  const res = fubFetch('events', event);
   console.log('Sent to Follow Up Boss');
+  if (person.tags.indexOf('Hot') >= 0) {
+    try {
+      let id = res.personId || (res.person && res.person.id);
+      if (!id) {
+        const email = (person.emails || [])[0], phone = String(d.phone || '').replace(/\D/g, '');
+        const found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email.value), null, 'get').people) ||
+                      (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
+        id = found.length && found[0].id;
+      }
+      if (id) createCallTask(id, `New ${d.type || 'lead'}: call within 5 minutes`);
+    } catch (err) { console.error('Call task: ' + err); }
+  }
 }
 
 /**
@@ -325,7 +343,7 @@ function tagScoredLeadsInFub() {
   const values = SpreadsheetApp.openById(SCORING_SHEET_ID).getSheets()[0].getDataRange().getDisplayValues();
   const head = values[0];
   let tagged = 0, notFound = 0, failed = 0;
-  for (let r = Number(props.getProperty('FUB_TAGGED_ROW') || 1); r < values.length; r++) {
+  for (let r = Number(props.getProperty('FUB_TAGGED_ROW_V2') || 1); r < values.length; r++) {
     if (Date.now() - started > 5 * 60 * 1000) { console.log(`Paused at row ${r + 1}. Run tagScoredLeadsInFub again to continue.`); break; }
     const get = name => String(values[r][head.indexOf(name)] || '').trim();
     const tier = get('Tier'), flags = get('Flags');
@@ -340,13 +358,14 @@ function tagScoredLeadsInFub() {
       if (!(found && found.length) && phone) found = fubFetch('people?limit=1&phone=' + phone, null, 'get').people;
       if (!(found && found.length)) { notFound++; console.warn(`Not in FUB: ${get('Name')}`); }
       else {
-        const person = found[0], tags = (person.tags || []).slice();
+        const person = found[0];
+        const tags = (person.tags || []).filter(t => !/^Intake Tier [ABC]$/.test(t) && !(t === 'Hot' && tier !== 'A') && !(t === 'Warm' && tier !== 'B'));
         want.forEach(t => { if (tags.indexOf(t) < 0) tags.push(t); });
         fubFetch('people/' + person.id, {tags: tags}, 'put');
         tagged++;
       }
     } catch (err) { failed++; console.error(`${get('Name')}: ${err}`); }
-    props.setProperty('FUB_TAGGED_ROW', String(r + 1));
+    props.setProperty('FUB_TAGGED_ROW_V2', String(r + 1));
     Utilities.sleep(150);
   }
   console.log(`Tagged ${tagged}, not found ${notFound}, failed ${failed}.`);
@@ -441,15 +460,18 @@ function fubAllPeople() {
 
 function daysAgo(iso) { const t = iso ? new Date(iso).getTime() : NaN; return isNaN(t) ? null : Math.floor((Date.now() - t) / 864e5); }
 
+const LIVE_SINCE = new Date('2026-10-29T12:00:00Z');  // leads created before this were imported in bulk
+
 function scorePerson(p) {
   const tags = (p.tags || []).map(String), has = t => tags.some(x => x.toLowerCase() === t.toLowerCase());
   const stage = String(p.stage || ''), source = String(p.source || '');
-  const sinceActive = daysAgo(p.lastActivity), sinceCreated = daysAgo(p.created);
+  const sinceCreated = daysAgo(p.created);
   const contacted = p.contacted === true || p.contacted === 1 || Number(p.contacted) > 0;
-  // Imported lists (farm, legacy, purchased) aren't new inbound leads, and the import itself
-  // shows up as "activity", so only count activity that happened more than an hour after creation.
+  // Last activity isn't used: Follow Up Boss updates it whenever anything edits a contact (tags, notes, this script),
+  // so it can't tell a lead who's browsing from one we just tagged. "New lead" only counts for leads that arrived
+  // live (after LIVE_SINCE); everything created earlier was a bulk import of older sign-ins and lists.
   const bulk = /farm|legacy|import|purchased|list/i.test(source) || has('Farm') || has('Legacy – Seed') || has('Legacy – High');
-  const realActive = sinceActive !== null && (new Date(p.lastActivity) - new Date(p.created)) > 36e5;
+  const live = !bulk && new Date(p.created) >= LIVE_SINCE;
   const why = []; let score = 0;
   if (/trash|unresponsive|do not/i.test(stage) || has('Has Agent')) return {tier: 'Do not contact', score: 0, why: stage || 'Working with another agent', next: 'Leave out of campaigns'};
   if (/past client|sphere/i.test(stage) || has('Past Client')) return {tier: 'Past client / sphere', score: 0, why: stage || 'Past client', next: 'Referral and anniversary touches'};
@@ -459,20 +481,17 @@ function scorePerson(p) {
   if (has('Showing requested')) { score += 40; why.push('requested a showing'); }
   if (has('Agreement signed')) { score += 30; why.push('signed a buyer agreement'); }
   // Intake Tier = how strong their sign-up was. (Plain "Tier A/B/C" is this score's own output, so it isn't an input.)
-  if (has('Intake Tier A')) { score += 30; why.push('strong sign-up (intake A)'); } else if (has('Intake Tier B')) { score += 15; why.push('good sign-up (intake B)'); }
+  if (has('Intake Tier A')) { score += 45; why.push('strong sign-up (intake A)'); } else if (has('Intake Tier B')) { score += 25; why.push('good sign-up (intake B)'); }
   if (has('Legacy – High')) { score += 20; why.push('high-value legacy seed'); } else if (has('Legacy – Seed')) { score += 10; why.push('legacy seed'); }
   if (has('Farm Rank A')) { score += 10; why.push('farm rank A (possible seller)'); }
   if (has('Likely Seller')) { score += 10; why.push('likely seller'); }
-  if (realActive && sinceActive <= 7) { score += 30; why.push(`active ${sinceActive}d ago`); }
-  else if (realActive && sinceActive <= 30) { score += 15; why.push(`active ${sinceActive}d ago`); }
-  if (!bulk && sinceCreated !== null && sinceCreated <= 14) { score += 15; why.push(`new lead (${sinceCreated}d)`); }
+  if (live && sinceCreated <= 14) { score += 15; why.push(`new lead (${sinceCreated}d)`); }
   if (/juliancrider|website|zillow|realtor|open house/i.test(source)) { score += 5; }
   if (Number(p.price) >= 1000000) { score += 5; why.push('$' + Math.round(Number(p.price) / 1e5) / 10 + 'M price range'); }
   const tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
   let next = {Hot: 'Call today', Warm: 'Personal text or email this week', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
   if (has('Not DNC checked')) { next = 'Mail or email only until the phone is DNC-checked'; why.push('DNC not checked'); }
-  else if (!bulk && !contacted && sinceCreated !== null && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
-  else if (tier !== 'Cold' && realActive && sinceActive > 45) why.push(`quiet ${sinceActive}d`);
+  else if (live && !contacted && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
   return {tier, score, why: why.join('; ') || 'no recent signals', next};
 }
 
@@ -503,7 +522,7 @@ function scoreFubDatabase() {
   // added, never removed (Hot replaces Warm; the Hot plan hands off to Warm itself), and never for Farm,
   // Legacy or not-DNC-checked contacts. Set the Script Property SCORECARD_TAGS to "no" to turn this off.
   const TIERS = {Hot: 'Tier A', Warm: 'Tier B', Nurture: 'Tier C', Cold: 'Tier C', 'Do not contact': ''};
-  let tagged = 0, unfinished = false;
+  let tagged = 0, tasks = 0, unfinished = false;
   if (PropertiesService.getScriptProperties().getProperty('SCORECARD_TAGS') !== 'no') {
     for (const {p, s} of rows) {
       if (!(s.tier in TIERS)) continue;  // past clients, partners and active clients keep their own tags
@@ -512,16 +531,19 @@ function scoreFubDatabase() {
       if (TIERS[s.tier]) next.push(TIERS[s.tier]);
       // Farm, legacy and not-DNC-checked contacts get a Tier but never an automatic plan (legacy goes out in batches).
       if (!hasT('Farm') && !hasT('Not DNC checked') && !old.some(t => /^Legacy/.test(t))) {
-        if (s.tier === 'Hot' && !hasT('Hot')) next = next.filter(t => t !== 'Warm').concat('Hot');
+        if (s.tier === 'Hot' && !hasT('Hot')) { next = next.filter(t => t !== 'Warm').concat('Hot'); s.newlyHot = true; }
         if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next.push('Warm');
       }
       if (next.length === old.length && next.every(t => hasT(t))) continue;
       if (Date.now() - started > 5 * 60 * 1000) { unfinished = true; break; }
-      try { fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; tagged++; Utilities.sleep(120); }
-      catch (err) { console.error(`Tagging ${p.name}: ${err}`); }
+      try {
+        fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; tagged++;
+        if (s.newlyHot) { createCallTask(p.id, 'newly Hot: ' + s.why); tasks++; }
+        Utilities.sleep(120);
+      } catch (err) { console.error(`Tagging ${p.name}: ${err}`); }
     }
   }
-  console.log(`Updated tags on ${tagged} people in Follow Up Boss.`);
+  console.log(`Updated tags on ${tagged} people in Follow Up Boss; created ${tasks} call tasks for newly Hot people.`);
   if (unfinished) {  // big first run: pick up where we left off in a minute
     ScriptApp.newTrigger('scoreFubContinue').timeBased().after(60 * 1000).create();
     console.log('Ran out of time; continuing automatically in about a minute.');
