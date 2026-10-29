@@ -662,8 +662,8 @@ function scoreFubDatabase() {
       if (TIERS[s.tier]) next.push(TIERS[s.tier]);
       // Farm, legacy and not-DNC-checked contacts get a Tier but never an automatic plan (legacy goes out in batches).
       if (!hasT('Farm') && !hasT('Not DNC checked') && !old.some(t => /^Legacy/.test(t))) {
-        if (s.tier === 'Hot' && !hasT('Hot')) { next = next.filter(t => t !== 'Warm').concat('Hot'); s.newlyHot = true; }
-        if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next.push('Warm');
+        if (s.tier === 'Hot' && !hasT('Hot')) { next = next.filter(t => t !== 'Warm').concat('Hot'); s.newlyHot = p.newHot = true; }
+        if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) { next.push('Warm'); p.newWarm = true; }
       } else if (s.tier === 'Hot' && !hasT('Tier A')) s.newlyHot = true;  // a task for you, never a plan
       if (next.length === old.length && next.every(t => hasT(t))) continue;
       if (Date.now() - started > 5 * 60 * 1000) { unfinished = true; break; }
@@ -678,9 +678,77 @@ function scoreFubDatabase() {
   if (unfinished) {  // big first run: pick up where we left off in a minute
     ScriptApp.newTrigger('scoreFubContinue').timeBased().after(60 * 1000).create();
     console.log('Ran out of time; continuing automatically in about a minute.');
+  } else {
+    try { runFunnel(people); } catch (err) { console.error('Funnel: ' + err); }
   }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
+}
+
+// ============================================================
+// FUNNEL — moves everyone through your action plans for you, a few dozen people a night (so it reads as personal
+// and protects your email reputation). Runs after the nightly scoring; you never click "start plan".
+//   Hot (Tier A) or Warm (Tier B) or Legacy re-intro or Farm – Best  →  then the 3-year Long-Term Nurture.
+//   Tier C (not farm/legacy) goes straight to Long-Term Nurture. Hot upgrades anyone in Warm or Nurture.
+// Skipped: no good email, clients/past clients/trash, Has Agent, and anyone who replied or you called in the last
+// 30 days (you're talking; the plan pauses itself when they reply if "Pause when contacted" is on in the plan).
+// Plans are found by name, so build them in Follow Up Boss with exactly these names. A plan that doesn't exist yet
+// is simply skipped. The "Funnel" tab shows who is in which stage.
+// ============================================================
+const FUNNEL = {
+  perNight: 50,
+  plans: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
+  handoffDays: {hot: 25, warm: 65, legacy: 25, farm: 60}  // days after starting, move on to Long-Term Nurture
+};
+const FUNNEL_TAB = {name: 'Funnel', color: '#0B8043', headers: ['Person ID', 'Name', 'Stage', 'Started', 'Plan run ID', 'Why']};
+
+function runFunnel(people) {
+  const ids = {};
+  (fubFetch('actionPlans?limit=100', null, 'get').actionPlans || []).forEach(a => ids[String(a.name).trim().toLowerCase()] = a.id);
+  const planId = k => ids[FUNNEL.plans[k].toLowerCase()];
+  if (!Object.keys(FUNNEL.plans).some(planId)) { console.log('Funnel: none of the JC plans exist yet, so nobody was started.'); return 0; }
+  const sheet = ensureTab(getSS(), FUNNEL_TAB), last = sheet.getLastRow();
+  const rows = {};
+  (last > 1 ? sheet.getRange(2, 1, last - 1, FUNNEL_TAB.headers.length).getValues() : [])
+    .forEach((r, i) => rows[r[0]] = {row: i + 2, stage: r[2], started: r[3], run: r[4]});
+  const props = PropertiesService.getScriptProperties();
+  const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+  let used = props.getProperty('FUNNEL_DAY') === today ? Number(props.getProperty('FUNNEL_COUNT')) || 0 : 0, started = 0;
+
+  const ok = p => {
+    const tags = p.tags || [], stage = String(p.stage || '');
+    if (!(p.emails || []).some(e => validEmail(e.value) && !/invalid|bounce|bad/i.test(e.status || ''))) return false;
+    if (/trash|unresponsive|do not|past client|sphere|active client|pending|under contract|closed/i.test(stage)) return false;
+    if (tags.some(t => /^(Has Agent|Partner|Do Not Contact)$/i.test(t))) return false;
+    const talked = [p.lastReceivedText, p.lastReceivedEmail, p.lastIncomingCall, p.lastReceivedInboxAppMessage, p.lastOutgoingCall]
+      .map(daysAgo).filter(d => d !== null);
+    return !talked.some(d => d < 30);
+  };
+  const start = (p, stage, why) => {
+    if (used >= FUNNEL.perNight || !planId(stage)) return;
+    const cur = rows[p.id];
+    if (cur && cur.run) { try { fubFetch('actionPlansPeople/' + cur.run, {status: 'Paused'}, 'put'); } catch (e) {} }
+    const res = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: planId(stage)});
+    const vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, res.id || '', why];
+    if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
+    rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today, run: res.id};
+    used++; started++; Utilities.sleep(120);
+  };
+  const has = (p, t) => (p.tags || []).indexOf(t) >= 0, stageOf = p => (rows[p.id] || {}).stage;
+  const eligible = people.filter(ok);
+  // In priority order, until tonight's limit is used up.
+  // Hot/Warm tags stay on for good, so only a tag added tonight moves someone up from Warm or Nurture.
+  eligible.filter(p => has(p, 'Hot') && (!stageOf(p) || (p.newHot && /warm|nurture/.test(stageOf(p))))).forEach(p => start(p, 'hot', 'Tier A'));
+  eligible.filter(p => has(p, 'Warm') && !has(p, 'Hot') && (!stageOf(p) || (p.newWarm && stageOf(p) === 'nurture'))).forEach(p => start(p, 'warm', 'Tier B'));
+  eligible.filter(p => FUNNEL.handoffDays[stageOf(p)] && daysAgo(rows[p.id].started) >= FUNNEL.handoffDays[stageOf(p)])
+    .forEach(p => start(p, 'nurture', 'finished ' + stageOf(p)));
+  eligible.filter(p => !stageOf(p) && (p.tags || []).some(t => /^Legacy/.test(t))).forEach(p => start(p, 'legacy', 'Legacy contact'));
+  eligible.filter(p => !stageOf(p) && has(p, 'Farm – Best')).forEach(p => start(p, 'farm', 'Farm – Best'));
+  eligible.filter(p => !stageOf(p) && has(p, 'Tier C') && !has(p, 'Farm') && !(p.tags || []).some(t => /^Legacy/.test(t)))
+    .forEach(p => start(p, 'nurture', 'Tier C'));
+  props.setProperty('FUNNEL_DAY', today); props.setProperty('FUNNEL_COUNT', String(used));
+  console.log(`Funnel: started ${started} people in plans tonight (${used}/${FUNNEL.perNight} for today).`);
+  return started;
 }
 
 function weeklyFubDigest() {
