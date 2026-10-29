@@ -484,6 +484,23 @@ function scoreFubDatabase() {
     'https://app.followupboss.com/2/people/view/' + p.id].map(cell));
   if (values.length) sheet.getRange(2, 1, values.length, SCORECARD_TAB.headers.length).setValues(values);
   const counts = {}; rows.forEach(r => counts[r.s.tier] = (counts[r.s.tier] || 0) + 1);
+  // Tag Hot / Warm in FUB so your action-plan automations start. Only adds what's missing; Hot replaces Warm,
+  // and nobody is moved down from Hot automatically (the Hot plan hands off to Warm itself).
+  // Set the Script Property SCORECARD_TAGS to "no" to turn this off.
+  let tagged = 0;
+  if (PropertiesService.getScriptProperties().getProperty('SCORECARD_TAGS') !== 'no') {
+    rows.forEach(({p, s}) => {
+      if (s.tier !== 'Hot' && s.tier !== 'Warm') return;
+      const tags = (p.tags || []).slice(), hasT = t => tags.indexOf(t) >= 0;
+      let next = null;
+      if (s.tier === 'Hot' && !hasT('Hot')) next = tags.filter(t => t !== 'Warm').concat('Hot');
+      if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next = tags.concat('Warm');
+      if (!next) return;
+      try { fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; tagged++; Utilities.sleep(120); }
+      catch (err) { console.error(`Tagging ${p.name}: ${err}`); }
+    });
+  }
+  console.log(`Tagged ${tagged} people Hot/Warm in Follow Up Boss.`);
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
 }
