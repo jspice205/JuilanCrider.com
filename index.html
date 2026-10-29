@@ -629,6 +629,8 @@ img{max-width:100%;display:block}
 .cmap .leaflet-popup-content a{display:inline-block;margin-top:6px;font-weight:600;color:#111}
 .cmap-legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:0 16px 10px;font-size:12px;color:var(--muted)}
 .cmap-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.startcard{display:flex;align-items:center;gap:12px;width:calc(100% - 32px);margin:14px 16px 0;padding:14px 16px;border-radius:16px;background:var(--surface);text-align:left}
+.startcard span{flex:1;display:flex;flex-direction:column}.startcard b{font-size:15px}.startcard small{font-size:13px;color:var(--muted)}.startcard em{font-style:normal;font-size:22px;color:var(--muted)}
 .intents{display:grid;gap:8px;margin:6px 0 12px}
 .intent{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;padding:15px 16px;border-radius:14px;background:var(--surface);font-weight:600;font-size:16px}
 .intent span{color:var(--muted);font-size:20px;line-height:1}
@@ -1508,7 +1510,7 @@ function renderFeed(){
     html = ratesCard() + calcHTML('feedCalc');
     $('feed').innerHTML = html; bindCalc('feedCalc'); bindOpeners($('feed')); loadRates($('feed')); return;
   }
-  if (storyOn === 'all') html += ratesCard() + `<details class="calcwrap" open><summary><span>Mortgage calculator</span><small>Estimate your monthly payment</small></summary>${calcHTML('forYouCalc')}</details>`;
+  if (storyOn === 'all') html += `<button class="startcard" data-ask-intent><span><b>Not sure where to start?</b><small>Answer one question and I’ll point you to the right place.</small></span><em>›</em></button>` + ratesCard() + `<details class="calcwrap" open><summary><span>Mortgage calculator</span><small>Estimate your monthly payment</small></summary>${calcHTML('forYouCalc')}</details>`;
   let items = [];
   if (storyOn === 'all'){
     const n = NEWS.map((x,i)=>({t:'n',i})), b = BLOGS.map((x,i)=>({t:'b',i}));
@@ -1525,6 +1527,7 @@ function renderFeed(){
   feed.querySelectorAll('[data-blog]').forEach(b => b.onclick = () => openBlog(+b.dataset.blog));
   feed.querySelectorAll('[data-news]').forEach(b => b.onclick = () => openNews(+b.dataset.news));
   bindOpeners(feed);
+  feed.querySelectorAll('[data-ask-intent]').forEach(b => b.onclick = askIntent);
 }
 const CTA = {
   value:['Get my home value', () => { closeSheet(); showTab('homes'); showPane('h-value'); }],
@@ -2035,9 +2038,15 @@ function askIntent(){
     closeSheet(); x[1]();
   });
 }
+// Shows until the visitor picks an answer (up to 3 visits). juliancrider.com/?start always shows it.
 (function(){
-  let seen = null; try { seen = localStorage.getItem('jc_intent'); localStorage.setItem('jc_intent', seen || 'asked'); } catch(e) { seen = 'unavailable'; }
-  if (!seen) setTimeout(askIntent, 900);
+  const force = /[?&]start\b/.test(location.search);
+  let chosen = null, shown = 0;
+  try { chosen = localStorage.getItem('jc_intent'); if (chosen === 'asked') chosen = null; shown = +localStorage.getItem('jc_intent_shown') || 0; } catch(e) {}
+  if (force || (!chosen && shown < 3)) {
+    try { localStorage.setItem('jc_intent_shown', String(shown + 1)); } catch(e) {}
+    setTimeout(askIntent, 900);
+  }
 })();
 </script>
 </body>
