@@ -43,7 +43,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 ## Follow Up Boss facts
 - Tags: every scored contact has one of `Tier A` (Hot) / `Tier B` (Warm) / `Tier C` (Nurture or Cold), refreshed
   nightly. `Intake Tier A/B/C` = how strong their sign-up was (an input, never overwritten). `Hot`/`Warm` tags are
-  the only automation triggers, and are never added automatically for Farm, Legacy or "Not DNC checked" contacts.
+  never added automatically for Farm, Legacy or "Not DNC checked" contacts.
+- Funnel (`runFunnel`, after nightly scoring): the script itself starts FUB action plans by name (POST
+  actionPlansPeople), max 50/night: Hot → "JC Hot", Warm → "JC Warm", Legacy → "JC Legacy Re-Intro",
+  Farm – Best → "JC Farm Best", Tier C (not farm/legacy) → "JC Long-Term Nurture"; after 25/65/25/60 days they move
+  to Long-Term Nurture (3 years, templates "JC Nurture 01–24"). Skips no/bad email, clients, Has Agent, and anyone
+  who replied or was called in 30 days. "Funnel" sheet tab tracks stage. **No FUB automations on Hot/Warm/Tier tags**
+  (they would double-start plans).
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
@@ -58,10 +64,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   compliance approval first.
 
 ## Open to-dos (as of Oct 2026)
-1. Load the 8 Hot/Warm email templates (connector `fub_api` POST `templates`, or Apps Script
-   `loadFubTemplates`), then help Julián build the Hot and Warm action plans + automations
-   (tag `Hot`/`Warm` → start plan) in FUB.
-2. After the automations exist, run `scoreFubDatabase` so the Hot/Warm tags start the plans.
+1. Templates loaded: Hot/Warm/Legacy 1–4 (141–152), JC Nurture 01–24, JC Farm Best 1–4. Julián builds the 5 JC
+   plans in FUB (emails only, "pause when contacted" on); then the nightly funnel starts people automatically.
+2. Texts in plans only after consent is captured; SIG content only after compliance approval.
 3. Smart list cleanup (7 lists: Call Today, New Not Contacted, Active on Site, Warm Check-in,
    Likely Sellers, Under Contract, Past Clients & Sphere) and pause unused starter plans.
 4. Apps Script: make sure the latest Code.gs + manifest are pasted and redeployed; run
