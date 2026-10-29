@@ -199,9 +199,10 @@ function fubEventType(tabName, d) {
 function fubSource(tabName) { return tabName === 'Sign-Ins' ? 'Open House' : 'juliancrider.com'; }
 
 /** A "Call" task due today (Pacific) in Follow Up Boss, assigned to the account owner. */
-function createCallTask(personId, reason) {
+function createCallTask(personId, reason, type) {
+  type = type || 'Call';  // 'Email' for contacts whose phone isn't DNC-checked
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
-  return fubFetch('tasks', {personId: personId, type: 'Call', name: ('Call: ' + reason).slice(0, 250), dueDate: today});
+  return fubFetch('tasks', {personId: personId, type: type, name: (type + ': ' + reason).slice(0, 250), dueDate: today});
 }
 
 function fubPerson(tabName, d) {
@@ -462,6 +463,33 @@ function daysAgo(iso) { const t = iso ? new Date(iso).getTime() : NaN; return is
 
 const LIVE_SINCE = new Date('2026-10-29T12:00:00Z');  // leads created before this were imported in bulk
 
+// Activity = what the lead did, not what we did: replies, calls in, Instagram/Facebook messages, a new inquiry,
+// site/IDX visits, email opens/clicks, RealScout views. Only lead-side fields are read, so importing, tagging or
+// texting someone never raises their score. Recent activity counts most and fades out after 90 days.
+function activityScore(p) {
+  const why = []; let pts = 0;
+  const fresh = (iso, d7, d30, d90) => { const d = daysAgo(iso); return d === null ? 0 : d <= 7 ? d7 : d <= 30 ? d30 : d <= 90 ? d90 : 0; };
+  const replies = [['text', p.lastReceivedText], ['email', p.lastReceivedEmail], ['phone', p.lastIncomingCall], ['DM', p.lastReceivedInboxAppMessage]]
+    .filter(r => r[1]).sort((a, b) => new Date(b[1]) - new Date(a[1]));
+  if (replies.length) { const n = fresh(replies[0][1], 40, 25, 10); if (n) { pts += n; why.push(`replied by ${replies[0][0]} ${daysAgo(replies[0][1])}d ago`); } }
+  // A new inquiry after they were added (showing request, form, IDX inquiry). An import sets this to the import time, so that's skipped.
+  if (p.lastLeadActivity && new Date(p.lastLeadActivity) - new Date(p.created) > 36e5) {
+    const n = fresh(p.lastLeadActivity, 25, 15, 5); if (n) { pts += n; why.push(`new inquiry ${daysAgo(p.lastLeadActivity)}d ago`); }
+  }
+  const site = fresh(p.lastIdxVisit, 15, 8, 3); if (site) { pts += site; why.push(`on your site ${daysAgo(p.lastIdxVisit)}d ago`); }
+  if (Number(p.propertiesSaved) > 0) { pts += 5; why.push(`saved ${p.propertiesSaved} homes`); }
+  const em = fresh(p.lastEmEventActivity, 10, 5, 0); if (em) { pts += em; why.push('opened or clicked an email'); }
+  const rsViews = Number(p.customRealScoutPropertyViewsCount) || 0;
+  if (rsViews >= 3) { pts += 5; why.push(`viewed ${rsViews} homes in RealScout`); }
+  if (Number(p.customRealScoutHomeValueAlertViewsCount) > 0) { pts += 10; why.push('checking their home value'); }
+  // Going quiet: 3+ touches from us and never an answer in any channel.
+  const n = k => Number(p[k]) || 0;
+  const out = n('textsSent') + n('emailsSent') + n('callsOutgoing');
+  const heard = n('textsReceived') + n('emailsReceived') + n('callsIncoming') + n('inboxAppMessagesReceived');
+  if (out >= 3 && !heard && !pts) { pts -= 10; why.push(`quiet: no reply after ${out} touches`); }
+  return {pts, why};
+}
+
 function scorePerson(p) {
   const tags = (p.tags || []).map(String), has = t => tags.some(x => x.toLowerCase() === t.toLowerCase());
   const stage = String(p.stage || ''), source = String(p.source || '');
@@ -488,10 +516,13 @@ function scorePerson(p) {
   if (live && sinceCreated <= 14) { score += 15; why.push(`new lead (${sinceCreated}d)`); }
   if (/juliancrider|website|zillow|realtor|open house/i.test(source)) { score += 5; }
   if (Number(p.price) >= 1000000) { score += 5; why.push('$' + Math.round(Number(p.price) / 1e5) / 10 + 'M price range'); }
+  const act = activityScore(p);
+  score = Math.max(0, score + act.pts); why.push(...act.why);
   const tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
   let next = {Hot: 'Call today', Warm: 'Personal text or email this week', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
   if (has('Not DNC checked')) { next = 'Mail or email only until the phone is DNC-checked'; why.push('DNC not checked'); }
   else if (live && !contacted && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
+  else if (act.pts >= 25 && tier !== 'Hot') next = 'Engaged recently: answer personally this week';
   return {tier, score, why: why.join('; ') || 'no recent signals', next};
 }
 
@@ -533,12 +564,12 @@ function scoreFubDatabase() {
       if (!hasT('Farm') && !hasT('Not DNC checked') && !old.some(t => /^Legacy/.test(t))) {
         if (s.tier === 'Hot' && !hasT('Hot')) { next = next.filter(t => t !== 'Warm').concat('Hot'); s.newlyHot = true; }
         if (s.tier === 'Warm' && !hasT('Warm') && !hasT('Hot')) next.push('Warm');
-      }
+      } else if (s.tier === 'Hot' && !hasT('Tier A')) s.newlyHot = true;  // a task for you, never a plan
       if (next.length === old.length && next.every(t => hasT(t))) continue;
       if (Date.now() - started > 5 * 60 * 1000) { unfinished = true; break; }
       try {
         fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; tagged++;
-        if (s.newlyHot) { createCallTask(p.id, 'newly Hot: ' + s.why); tasks++; }
+        if (s.newlyHot) { createCallTask(p.id, 'newly Hot: ' + s.why, hasT('Not DNC checked') ? 'Email' : 'Call'); tasks++; }
         Utilities.sleep(120);
       } catch (err) { console.error(`Tagging ${p.name}: ${err}`); }
     }
