@@ -266,7 +266,9 @@ function sendToFub(tabName, d) {
   if (d.property) event.property = {street: d.property};
   const res = fubFetch('events', event);
   console.log('Sent to Follow Up Boss');
-  if (person.tags.indexOf('Hot') >= 0) {
+  // A task only when they reached out from the website (showing request, consultation). Open house sign-ins get
+  // the automated plans instead; Julián engages once they reply.
+  if (person.tags.indexOf('Hot') >= 0 && tabName !== 'Sign-Ins') {
     try {
       let id = res.personId || (res.person && res.person.id);
       if (!id) {
@@ -519,11 +521,14 @@ function scorePerson(p) {
   const act = activityScore(p);
   score = Math.max(0, score + act.pts); why.push(...act.why);
   const tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
-  let next = {Hot: 'Call today', Warm: 'Personal text or email this week', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
+  // Plans do the reaching out; Julián steps in when the lead does something.
+  let next = {Hot: act.pts >= 25 ? 'They reached out: answer today' : 'Hot plan running: answer when they reply',
+    Warm: 'Warm plan running: answer when they reply', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
   if (has('Not DNC checked')) { next = 'Mail or email only until the phone is DNC-checked'; why.push('DNC not checked'); }
   else if (live && !contacted && sinceCreated <= 30) { next = 'NOT CONTACTED YET: call today'; why.push('never contacted'); }
   else if (act.pts >= 25 && tier !== 'Hot') next = 'Engaged recently: answer personally this week';
-  return {tier, score, why: why.join('; ') || 'no recent signals', next};
+  // Engaged = they did something themselves (replied, called, DM'd, new inquiry, site visits). Only engaged people get tasks.
+  return {tier, score, why: why.join('; ') || 'no recent signals', next, engaged: act.pts >= 25};
 }
 
 const SCORECARD_TAB = {name: 'FUB Scorecard', color: '#d13438',
@@ -569,7 +574,7 @@ function scoreFubDatabase() {
       if (Date.now() - started > 5 * 60 * 1000) { unfinished = true; break; }
       try {
         fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; tagged++;
-        if (s.newlyHot) { createCallTask(p.id, 'newly Hot: ' + s.why, hasT('Not DNC checked') ? 'Email' : 'Call'); tasks++; }
+        if (s.newlyHot && s.engaged) { createCallTask(p.id, 'they reached out: ' + s.why, hasT('Not DNC checked') ? 'Email' : 'Call'); tasks++; }
         Utilities.sleep(120);
       } catch (err) { console.error(`Tagging ${p.name}: ${err}`); }
     }

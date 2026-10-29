@@ -1944,6 +1944,9 @@ function openSheet(kind, opt={}){
 function bindOpeners(scope){ scope.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSheet(b.dataset.open, {type:b.dataset.type, prop:b.dataset.prop, why:b.dataset.why})); }
 ['s-homes','s-relo','s-me'].forEach(id => bindOpeners($(id))); bindOpeners(document.querySelector('.top'));
 
+// Google Calendar booking page (Calendar → Create → Appointment schedule → Share → copy link). When set, people
+// who pass the two screening questions pick their own time; when empty, the request goes in and Julián confirms.
+const BOOKING_URL = '';
 function bookFlow(preset){
   const st = {type:preset||'', step:1};
   const types = ['Buying a home','Selling or home value','New construction','Relocating to Las Vegas','Just a question'];
@@ -1959,8 +1962,8 @@ function bookFlow(preset){
       <div class="field"><span class="lab">When works best?</span><div class="chips" data-chips="when" data-opts="This week|Next week|Weekend|Flexible"></div></div>
       <div class="field"><span class="lab">How should we meet?</span><div class="chips" data-chips="how" data-opts="Phone call|Video call|In person"></div></div>
       <div class="field"><span class="lab">Timeline</span><div class="chips" data-chips="tl3" data-opts="Ready now|1–3 months|3–6 months|6–12 months|Just exploring"></div></div>
-      ${/Buying|New|Relocating/.test(st.type)?`<div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="pa" data-opts="Yes|Not yet|Paying cash"></div></div>
-      <div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="ag" data-opts="No|Yes"></div></div>`:''}
+      ${/Buying|New|Relocating/.test(st.type)?`<div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="pa" data-opts="Yes|Not yet|Paying cash"></div></div>`:''}
+      ${st.type!=='Just a question'?`<div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="ag" data-opts="No|Talking to a few|Yes, signed with one"></div></div>`:''}
       ${/Selling/.test(st.type)?`<div class="field"><label for="addr">Property address</label><input id="addr" autocomplete="street-address"></div>`:''}
       <div class="duo"><button class="pill ghost" id="back2">Back</button><button class="pill" id="next2">Continue</button></div>`);
     $('back2').onclick = () => { st.step=1; s1(); };
@@ -1972,7 +1975,10 @@ function bookFlow(preset){
     $('back3').onclick = () => { st.step=2; s2(); };
     $('send').onclick = () => { if (!requireContact()) return;
       sendLead({tab:'Website Leads', type:'Consultation: '+st.type, ...contactVals(), property:st.addr||'', timeline:st.tl||'', source:'juliancrider.com',
-        notes: joinNotes(['When: '+(st.when||''), 'Meet by: '+(st.how||''), 'Pre-approved: '+(st.pa||''), 'Working with another agent: '+(st.ag||''), 'Note: '+$('fNote').value.trim()])});
+        notes: joinNotes(['When: '+(st.when||''), 'Meet by: '+(st.how||''), 'Pre-approved: '+(st.pa||''),
+          'Working with agent: '+(st.ag==='Yes, signed with one'?'Yes, with a signed agreement':(st.ag||'')), 'Note: '+$('fNote').value.trim()])});
+      if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
+      if (BOOKING_URL) { $('sheetBody').innerHTML = doneHTML('One last step','Pick a time that works for you on my calendar.').replace('<button class="pill ghost"', `<a class="pill block" href="${BOOKING_URL}" target="_blank" rel="noopener" style="margin-top:16px">Pick a time</a><button class="pill ghost"`); return; }
       $('sheetBody').innerHTML = doneHTML('Consultation requested','Julián will confirm a time within one business day.'); };
   }
   s1();
