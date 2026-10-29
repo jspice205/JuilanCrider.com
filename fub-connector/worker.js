@@ -37,9 +37,10 @@ const brief = p => ({id: p.id, name: p.name || [p.firstName, p.lastName].filter(
 function score(p) {
   const tags = (p.tags || []).map(String), has = t => tags.some(x => x.toLowerCase() === t.toLowerCase());
   const stage = String(p.stage || ''), days = iso => iso ? Math.floor((Date.now() - new Date(iso)) / 864e5) : null;
-  const active = days(p.lastActivity), created = days(p.created), contacted = Number(p.contacted) > 0 || p.contacted === true;
+  const created = days(p.created), contacted = Number(p.contacted) > 0 || p.contacted === true;
   const bulk = /farm|legacy|import|purchased|list/i.test(String(p.source || '')) || has('Farm') || has('Legacy – Seed') || has('Legacy – High');
-  const realActive = active !== null && (new Date(p.lastActivity) - new Date(p.created)) > 36e5;  // imports log activity at creation
+  // Last activity isn't used (FUB bumps it on every edit); "new" only counts for leads that arrived live.
+  const live = !bulk && new Date(p.created) >= new Date('2026-10-29T12:00:00Z');
   if (/trash|unresponsive|do not/i.test(stage) || has('Has Agent')) return {tier: 'Do not contact', score: 0, why: stage || 'has another agent'};
   if (/past client|sphere/i.test(stage) || has('Past Client')) return {tier: 'Past client / sphere', score: 0, why: stage || 'past client'};
   if (has('Partner')) return {tier: 'Partner', score: 0, why: 'agent / vendor'};
@@ -47,13 +48,12 @@ function score(p) {
   let s = 0; const why = [];
   const add = (cond, pts, label) => { if (cond) { s += pts; why.push(label); } };
   add(/hot/i.test(stage), 40, 'stage ' + stage); add(has('Showing requested'), 40, 'requested a showing'); add(has('Agreement signed'), 30, 'signed buyer agreement');
-  add(has('Intake Tier A'), 30, 'strong sign-up (intake A)'); add(!has('Intake Tier A') && has('Intake Tier B'), 15, 'good sign-up (intake B)'); add(has('Legacy – High'), 20, 'high-value legacy seed');
+  add(has('Intake Tier A'), 45, 'strong sign-up (intake A)'); add(!has('Intake Tier A') && has('Intake Tier B'), 25, 'good sign-up (intake B)'); add(has('Legacy – High'), 20, 'high-value legacy seed');
   add(has('Farm Rank A'), 10, 'farm rank A'); add(has('Likely Seller'), 10, 'likely seller');
-  add(realActive && active <= 7, 30, `active ${active}d ago`); add(realActive && active > 7 && active <= 30, 15, `active ${active}d ago`);
-  add(!bulk && created !== null && created <= 14, 15, `new lead (${created}d)`);
+  add(live && created <= 14, 15, `new lead (${created}d)`);
   if (/juliancrider|website|zillow|realtor|open house/i.test(String(p.source || ''))) s += 5; add(Number(p.price) >= 1e6, 5, 'luxury price range');
   if (has('Not DNC checked')) why.push('DNC NOT CHECKED: mail or email only');
-  else if (!bulk && !contacted && created !== null && created <= 30) why.push('NEVER CONTACTED');
+  else if (live && !contacted && created <= 30) why.push('NEVER CONTACTED');
   return {tier: s >= 50 ? 'Hot' : s >= 25 ? 'Warm' : s >= 10 ? 'Nurture' : 'Cold', score: s, why: why.join('; ') || 'no recent signals'};
 }
 
