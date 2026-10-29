@@ -343,6 +343,73 @@ function tagScoredLeadsInFub() {
   console.log(`Tagged ${tagged}, not found ${notFound}, failed ${failed}.`);
 }
 
+// ============================================================
+// FUB INBOX — drop a CSV or Google Sheet into the Drive folder "FUB Inbox" and it's
+// imported into Follow Up Boss automatically (checked every 10 minutes), then moved
+// to "FUB Imported" and you get an email summary.
+// Columns it understands (any order, any capitalization): First Name, Last Name, Email,
+// Phone, Phone 2, Address, City, State, Zip, Source, Tags, Notes. Without a Source or
+// Tags column, the file name is used for both.
+// Uses FUB's people import (matches existing people, starts no automations).
+// ============================================================
+const FUB_INBOX = 'FUB Inbox', FUB_DONE = 'FUB Imported';
+
+function driveFolder(name) {
+  const it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
+
+/** Run once: creates the two Drive folders and the 10-minute check. */
+function setupFubInbox() {
+  const inbox = driveFolder(FUB_INBOX); driveFolder(FUB_DONE);
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'processFubInbox').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('processFubInbox').timeBased().everyMinutes(10).create();
+  console.log('Ready. Drop files into: ' + inbox.getUrl());
+}
+
+function inboxRows(file) {
+  if (file.getMimeType() === MimeType.GOOGLE_SHEETS) return SpreadsheetApp.open(file).getSheets()[0].getDataRange().getDisplayValues();
+  return Utilities.parseCsv(file.getBlob().getDataAsString('UTF-8').replace(/^﻿/, ''));
+}
+
+function processFubInbox() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;  // a previous run is still going
+  try {
+    const props = PropertiesService.getScriptProperties(), started = Date.now();
+    const done = driveFolder(FUB_DONE), files = driveFolder(FUB_INBOX).getFiles();
+    while (files.hasNext()) {
+      const file = files.next(), id = file.getId(), label = file.getName().replace(/\.(csv|xlsx?)$/i, '').replace(/^FUB Import - /i, '');
+      const rows = inboxRows(file).filter(r => r.some(c => String(c).trim()));
+      if (rows.length < 2) { file.moveTo(done); continue; }
+      const head = rows[0].map(h => String(h).trim().toLowerCase());
+      const col = n => head.indexOf(n);
+      const stats = JSON.parse(props.getProperty('INBOX_' + id) || '{"row":1,"ok":0,"failed":0}');
+      for (; stats.row < rows.length; stats.row++) {
+        if (Date.now() - started > 5 * 60 * 1000) { props.setProperty('INBOX_' + id, JSON.stringify(stats)); return; }
+        const r = rows[stats.row], get = n => col(n) < 0 ? '' : String(r[col(n)] || '').trim();
+        const person = {firstName: get('first name'), lastName: get('last name'), source: get('source') || label,
+          tags: (get('tags') || label).split(',').map(t => t.trim()).filter(Boolean)};
+        if (!person.firstName && !person.lastName && !get('email') && !get('phone')) continue;
+        if (validEmail(get('email'))) person.emails = [{value: get('email')}];
+        const phones = [get('phone'), get('phone 2')].filter(p => p.replace(/\D/g, '').length >= 10);
+        if (phones.length) person.phones = phones.map(p => ({value: p}));
+        if (get('address')) person.addresses = [{type: 'home', street: get('address'), city: get('city'), state: get('state'), code: get('zip')}];
+        try {
+          const created = fubFetch('people?deduplicate=true', person);
+          if (created.id && get('notes')) fubFetch('notes', {personId: created.id, subject: 'Imported: ' + label, body: get('notes')});
+          stats.ok++;
+        } catch (err) { stats.failed++; console.error(`${file.getName()} row ${stats.row + 1}: ${err}`); }
+        Utilities.sleep(100);
+      }
+      props.deleteProperty('INBOX_' + id);
+      file.moveTo(done);
+      MailApp.sendEmail(NOTIFY_EMAIL, `Follow Up Boss import done: ${label}`,
+        `Imported ${stats.ok} people from "${file.getName()}"${stats.failed ? ` (${stats.failed} failed; see Apps Script executions for details)` : ''}.\nThe file was moved to your "${FUB_DONE}" folder.`);
+    }
+  } finally { lock.releaseLock(); }
+}
+
 /** Start the sheet import over from the top (only needed if you want to re-send everything). */
 function resetSheetImport() {
   ['Sign-Ins', 'Website Leads'].forEach(t => PropertiesService.getScriptProperties().deleteProperty('FUB_IMPORT_' + t));
