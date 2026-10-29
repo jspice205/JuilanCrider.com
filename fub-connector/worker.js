@@ -47,7 +47,7 @@ function score(p) {
   let s = 0; const why = [];
   const add = (cond, pts, label) => { if (cond) { s += pts; why.push(label); } };
   add(/hot/i.test(stage), 40, 'stage ' + stage); add(has('Showing requested'), 40, 'requested a showing'); add(has('Agreement signed'), 30, 'signed buyer agreement');
-  add(has('Tier A'), 30, 'Tier A'); add(!has('Tier A') && has('Tier B'), 15, 'Tier B'); add(has('Legacy – High'), 20, 'high-value legacy seed');
+  add(has('Intake Tier A'), 30, 'strong sign-up (intake A)'); add(!has('Intake Tier A') && has('Intake Tier B'), 15, 'good sign-up (intake B)'); add(has('Legacy – High'), 20, 'high-value legacy seed');
   add(has('Farm Rank A'), 10, 'farm rank A'); add(has('Likely Seller'), 10, 'likely seller');
   add(realActive && active <= 7, 30, `active ${active}d ago`); add(realActive && active > 7 && active <= 30, 15, `active ${active}d ago`);
   add(!bulk && created !== null && created <= 14, 15, `new lead (${created}d)`);
