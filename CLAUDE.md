@@ -13,7 +13,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 ## What's here
 - `index.html` — the whole site (single-page app). 4 tabs only: Feed, Homes, Relocate, Julián.
   **Don't add tabs**; use a hamburger/menu if more space is needed. Key pieces: `showTab()`,
-  `openRaw()` sheets, `bindOpeners()`, Request a showing form, first-visit "What brings you here?"
+  `openRaw()` sheets, `bindOpeners()`, Request a showing form, Book a consultation (`bookFlow`: screens pre-approval + agent status; signed-with-agent gets a polite no;
+  `BOOKING_URL` = Julián's Google Calendar appointment page, empty until he makes one), first-visit "What brings you here?"
   question (`askIntent`, shows until answered up to 3 visits; `?start` forces it), community map
   (Leaflet, loads on tap/consent), JSON-LD for SEO. Images live in `img/`.
 - `sign.html` — on-site e-sign page for the single-property, non-exclusive buyer agreement +
@@ -45,6 +46,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Sellers (9 stages). Plan: rename Buyers stages to the deal flow from his Asana board
   (Consult Set → Buyer Package + Duties Owed → Pre-Approved → Actively Looking → Offer Submitted →
   In Escrow → Closed).
+- Inbound-only rule (Julián's choice, Oct 29): plans do the reaching out; tasks are created only when a lead
+  reaches out (website showing/consultation request, or activity score 25+: reply, call, DM, new inquiry, site visits).
+  Intake score alone never creates a task. Don't add call lists or outreach tasks.
 - Messaging style: Chris Voss (labels, no-oriented questions, calibrated how/what questions).
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
