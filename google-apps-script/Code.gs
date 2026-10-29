@@ -541,6 +541,60 @@ function testFub() {
 }
 
 // ============================================================
+// EMAIL TEMPLATES — run loadFubTemplates once to add the Hot/Warm plan emails to Follow Up Boss.
+// Safe to run again: templates that already exist (same name) are skipped.
+// ============================================================
+const SIG_FULL = 'Julián J. Crider<br>702-498-2571 · juliancrider.com', SIG = 'Julián';
+const FUB_TEMPLATES = [
+  ['Hot 1 - Quick question', 'Quick question, %contact_first_name%', [
+    'Hi %contact_first_name%,',
+    'Thanks for reaching out. You probably have a dozen agents and websites in your inbox right now, so I\'ll keep this short.',
+    'What would have to be true for the next home to feel like the right one?',
+    'Reply with one line. I read every one myself.', SIG_FULL]],
+  ['Hot 2 - Homes I\'d look at', 'The homes I\'d look at if I were you', [
+    'Hi %contact_first_name%,',
+    'I pulled a few homes that fit what you were looking at, including one or two that aren\'t getting much attention online yet.',
+    'Would you be opposed to me sending them over? If the timing\'s off, just say "not now". No hard feelings.', SIG]],
+  ['Hot 3 - Is it the market', 'Is it the market?', [
+    'Hi %contact_first_name%,',
+    'A lot of people I talk to right now feel like they might buy at the wrong time: rates, prices, all of it. It\'s a fair concern.',
+    'How would you know it\'s the right time for you?',
+    'If it helps, I can walk you through what\'s actually happening in your price range. Ten minutes, no pressure.', SIG]],
+  ['Hot 4 - Close your file', 'Should I close your file?', [
+    'Hi %contact_first_name%,',
+    'I haven\'t heard back, which usually means one of three things: you found a home, the timing changed, or my emails are hitting the wrong inbox.',
+    'Is it a bad idea for me to keep sending homes your way? Just reply "keep" or "stop". Either is fine.', SIG]],
+  ['Warm 1 - No rush', 'No rush, %contact_first_name%', [
+    'Hi %contact_first_name%,',
+    'It sounds like the timing isn\'t quite right yet, and that\'s completely okay. Most of my clients took months between "just looking" and "let\'s go."',
+    'What would you want to know now so you\'re ready when the time comes?', SIG_FULL]],
+  ['Warm 2 - Market check', 'What homes are doing in Las Vegas right now', [
+    'Hi %contact_first_name%,',
+    'The Las Vegas market changes month to month, and what\'s true for one price range often isn\'t true for another.',
+    'If you tell me the area and price range you have in mind, I\'ll send you a quick, honest snapshot of what\'s selling, how fast, and for how much.',
+    'How would that change your plans, if at all?', SIG]],
+  ['Warm 3 - Home value', 'Curious what your home is worth?', [
+    'Hi %contact_first_name%,',
+    'If you own now, you\'re probably wondering what your place would sell for. Would it be a bad idea for me to put together a real number for you, not a Zestimate?',
+    'It takes me a day, and there\'s no obligation.', SIG]],
+  ['Warm 4 - What makes the difference', 'What finally made the difference', [
+    'Hi %contact_first_name%,',
+    'Most of the families I help were "just looking" for months. What finally made the difference was usually one thing: the right home that never hit Zillow, a payment that finally worked, or a change in life that made the timing obvious.',
+    'How close are you to your version of that?', SIG]]
+];
+
+function loadFubTemplates() {
+  const existing = (fubFetch('templates?limit=100', null, 'get').templates || []).map(t => t.name);
+  const made = [], skipped = [];
+  FUB_TEMPLATES.forEach(([name, subject, paras]) => {
+    if (existing.indexOf(name) >= 0) return skipped.push(name);
+    const t = fubFetch('templates', {name, subject, body: paras.map(x => `<p>${x}</p>`).join('')});
+    made.push(`${name} (id ${t.id})`);
+  });
+  console.log(`Created ${made.length}: ${made.join(', ') || 'none'}\nAlready there: ${skipped.join(', ') || 'none'}`);
+}
+
+// ============================================================
 // BUYER CONFIRMATION — branded email to the buyer after a showing request
 // ============================================================
 function confirmShowing(d, signUrl) {
