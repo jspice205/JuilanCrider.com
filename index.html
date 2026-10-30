@@ -1753,7 +1753,7 @@ function renderRelo(){
   let h = '';
   h += `<section class="rsec" id="r-over"><h2>Welcome to the valley</h2><div class="prose"><p>${RELO.intro}</p></div>
     <div class="facts">${RELO.facts.map(f=>`<div><b>${f[0]}</b><small>${f[1]}</small></div>`).join('')}</div>
-    <a class="dlcard" href="Relocation-Guide.pdf" download><img src="${G.cover}" alt=""><span><b>Download the full guide</b><small>Relocation Guide, PDF, 33 pages</small></span><em>Download</em></a>
+    <a class="dlcard" href="Las-Vegas-Relocation-Guide.pdf" download><img src="${G.cover}" alt=""><span><b>Download the full guide</b><small>Relocation Guide, PDF, 33 pages</small></span><em>Download</em></a>
     <h3 class="grp">A little history</h3><div class="pair"><img src="${G.vintage}" alt="Vintage downtown Las Vegas"><img src="${G.hoover}" alt="Hoover Dam"></div>
     <div class="prose">${RELO.history.map(p=>`<p>${p}</p>`).join('')}</div>
     <h3 class="grp">Ways to live here</h3><div class="hscroll">${[['custom','Custom homes','Built around how you live'],['highrise','Luxury high-rises','Strip views, full-service living'],['commercial','Commercial real estate','Investment and business property']].map(w=>`<button class="act-card" data-open="book" data-type="Buying a home"><div class="tile"><img src="${G[w[0]]}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div><div class="in"><b>${w[1]}</b><small>${w[2]}</small></div></button>`).join('')}</div></section>`;
@@ -1780,7 +1780,7 @@ function renderRelo(){
     <p class="fine">${RELO.moving.when}</p></div></section>`;
   h += `<section class="rsec" id="r-escrow"><h2>Escrow timeline</h2><p class="sub">What happens after your offer is accepted.</p><div class="band"><img src="${G.strip}" alt="" loading="lazy" style="object-position:center 30%"></div>
     <div class="timeline">${RELO.escrow.map(e=>`<div><b>${e[0]}</b><span>${e[1]}</span></div>`).join('')}</div>
-    <div style="padding:16px"><button class="pill block" data-open="book" data-type="Relocating to Las Vegas">Plan my move with Julián</button><a class="pill ghost block" style="margin-top:8px" href="Relocation-Guide.pdf" download>Download the full guide (PDF)</a></div></section>`;
+    <div style="padding:16px"><button class="pill block" data-open="book" data-type="Relocating to Las Vegas">Plan my move with Julián</button><a class="pill ghost block" style="margin-top:8px" href="Las-Vegas-Relocation-Guide.pdf" download>Download the full guide (PDF)</a></div></section>`;
   $('relo').innerHTML = h;
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { const [g,a] = b.dataset.act.split('-').map(Number); openActivity(g,a); });
   bindOpeners($('relo'));

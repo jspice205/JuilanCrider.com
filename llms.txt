@@ -11,7 +11,7 @@
 ## Services
 - Luxury home sales and purchases
 - New construction: representing buyers at builder communities (Summerlin, Skye Canyon, Cadence, Inspirada and more), usually at no extra cost to the buyer
-- Relocating to Las Vegas: a free 33-page relocation guide (https://juliancrider.com/Relocation-Guide.pdf) covering neighborhoods, schools, hospitals, the DMV, dining and things to do
+- Relocating to Las Vegas: a free 33-page relocation guide (https://juliancrider.com/Las-Vegas-Relocation-Guide.pdf) covering neighborhoods, schools, hospitals, the DMV, dining and things to do
 - Home valuations for sellers, with a written opinion of value based on recent nearby sales
 - Live MLS home search and showing requests on juliancrider.com
 - Investment and commercial property
