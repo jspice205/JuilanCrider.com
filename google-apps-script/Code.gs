@@ -860,12 +860,12 @@ function setupWeeklyDigest() {
   console.log('Weekly digest scheduled for Mondays around 7am Pacific.');
 }
 
-/** Run once: re-scores everyone in Follow Up Boss every night around 2am Pacific and adds Hot/Warm tags,
+/** Run once: re-scores everyone in Follow Up Boss every morning around 7am Pacific (so the funnel emails land as people wake up) and adds Hot/Warm tags,
  *  so your FUB automations start the right action plan while you sleep. Check the "FUB Scorecard" tab each morning. */
 function setupNightlyScoring() {
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'scoreFubDatabase').forEach(t => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger('scoreFubDatabase').timeBased().everyDays(1).atHour(2).inTimezone('America/Los_Angeles').create();
-  console.log('Nightly scoring scheduled for around 2am Pacific.');
+  ScriptApp.newTrigger('scoreFubDatabase').timeBased().everyDays(1).atHour(7).inTimezone('America/Los_Angeles').create();
+  console.log('Daily scoring + emails scheduled for around 7am Pacific.');
 }
 
 /** Start the sheet import over from the top (only needed if you want to re-send everything). */
