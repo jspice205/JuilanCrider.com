@@ -60,6 +60,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   status Running; it pauses the old JC plan on stage moves/pauses. Tested: Hot 1 delivered to test contact 2221 (Trash).
   Welcome email: open-house sign-ins and website account/guide sign-ups get FUB plan "JC Welcome (sign-in)" (29,
   HTML template 183, emails/welcome.html) right away; the funnel waits 2 days after `created` before starting the drip.
+  Re-intro: contacts in FUB 30+ days with no funnel stage (not Farm) first get plan "JC Re-Intro" (30, HTML template 184,
+  emails/reintro.html, "It's been a while"); Funnel tab records `reintro-<stage>` and their real drip starts 4+ days later.
   Newsletter/content-drop sends: plans 27/28 (templates 181/182, emails/*.html). Contacts tagged "Test…" are skipped.
   The JC tags are still added so Smart Lists show the stage: Hot → `JC Hot`, Warm → `JC Warm`, Legacy →
   `JC Legacy Re-Intro`, Farm – Best → `JC Farm Best`, Tier C (not farm/legacy) → `JC Long-Term Nurture`; after
