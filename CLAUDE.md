@@ -62,6 +62,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   HTML template 183, emails/welcome.html) right away; the funnel waits 2 days after `created` before starting the drip.
   Re-intro: contacts in FUB 30+ days with no funnel stage (not Farm) first get plan "JC Re-Intro" (30, HTML template 184,
   emails/reintro.html, "It's been a while"); Funnel tab records `reintro-<stage>` and their real drip starts 4+ days later.
+  Farm – Best get "JC Neighbor Note" (31, template 185, emails/neighbor-note.html) first instead; plan 25 now starts at
+  Farm Best 2 (template 177 retired). Open-house form asks "Do you live in this neighborhood?"; Yes → tags `Open House
+  Neighbor` + `Likely Seller`, plan "JC Neighbor Welcome" (32, template 186, emails/welcome-neighbor.html) instead of 29,
+  then the Farm drip (no Neighbor Note). `juliancrider.com/?value` opens the home-value form.
   Newsletter/content-drop sends: plans 27/28 (templates 181/182, emails/*.html). Contacts tagged "Test…" are skipped.
   The JC tags are still added so Smart Lists show the stage: Hot → `JC Hot`, Warm → `JC Warm`, Legacy →
   `JC Legacy Re-Intro`, Farm – Best → `JC Farm Best`, Tier C (not farm/legacy) → `JC Long-Term Nurture`; after
