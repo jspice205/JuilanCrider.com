@@ -41,6 +41,9 @@ const PALETTES = {
     dark:'#1e1b18', light:'#f6efe3', soft:'#d9cbb4', 'muted-dark':'#8d7f6c', shade:'rgba(30,27,24,.88)', photo:'saturate(.85) contrast(1.05) sepia(.18)'},
   site: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#d13438', 'on-accent':'#ffffff', hi:'#ef4044',
     dark:'#0b0b0c', light:'#ffffff', soft:'#c7c7cc', 'muted-dark':'#6e6e73', shade:'rgba(0,0,0,.88)', photo:'saturate(.95) contrast(1.08)'},
+  // Calmer version of "site": red only on the small tag and button; headlines and numbers stay black/white.
+  quiet: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#b3262b', 'on-accent':'#ffffff', hi:'#ffffff', big:'#111111',
+    dark:'#0b0b0c', light:'#ffffff', soft:'#c7c7cc', 'muted-dark':'#6e6e73', shade:'rgba(0,0,0,.88)', photo:'saturate(.95) contrast(1.08)'},
   gold: {paper:'#f3f1ec', ink:'#0e0e0e', ink2:'#3a3835', muted:'#8c857a', accent:'#b8963e', 'on-accent':'#0e0e0e', hi:'#d9b860',
     dark:'#0e0e0e', light:'#f7f5f0', soft:'#cfc8bb', 'muted-dark':'#7d776d', shade:'rgba(10,10,10,.9)', photo:'saturate(.8) contrast(1.1)'},
   navy: {paper:'#eef1f4', ink:'#0f1b2d', ink2:'#33405a', muted:'#7d889b', accent:'#1f6feb', 'on-accent':'#ffffff', hi:'#8fd3ff',
@@ -65,7 +68,7 @@ const CSS = FONT_CSS + VARS + `*{margin:0;padding:0;box-sizing:border-box}body{w
 .yard{position:absolute;left:70px;right:70px;bottom:70px;display:flex;gap:16px;align-items:center;font:500 20px Osw;letter-spacing:.24em;color:var(--soft)}
 .yard i{flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--soft) 0 18px,transparent 18px 30px)}
 .card .col{position:absolute;top:110px;left:70px;right:90px}
-.card .big{font:400 300px/1 Anton;color:var(--accent)}
+.card .big{font:400 300px/1 Anton;color:var(--big,var(--accent))}
 .card h2{margin-top:40px;font:400 92px/1 Anton;text-transform:uppercase;color:var(--ink)}
 .card .bar{margin:44px 0 36px;width:120px;height:8px;background:var(--ink)}
 .card p{font:400 38px/1.45 Inter;color:var(--ink2)}
