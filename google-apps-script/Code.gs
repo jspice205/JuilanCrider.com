@@ -741,7 +741,7 @@ function runFunnel(people) {
     const tags = p.tags || [], stage = String(p.stage || '');
     if (!(p.emails || []).some(e => validEmail(e.value) && !/invalid|bounce|bad/i.test(e.status || ''))) return false;
     if (/trash|unresponsive|do not|past client|sphere/i.test(stage) || paused(p)) return false;
-    return !tags.some(t => /^(Has Agent|Partner|Do Not Contact)$/i.test(t));
+    return !tags.some(t => /^(Has Agent|Partner|Do Not Contact)$|^Test\b/i.test(t));
   };
   const record = (p, stage, tag, why) => {
     const cur = rows[p.id], vals = [p.id, p.name || [p.firstName, p.lastName].join(' '), stage, today, tag, why];
