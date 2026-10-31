@@ -54,9 +54,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Tags: every scored contact has one of `Tier A` (Hot) / `Tier B` (Warm) / `Tier C` (Nurture or Cold), refreshed
   nightly. `Intake Tier A/B/C` = how strong their sign-up was (an input, never overwritten). `Hot`/`Warm` tags are
   never added automatically for Farm, Legacy or "Not DNC checked" contacts.
-- Funnel (`runFunnel`, after nightly scoring), max 50/night. FUB moved Action Plans to Automations 2.0 (Oct 29)
-  and the API can't start automations (403 on automations/automationsPeople), so the script adds a **trigger tag**
-  and Julián's FUB Automation of the same name starts on "Tag added": Hot → `JC Hot`, Warm → `JC Warm`, Legacy →
+- Funnel (`runFunnel`, after nightly scoring), max 50/night. The API can't touch Automations 2.0 (403), but on Oct 31
+  Claude found it can still create/start **Action Plans**: JC Hot 22, JC Warm 23, JC Legacy Re-Intro 24, JC Farm Best 25,
+  JC Long-Term Nurture 26 (FUNNEL.plans; stopOnContacted false). API-started plans begin Paused, so the script PUTs
+  status Running; it pauses the old JC plan on stage moves/pauses. Tested: Hot 1 delivered to test contact 2221 (Trash).
+  The JC tags are still added so Smart Lists show the stage: Hot → `JC Hot`, Warm → `JC Warm`, Legacy →
   `JC Legacy Re-Intro`, Farm – Best → `JC Farm Best`, Tier C (not farm/legacy) → `JC Long-Term Nurture`; after
   25/65/25/60 days they move to Long-Term Nurture (old JC tag removed). `Text OK` people get "<tag> + Text" for stages
   in `FUNNEL.textLive`. Nothing is tagged for a stage until it's in `FUNNEL.live` — flip those in Code.gs when Julián
