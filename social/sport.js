@@ -34,40 +34,53 @@ const SETS = {
              ['Which one fits you?', 'It depends on your budget and timeline. Have your lender run both side by side before you write the offer.']]},
 };
 
+// Color palettes. Pick with PALETTE=<name> (default below). "desert" is the original terracotta look.
+const PALETTES = {
+  desert: {paper:'#e9dcc6', ink:'#1e1b18', ink2:'#3b342c', muted:'#7a6b58', accent:'#c2603d', 'on-accent':'#f6efe3', hi:'#e8a27d',
+    dark:'#1e1b18', light:'#f6efe3', soft:'#d9cbb4', 'muted-dark':'#8d7f6c', shade:'rgba(30,27,24,.88)', photo:'saturate(.85) contrast(1.05) sepia(.18)'},
+  site: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#d13438', 'on-accent':'#ffffff', hi:'#ffffff',
+    dark:'#0b0b0c', light:'#ffffff', soft:'#c7c7cc', 'muted-dark':'#6e6e73', shade:'rgba(0,0,0,.88)', photo:'saturate(.95) contrast(1.08)'},
+  gold: {paper:'#f3f1ec', ink:'#0e0e0e', ink2:'#3a3835', muted:'#8c857a', accent:'#b8963e', 'on-accent':'#0e0e0e', hi:'#d9b860',
+    dark:'#0e0e0e', light:'#f7f5f0', soft:'#cfc8bb', 'muted-dark':'#7d776d', shade:'rgba(10,10,10,.9)', photo:'saturate(.8) contrast(1.1)'},
+  navy: {paper:'#eef1f4', ink:'#0f1b2d', ink2:'#33405a', muted:'#7d889b', accent:'#1f6feb', 'on-accent':'#ffffff', hi:'#8fd3ff',
+    dark:'#0f1b2d', light:'#ffffff', soft:'#bcc6d6', 'muted-dark':'#6d7a91', shade:'rgba(10,20,36,.9)', photo:'saturate(.9) contrast(1.08)'},
+};
+const PAL = PALETTES[process.env.PALETTE || 'desert'];
+const VARS = ':root{' + Object.entries(PAL).map(([k, v]) => `--${k}:${v}`).join(';') + '}';
 const data = (f, t) => `data:${t};base64,` + fs.readFileSync(f).toString('base64');
 const font = (n, f) => `@font-face{font-family:${n};src:url(${data(path.join(FONTS, f), 'font/ttf')});font-weight:100 900}`;
 const FONT_CSS = font('Anton', 'Anton-Regular.ttf') + font('Osw', 'Oswald.ttf') + font('Inter', 'Inter.ttf');
 const GRAIN = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='.55'/></svg>")`;
-const CSS = FONT_CSS + `*{margin:0;padding:0;box-sizing:border-box}body{width:1080px;height:1350px}
-.s{position:relative;width:1080px;height:1350px;overflow:hidden;background:#e9dcc6}
+const CSS = FONT_CSS + VARS + `*{margin:0;padding:0;box-sizing:border-box}body{width:1080px;height:1350px}
+.s{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--paper)}
 .grain{position:absolute;inset:0;background:${GRAIN};mix-blend-mode:multiply;opacity:.35}
-.bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:saturate(.85) contrast(1.05) sepia(.18)}
-.tint{position:absolute;inset:0;background:linear-gradient(180deg,rgba(194,96,61,.05),rgba(30,27,24,.15) 40%,rgba(30,27,24,.88))}
-.tag{position:absolute;top:66px;left:70px;background:#c2603d;color:#f6efe3;font:600 24px Osw;letter-spacing:.18em;padding:10px 20px;text-transform:uppercase}
-.no{position:absolute;top:60px;right:70px;font:400 40px Anton;color:#f6efe3}
-.cover .t{position:absolute;left:70px;right:70px;bottom:120px;color:#f6efe3}
-.cover h1{font:400 150px/.92 Anton;text-transform:uppercase}.cover h1 span{color:#e8a27d}
-.cover .sub{margin-top:26px;font:500 32px Osw;letter-spacing:.14em;text-transform:uppercase;color:#eadfcd}
-.yard{position:absolute;left:70px;right:70px;bottom:70px;display:flex;gap:16px;align-items:center;font:500 20px Osw;letter-spacing:.24em;color:#d9cbb4}
-.yard i{flex:1;height:2px;background:repeating-linear-gradient(90deg,#d9cbb4 0 18px,transparent 18px 30px)}
+.bg{position:absolute;inset:0;background-size:cover;background-position:center;filter:var(--photo)}
+.tint{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.15) 40%,var(--shade))}
+.tag{position:absolute;top:66px;left:70px;background:var(--accent);color:var(--on-accent);font:600 24px Osw;letter-spacing:.18em;padding:10px 20px;text-transform:uppercase}
+.no{position:absolute;top:60px;right:70px;font:400 40px Anton;color:var(--light)}
+.cover .t{position:absolute;left:70px;right:70px;bottom:120px;color:var(--light)}
+.cover h1{font:400 150px/.92 Anton;text-transform:uppercase}.cover h1 span{color:var(--hi)}
+.cover .sub{margin-top:26px;font:500 32px Osw;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.yard{position:absolute;left:70px;right:70px;bottom:70px;display:flex;gap:16px;align-items:center;font:500 20px Osw;letter-spacing:.24em;color:var(--soft)}
+.yard i{flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--soft) 0 18px,transparent 18px 30px)}
 .card .col{position:absolute;top:110px;left:70px;right:90px}
-.card .big{font:400 300px/1 Anton;color:#c2603d}
-.card h2{margin-top:40px;font:400 92px/1 Anton;text-transform:uppercase;color:#1e1b18}
-.card .bar{margin:44px 0 36px;width:120px;height:8px;background:#1e1b18}
-.card p{font:400 38px/1.45 Inter;color:#3b342c}
-.card .ft{position:absolute;bottom:64px;left:70px;right:70px;display:flex;justify-content:space-between;font:500 22px Osw;letter-spacing:.22em;color:#7a6b58;text-transform:uppercase}
-.cta{background:#1e1b18;color:#f6efe3}
-.cta .ph{position:absolute;top:150px;left:70px;width:400px;height:500px;background-size:cover;background-position:center 15%;filter:sepia(.15)}
-.cta .ph:after{content:'';position:absolute;left:-14px;top:-14px;right:14px;bottom:14px;border:4px solid #c2603d}
-.cta .side{position:absolute;top:180px;left:520px;right:70px;font:500 28px/1.6 Osw;letter-spacing:.14em;text-transform:uppercase;color:#d9cbb4}
-.cta .side b{display:block;font:400 64px/1 Anton;color:#f6efe3;margin-bottom:14px}
-.cta h2{position:absolute;top:720px;left:70px;right:70px;font:400 120px/.95 Anton;text-transform:uppercase}.cta h2 span{color:#e8a27d}
-.cta .btn{position:absolute;top:1010px;left:70px;background:#c2603d;color:#f6efe3;font:600 34px Osw;letter-spacing:.12em;padding:22px 34px;text-transform:uppercase}
-.cta .alt{position:absolute;top:1120px;left:70px;font:500 28px Osw;letter-spacing:.14em;color:#d9cbb4;text-transform:uppercase}
-.cta .lic{position:absolute;bottom:64px;left:70px;font:500 20px Osw;letter-spacing:.22em;color:#8d7f6c;text-transform:uppercase}
-.reel{width:1080px;height:1920px;background:#1e1b18;position:relative}
+.card .big{font:400 300px/1 Anton;color:var(--accent)}
+.card h2{margin-top:40px;font:400 92px/1 Anton;text-transform:uppercase;color:var(--ink)}
+.card .bar{margin:44px 0 36px;width:120px;height:8px;background:var(--ink)}
+.card p{font:400 38px/1.45 Inter;color:var(--ink2)}
+.card .ft{position:absolute;bottom:64px;left:70px;right:70px;display:flex;justify-content:space-between;font:500 22px Osw;letter-spacing:.22em;color:var(--muted);text-transform:uppercase}
+.cta{background:var(--dark);color:var(--light)}
+.cta .ph{position:absolute;top:150px;left:70px;width:400px;height:500px;background-size:cover;background-position:center 15%}
+.cta .ph:after{content:'';position:absolute;left:-14px;top:-14px;right:14px;bottom:14px;border:4px solid var(--accent)}
+.cta .side{position:absolute;top:180px;left:520px;right:70px;font:500 28px/1.6 Osw;letter-spacing:.14em;text-transform:uppercase;color:var(--soft)}
+.cta .side b{display:block;font:400 64px/1 Anton;color:var(--light);margin-bottom:14px}
+.cta h2{position:absolute;top:720px;left:70px;right:70px;font:400 120px/.95 Anton;text-transform:uppercase}.cta h2 span{color:var(--hi)}
+.cta .btn{position:absolute;top:1010px;left:70px;background:var(--accent);color:var(--on-accent);font:600 34px Osw;letter-spacing:.12em;padding:22px 34px;text-transform:uppercase}
+.cta .alt{position:absolute;top:1120px;left:70px;font:500 28px Osw;letter-spacing:.14em;color:var(--soft);text-transform:uppercase}
+.cta .lic{position:absolute;bottom:64px;left:70px;font:500 20px Osw;letter-spacing:.22em;color:var(--muted-dark);text-transform:uppercase}
+.reel{width:1080px;height:1920px;background:var(--dark);position:relative}
 .reel .frame{position:absolute;top:285px;left:0;width:1080px;height:1350px}
-.reel .top,.reel .bot{position:absolute;left:0;right:0;text-align:center;font:500 30px Osw;letter-spacing:.3em;color:#d9cbb4;text-transform:uppercase}
+.reel .top,.reel .bot{position:absolute;left:0;right:0;text-align:center;font:500 30px Osw;letter-spacing:.3em;color:var(--soft);text-transform:uppercase}
 .reel .top{top:150px}.reel .bot{bottom:140px}`;
 
 function slidesFor(c) {
