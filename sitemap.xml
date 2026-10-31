@@ -4,4 +4,8 @@
   <url><loc>https://juliancrider.com/llms.txt</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://juliancrider.com/Las-Vegas-Relocation-Guide.pdf</loc><changefreq>yearly</changefreq><priority>0.6</priority></url>
   <url><loc>https://juliancrider.com/privacy.html</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://juliancrider.com/?blog=hoa-questions</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://juliancrider.com/?blog=summerlin-village</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://juliancrider.com/?blog=california-to-las-vegas</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://juliancrider.com/?blog=buydowns-seller-credits</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
 </urlset>
