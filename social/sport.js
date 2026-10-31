@@ -1,5 +1,5 @@
 // "Desert Sport" carousels + Reel versions for @juliancriderestates (style D, chosen Oct 30 2026).
-// Usage: node social/sport.js [setKey]
+// Usage: node social/sport.js [setKey]   (STYLE=luxe for calm-luxury posts; PALETTE=<name> to change colors)
 //   -> social/carousels/<key>-N.jpg (1080x1350 slides) and social/reels/<key>.mp4 (1080x1920 slideshow, no audio;
 //      music is added from Instagram's library when scheduling the Reel in Metricool).
 // Add new topics to SETS. bg = a photo in img/. Keep copy evergreen: no prices, rates or stats.
@@ -53,7 +53,25 @@ const PAL = PALETTES[process.env.PALETTE || 'quiet'];
 const VARS = ':root{' + Object.entries(PAL).map(([k, v]) => `--${k}:${v}`).join(';') + '}';
 const data = (f, t) => `data:${t};base64,` + fs.readFileSync(f).toString('base64');
 const font = (n, f) => `@font-face{font-family:${n};src:url(${data(path.join(FONTS, f), 'font/ttf')});font-weight:100 900}`;
-const FONT_CSS = font('Anton', 'Anton-Regular.ttf') + font('Osw', 'Oswald.ttf') + font('Inter', 'Inter.ttf');
+const FONT_CSS = font('Anton', 'Anton-Regular.ttf') + font('Osw', 'Oswald.ttf') + font('Inter', 'Inter.ttf') +
+  font('Corm', 'Cormorant.ttf') + `@font-face{font-family:Corm;font-style:italic;src:url(${data(path.join(FONTS, 'Cormorant-Italic.ttf'), 'font/ttf')});font-weight:300 700}`;
+// STYLE=luxe: "calm luxury" for high-end listings and communities. Same layout and colors, but an elegant serif
+// (Cormorant Garamond), sentence case, italic accents and thin rules instead of heavy blocks. Red stays as a small thread.
+const LUXE = process.env.STYLE === 'luxe' ? `
+.s{background:#f1eee9}.cta,.reel{background:#0d0d0d}
+.tag{background:none;border:1px solid currentColor;color:var(--light);font:500 20px Osw;letter-spacing:.32em;padding:9px 18px}
+.no{font:italic 400 38px Corm;letter-spacing:.04em}
+.cover h1{font:500 132px/.98 Corm;text-transform:none;letter-spacing:-.01em}.cover h1 span{font-style:italic;font-weight:400;color:var(--light)}
+.cover .sub{font:500 24px Osw;letter-spacing:.34em}
+.cover .t:before{content:'';display:block;width:90px;height:3px;background:var(--accent);margin-bottom:34px}
+.card .big{font:italic 300 220px/1 Corm;color:var(--ink)}
+.card h2{font:500 82px/1.02 Corm;text-transform:none;letter-spacing:-.01em}
+.card .bar{width:90px;height:3px;background:var(--accent)}
+.card p{font:400 36px/1.5 Inter;color:#45423e}
+.cta .side b{font:500 58px/1.05 Corm;text-transform:none}
+.cta h2{font:500 118px/.98 Corm;text-transform:none}.cta h2 span{font-style:italic;font-weight:400;color:var(--light)}
+.cta .btn{background:none;border:1px solid var(--light);color:var(--light);font:500 28px Osw;letter-spacing:.24em}
+.cta .ph:after{border-width:1px;border-color:var(--accent)}` : '';
 const GRAIN = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='.55'/></svg>")`;
 const CSS = FONT_CSS + VARS + `*{margin:0;padding:0;box-sizing:border-box}body{width:1080px;height:1350px}
 .s{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--paper)}
@@ -85,7 +103,7 @@ const CSS = FONT_CSS + VARS + `*{margin:0;padding:0;box-sizing:border-box}body{w
 .reel{width:1080px;height:1920px;background:var(--dark);position:relative}
 .reel .frame{position:absolute;top:285px;left:0;width:1080px;height:1350px}
 .reel .top,.reel .bot{position:absolute;left:0;right:0;text-align:center;font:500 30px Osw;letter-spacing:.3em;color:var(--soft);text-transform:uppercase}
-.reel .top{top:150px}.reel .bot{bottom:140px}`;
+.reel .top{top:150px}.reel .bot{bottom:140px}` + LUXE;
 
 function slidesFor(c) {
   const n = c.slides.length + 2, pad = i => String(i).padStart(2, '0');
