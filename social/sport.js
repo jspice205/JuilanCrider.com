@@ -34,18 +34,19 @@ const SETS = {
              ['Which one fits you?', 'It depends on your budget and timeline. Have your lender run both side by side before you write the offer.']]},
 };
 
-// Color palettes. Pick with PALETTE=<name> (default below). "desert" is the original terracotta look.
+// Color palettes. Pick with PALETTE=<name>. Default "site" (black/white/red, matches juliancrider.com; chosen Oct 31).
+// "gold" is for luxury listing tours and high-end community spotlights. "desert" is the original terracotta look.
 const PALETTES = {
   desert: {paper:'#e9dcc6', ink:'#1e1b18', ink2:'#3b342c', muted:'#7a6b58', accent:'#c2603d', 'on-accent':'#f6efe3', hi:'#e8a27d',
     dark:'#1e1b18', light:'#f6efe3', soft:'#d9cbb4', 'muted-dark':'#8d7f6c', shade:'rgba(30,27,24,.88)', photo:'saturate(.85) contrast(1.05) sepia(.18)'},
-  site: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#d13438', 'on-accent':'#ffffff', hi:'#ffffff',
+  site: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#d13438', 'on-accent':'#ffffff', hi:'#ef4044',
     dark:'#0b0b0c', light:'#ffffff', soft:'#c7c7cc', 'muted-dark':'#6e6e73', shade:'rgba(0,0,0,.88)', photo:'saturate(.95) contrast(1.08)'},
   gold: {paper:'#f3f1ec', ink:'#0e0e0e', ink2:'#3a3835', muted:'#8c857a', accent:'#b8963e', 'on-accent':'#0e0e0e', hi:'#d9b860',
     dark:'#0e0e0e', light:'#f7f5f0', soft:'#cfc8bb', 'muted-dark':'#7d776d', shade:'rgba(10,10,10,.9)', photo:'saturate(.8) contrast(1.1)'},
   navy: {paper:'#eef1f4', ink:'#0f1b2d', ink2:'#33405a', muted:'#7d889b', accent:'#1f6feb', 'on-accent':'#ffffff', hi:'#8fd3ff',
     dark:'#0f1b2d', light:'#ffffff', soft:'#bcc6d6', 'muted-dark':'#6d7a91', shade:'rgba(10,20,36,.9)', photo:'saturate(.9) contrast(1.08)'},
 };
-const PAL = PALETTES[process.env.PALETTE || 'desert'];
+const PAL = PALETTES[process.env.PALETTE || 'site'];
 const VARS = ':root{' + Object.entries(PAL).map(([k, v]) => `--${k}:${v}`).join(';') + '}';
 const data = (f, t) => `data:${t};base64,` + fs.readFileSync(f).toString('base64');
 const font = (n, f) => `@font-face{font-family:${n};src:url(${data(path.join(FONTS, f), 'font/ttf')});font-weight:100 900}`;
