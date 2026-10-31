@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<!-- Evergreen "Vegas Move Letter" (No. 1): same brand as the weekly content drop, value-first.
+     Weekly "content drop" email base for Julián Crider (calm black-and-white brand, red as a small accent).
+     Table layout + inline styles so it renders in Gmail, Apple Mail and Outlook. Images load from juliancrider.com/emails/img/.
+     Placeholders the sender fills: {{first_name}}, {{subject_line}}, {{preheader}}, {{unsubscribe_url}}. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<title>{{subject_line}}</title>
+<style>
+  @media (max-width: 620px) {
+    .wrap { width: 100% !important; }
+    .pad { padding-left: 22px !important; padding-right: 22px !important; }
+    .col { display: block !important; width: 100% !important; padding: 0 0 18px 0 !important; }
+    .h1 { font-size: 34px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f1eee9;">
+<!-- Preheader: the gray preview line next to the subject in the inbox -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">{{preheader}}&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1eee9;">
+<tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" style="width:600px;background:#ffffff;">
+
+  <!-- Header -->
+  <tr><td class="pad" style="padding:28px 40px 18px 40px;border-bottom:1px solid #ececec;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td style="font:600 13px/1 Helvetica,Arial,sans-serif;letter-spacing:3px;color:#111111;text-transform:uppercase;">Julián Crider</td>
+      <td align="right" style="font:500 11px/1 Helvetica,Arial,sans-serif;letter-spacing:2px;color:#8a8a8e;text-transform:uppercase;">The Vegas Move Letter</td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Hero -->
+  <tr><td style="padding:0;">
+    <img src="https://juliancrider.com/img/northwest-summerlin.jpg" width="600" alt="Red Rock Canyon road, Summerlin" style="display:block;width:100%;max-width:600px;height:auto;border:0;">
+  </td></tr>
+
+  <!-- Note from Julián -->
+  <tr><td class="pad" style="padding:34px 40px 8px 40px;">
+    <div style="width:56px;height:3px;background:#b3262b;margin:0 0 22px 0;line-height:3px;font-size:0;">&nbsp;</div>
+    <p style="margin:0 0 10px 0;font:600 12px/1 Helvetica,Arial,sans-serif;letter-spacing:3px;color:#8a8a8e;text-transform:uppercase;">The Vegas Move Letter &middot; No. 1</p>
+    <h1 class="h1" style="margin:0 0 16px 0;font:400 40px/1.08 Georgia,'Times New Roman',serif;color:#111111;">The neighborhood isn&rsquo;t the zip code. <i>It&rsquo;s your Tuesday.</i></h1>
+    <p style="margin:0 0 14px 0;font:400 16px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">Hi {{first_name}},</p>
+    <p style="margin:0 0 14px 0;font:400 16px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">Most people pick a Las Vegas neighborhood from a map and a few listing photos. The ones who end up happiest pick it from an ordinary weekday. Before you fall for a house, run it through these three questions.</p>
+  </td></tr>
+
+  <!-- The 3 questions -->
+  <tr><td class="pad" style="padding:14px 40px 4px 40px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr><td width="56" valign="top" style="font:400 40px/1 Georgia,serif;color:#111111;padding:4px 0 22px 0;">01</td>
+          <td valign="top" style="padding:0 0 22px 0;border-bottom:1px solid #ececec;">
+            <p style="margin:0 0 6px 0;font:400 21px/1.25 Georgia,serif;color:#111111;">Where does your week actually happen?</p>
+            <p style="margin:0;font:400 15px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">Work, school, the gym, the airport. Drive it at 8 a.m., not on a Sunday. The right area can give you back 20 minutes a day.</p></td></tr>
+      <tr><td width="56" valign="top" style="font:400 40px/1 Georgia,serif;color:#111111;padding:22px 0 22px 0;">02</td>
+          <td valign="top" style="padding:22px 0 22px 0;border-bottom:1px solid #ececec;">
+            <p style="margin:0 0 6px 0;font:400 21px/1.25 Georgia,serif;color:#111111;">What does the HOA really include?</p>
+            <p style="margin:0;font:400 15px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">Two communities with the same fee can cover very different things: gates, pools, landscaping, trails. Many have a master and a sub-HOA. Ask for both budgets.</p></td></tr>
+      <tr><td width="56" valign="top" style="font:400 40px/1 Georgia,serif;color:#111111;padding:22px 0 8px 0;">03</td>
+          <td valign="top" style="padding:22px 0 8px 0;">
+            <p style="margin:0 0 6px 0;font:400 21px/1.25 Georgia,serif;color:#111111;">How will it feel in July?</p>
+            <p style="margin:0;font:400 15px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">Which way the backyard faces, shade, the pool and the age of the A/C decide how much you enjoy summer, and what it costs.</p></td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Free guide -->
+  <tr><td class="pad" style="padding:30px 40px 6px 40px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f4f0;">
+      <tr><td style="padding:22px 24px;">
+        <p style="margin:0 0 6px 0;font:600 12px/1 Helvetica,Arial,sans-serif;letter-spacing:3px;color:#8a8a8e;text-transform:uppercase;">Free guide</p>
+        <p style="margin:0 0 8px 0;font:400 21px/1.25 Georgia,serif;color:#111111;">The Las Vegas Relocation Guide</p>
+        <p style="margin:0 0 14px 0;font:400 15px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">Neighborhoods, schools, things to do and a moving checklist, in one place.</p>
+        <a href="https://juliancrider.com/Las-Vegas-Relocation-Guide.pdf" target="_blank" style="font:600 13px/1 Helvetica,Arial,sans-serif;letter-spacing:2px;color:#111111;text-transform:uppercase;">Read the guide &rarr;</a>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- CTA -->
+  <tr><td class="pad" align="left" style="padding:30px 40px 8px 40px;">
+    <p style="margin:0 0 18px 0;font:400 16px/1.6 Helvetica,Arial,sans-serif;color:#3a3a3c;">If a move is on your radar, I&rsquo;ll put together a free game plan for your budget: the neighborhoods I&rsquo;d look at, what it really costs, and your next three steps.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+      <td style="background:#111111;"><a href="https://juliancrider.com/?book" target="_blank" style="display:inline-block;padding:15px 28px;font:600 13px/1 Helvetica,Arial,sans-serif;letter-spacing:2px;color:#ffffff;text-decoration:none;text-transform:uppercase;">Book your game plan</a></td>
+    </tr></table>
+  </td></tr>
+
+  <!-- P.S. (Chris Voss style: a no-oriented question that invites a reply) -->
+  <tr><td class="pad" style="padding:22px 40px 34px 40px;">
+    <p style="margin:0;font:italic 400 16px/1.6 Georgia,serif;color:#3a3a3c;">P.S. Would it be a bad idea to reply with where your week happens (work, school, the airport)? I&rsquo;ll send you the two or three areas I&rsquo;d start with.</p>
+  </td></tr>
+
+  <!-- Signature -->
+  <tr><td class="pad" style="padding:24px 40px;background:#0b0b0c;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td width="84" valign="top"><img src="https://juliancrider.com/emails/img/julian.jpg" width="72" alt="Julián Crider" style="display:block;width:72px;height:auto;border:0;"></td>
+      <td valign="top" style="padding-left:14px;">
+        <p style="margin:0 0 4px 0;font:400 22px/1.2 Georgia,serif;color:#ffffff;">Julián Crider</p>
+        <p style="margin:0 0 10px 0;font:500 11px/1.5 Helvetica,Arial,sans-serif;letter-spacing:2px;color:#c7c7cc;text-transform:uppercase;">Realtor&reg; &middot; The DeBenedetto Team &middot; Boeckle &amp; Co.</p>
+        <p style="margin:0;font:400 14px/1.6 Helvetica,Arial,sans-serif;color:#ffffff;">
+          <a href="tel:+17024982571" style="color:#ffffff;text-decoration:none;">702-498-2571</a> &nbsp;&middot;&nbsp;
+          <a href="https://juliancrider.com" style="color:#ffffff;text-decoration:none;">juliancrider.com</a> &nbsp;&middot;&nbsp;
+          <a href="https://www.instagram.com/juliancriderestates/" style="color:#ffffff;text-decoration:none;">Instagram</a></p>
+      </td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Legal footer (license, brokerage, address, opt-out: required for marketing email) -->
+  <tr><td class="pad" style="padding:18px 40px 26px 40px;background:#0b0b0c;border-top:1px solid #2a2a2c;">
+    <p style="margin:0;font:400 11px/1.6 Helvetica,Arial,sans-serif;color:#8a8a8e;">
+      Julián Crider, NV S.0177760 &middot; Boeckle &amp; Co., B.1001882 &middot; 4775 W Teco Ave #220, Las Vegas, NV 89118 &middot; Equal Housing Opportunity.<br>
+      You&rsquo;re getting this because you reached out about real estate in Las Vegas. Not useful anymore?
+      <a href="{{unsubscribe_url}}" style="color:#c7c7cc;">Unsubscribe</a> and you won&rsquo;t hear from me again.</p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>
