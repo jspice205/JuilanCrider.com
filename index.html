@@ -768,6 +768,7 @@ img{max-width:100%;display:block}
         <div class="field"><label for="ohLast">Last name</label><input id="ohLast" autocomplete="family-name"></div></div>
         <div class="field"><label for="ohPhone">Phone</label><input id="ohPhone" type="tel" autocomplete="tel"></div>
         <div class="field"><label for="ohEmail">Email</label><input id="ohEmail" type="email" autocomplete="email"></div>
+        <div class="field"><span class="lab">Do you live in this neighborhood?</span><div class="chips" data-chips="nb" data-opts="Yes, I’m a neighbor|No"></div></div>
         <div class="field"><span class="lab">How well does this home fit what you’re looking for?</span><div class="scale" data-chips="fit"></div></div>
         <div class="field"><span class="lab">Are you working with an agent?</span><div class="chips" data-chips="agent" data-opts="No|Yes, with a signed agreement|Yes, informally"></div></div>
         <div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="preapp" data-opts="Yes|Not yet|Paying cash"></div></div>
@@ -1915,8 +1916,8 @@ $('ohForm').onsubmit = e => { e.preventDefault();
   $('ohErr').style.display = ok ? 'none' : 'block'; if (!ok) return;
   const f = $('ohForm');
   sendLead({tab:'Sign-Ins', name:($('ohFirst').value+' '+$('ohLast').value).trim(), phone:$('ohPhone').value.trim(), email:$('ohEmail').value.trim(),
-    property:$('ohProp').value.trim(), score:chipVal(f,'fit'), status:chipVal(f,'now'), timeline:chipVal(f,'tl'), source:$('ohHeard').value,
-    notes: joinNotes(['Notes: '+$('ohNotes').value.trim(), 'Working with agent: '+chipVal(f,'agent'), 'Pre-approved: '+chipVal(f,'preapp'), 'Signed in on: juliancrider.com'])});
+    property:$('ohProp').value.trim(), neighbor:/^Yes/.test(chipVal(f,'nb')) ? 'Yes' : '', score:chipVal(f,'fit'), status:chipVal(f,'now'), timeline:chipVal(f,'tl'), source:$('ohHeard').value,
+    notes: joinNotes(['Notes: '+$('ohNotes').value.trim(), 'Neighbor: '+(/^Yes/.test(chipVal(f,'nb')) ? 'Yes' : ''), 'Working with agent: '+chipVal(f,'agent'), 'Pre-approved: '+chipVal(f,'preapp'), 'Signed in on: juliancrider.com'])});
   $('ohForm').hidden = true; $('ohDone').hidden = false; };
 $('ohAgain').onclick = () => { $('ohForm').reset(); $('ohForm').querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); $('ohForm').hidden = false; $('ohDone').hidden = true; };
 $('valForm').onsubmit = e => { e.preventDefault();
@@ -2123,6 +2124,8 @@ function askIntent(){
 (function(){
   // juliancrider.com/?book opens Book a consultation right away (the link sent in Instagram and text auto-replies).
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
+  // juliancrider.com/?value opens the home-value form (link in the neighbor emails).
+  if (/[?&]value\b/.test(location.search)) { showTab('homes'); showPane('h-value'); return; }
   // juliancrider.com/?blog=<slug> opens that article (links in emails and posts).
   const bm = location.search.match(/[?&]blog=([\w-]+)/), bi = bm ? BLOGS.findIndex(b => b.slug === bm[1]) : -1;
   if (bi >= 0) { setTimeout(() => openBlog(bi), 300); return; }

@@ -309,9 +309,11 @@ function fubPerson(tabName, d) {
   const parts = String(d.name || '').trim().split(/\s+/);
   const tags = tabName === 'Sign-Ins' ? ['Open House'] : ['Website Lead', 'juliancrider.com'];
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
+  // "Do you live in this neighborhood? Yes" on the open-house form: neighbor welcome + seller-style follow-up.
+  if (tabName === 'Sign-Ins' && /Neighbor: Yes/.test(d.notes || '')) tags.push('Open House Neighbor', 'Likely Seller');
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
   if (tabName !== 'Sign-Ins') tags.push('Text OK');  // website forms carry the "agree to be contacted by text" line
-  scoreLead(tabName, d).forEach(t => tags.push(t));
+  scoreLead(tabName, d).forEach(t => { if (tags.indexOf(t) < 0) tags.push(t); });
   const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
   if (validEmail(d.email)) person.emails = [{value: String(d.email).trim()}];
   if (d.phone) person.phones = [{value: d.phone}];
@@ -389,7 +391,8 @@ function sendToFub(tabName, d) {
     try {
       const id = personId();
       if (id) {
-        const ap = fubFetch('actionPlansPeople', {personId: id, actionPlanId: WELCOME_PLAN});
+        const plan = person.tags.indexOf('Open House Neighbor') >= 0 ? NEIGHBOR_WELCOME_PLAN : WELCOME_PLAN;
+        const ap = fubFetch('actionPlansPeople', {personId: id, actionPlanId: plan});
         if (ap.status !== 'Running') fubFetch('actionPlansPeople/' + ap.id, {status: 'Running'}, 'put');
       }
     } catch (err) { console.error('Welcome email: ' + err); }
@@ -403,6 +406,7 @@ function sendToFub(tabName, d) {
     } catch (err) { console.error('Call task: ' + err); }
   }
 }
+const NEIGHBOR_WELCOME_PLAN = 32;  // "JC Neighbor Welcome (open house)": template 186, home value + off-market P.S.
 const WELCOME_PLAN = 29;  // FUB Action Plan "JC Welcome (sign-in)": one email, template 183 "Thanks for stopping by"
 
 /**
@@ -738,7 +742,7 @@ const FUNNEL = {
   // Older contacts (in FUB 30+ days, so they may not have heard from Julián in months or years) first get the designed
   // "It's been a while" re-introduction (plan 30, template 184); their personal plan starts reintroDays later.
   // Farm contacts skip it (they've never talked to Julián; Farm Best 1 is their intro).
-  reintroPlan: 30, reintroDays: 4, reintroAfterDays: 30,
+  reintroPlan: 30, neighborPlan: 31, reintroDays: 4, reintroAfterDays: 30,
   live: ['hot', 'warm', 'legacy', 'farm', 'nurture'],  // stages that start people (all five built Oct 31)
   textLive: [],  // stages whose "+ Text" automation exists, e.g. ['hot', 'warm', 'nurture']
   handoffDays: {hot: 25, warm: 65, legacy: 25, farm: 60}  // days after starting, move on to Long-Term Nurture
@@ -781,8 +785,13 @@ function runFunnel(people) {
   };
   const start = (p, stage, why) => {
     if (used >= FUNNEL.perNight || FUNNEL.live.indexOf(stage) < 0) return;
-    if (!stageOf(p) && stage !== 'farm' && p.created && (Date.now() - new Date(p.created)) / 864e5 >= FUNNEL.reintroAfterDays) {
-      try { startPlan(p, FUNNEL.reintroPlan); }
+    // First email is a designed intro, then the plain-text drip a few days later:
+    // Farm – Best homeowners get the "Neighbor Note" (31); anyone else in FUB 30+ days gets "It's been a while" (30).
+    // Open-house neighbors already got their neighbor welcome at sign-in, so they skip it.
+    const old = p.created && (Date.now() - new Date(p.created)) / 864e5 >= FUNNEL.reintroAfterDays;
+    const intro = stageOf(p) ? 0 : stage === 'farm' ? (has(p, 'Open House Neighbor') ? 0 : FUNNEL.neighborPlan) : old ? FUNNEL.reintroPlan : 0;
+    if (intro) {
+      try { startPlan(p, intro); }
       catch (e) { console.log('Funnel: could not send re-intro to ' + p.id + ': ' + e.message); return; }
       record(p, 'reintro-' + stage, '', 're-intro first, then ' + stage + ' (' + why + ')');
       used++; started++; Utilities.sleep(120);
@@ -819,6 +828,7 @@ function runFunnel(people) {
   eligible.filter(p => stageOf(p) === 'paused').forEach(p => start(p, 'nurture', 'resumed after pause'));
   eligible.filter(p => !stageOf(p) && (p.tags || []).some(t => /^Legacy/.test(t))).forEach(p => start(p, 'legacy', 'Legacy contact'));
   eligible.filter(p => !stageOf(p) && has(p, 'Farm – Best')).forEach(p => start(p, 'farm', 'Farm – Best'));
+  eligible.filter(p => !stageOf(p) && has(p, 'Open House Neighbor')).forEach(p => start(p, 'farm', 'open-house neighbor'));
   eligible.filter(p => !stageOf(p) && has(p, 'Tier C') && !has(p, 'Farm') && !(p.tags || []).some(t => /^Legacy/.test(t)))
     .forEach(p => start(p, 'nurture', 'Tier C'));
   props.setProperty('FUNNEL_DAY', today); props.setProperty('FUNNEL_COUNT', String(used));
