@@ -735,6 +735,10 @@ const FUNNEL = {
   perNight: 50,
   tags: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
   plans: {hot: 22, warm: 23, legacy: 24, farm: 25, nurture: 26},  // Follow Up Boss Action Plan ids
+  // Older contacts (in FUB 30+ days, so they may not have heard from Julián in months or years) first get the designed
+  // "It's been a while" re-introduction (plan 30, template 184); their personal plan starts reintroDays later.
+  // Farm contacts skip it (they've never talked to Julián; Farm Best 1 is their intro).
+  reintroPlan: 30, reintroDays: 4, reintroAfterDays: 30,
   live: ['hot', 'warm', 'legacy', 'farm', 'nurture'],  // stages that start people (all five built Oct 31)
   textLive: [],  // stages whose "+ Text" automation exists, e.g. ['hot', 'warm', 'nurture']
   handoffDays: {hot: 25, warm: 65, legacy: 25, farm: 60}  // days after starting, move on to Long-Term Nurture
@@ -771,13 +775,23 @@ function runFunnel(people) {
   const stopPlans = p => (fubFetch('actionPlansPeople?personId=' + p.id, null, 'get').actionPlansPeople || [])
     .filter(a => planIds.indexOf(a.actionPlanId) >= 0 && a.status === 'Running')
     .forEach(a => fubFetch('actionPlansPeople/' + a.id, {status: 'Paused'}, 'put'));
+  const startPlan = (p, planId) => {
+    const ap = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: planId});
+    if (ap.status !== 'Running') fubFetch('actionPlansPeople/' + ap.id, {status: 'Running'}, 'put');
+  };
   const start = (p, stage, why) => {
     if (used >= FUNNEL.perNight || FUNNEL.live.indexOf(stage) < 0) return;
+    if (!stageOf(p) && stage !== 'farm' && p.created && (Date.now() - new Date(p.created)) / 864e5 >= FUNNEL.reintroAfterDays) {
+      try { startPlan(p, FUNNEL.reintroPlan); }
+      catch (e) { console.log('Funnel: could not send re-intro to ' + p.id + ': ' + e.message); return; }
+      record(p, 'reintro-' + stage, '', 're-intro first, then ' + stage + ' (' + why + ')');
+      used++; started++; Utilities.sleep(120);
+      return;
+    }
     const tag = FUNNEL.tags[stage] + (has(p, 'Text OK') && FUNNEL.textLive.indexOf(stage) >= 0 ? ' + Text' : '');
     try {
       stopPlans(p);
-      const ap = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: FUNNEL.plans[stage]});
-      if (ap.status !== 'Running') fubFetch('actionPlansPeople/' + ap.id, {status: 'Running'}, 'put');
+      startPlan(p, FUNNEL.plans[stage]);
     } catch (e) { console.log('Funnel: could not start ' + stage + ' for ' + p.id + ': ' + e.message); return; }
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0).concat(tag);
     fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next;
@@ -793,6 +807,9 @@ function runFunnel(people) {
     record(p, 'paused', '', 'paused from ' + stageOf(p) + (has(p, 'Pause') ? ' (Pause tag)' : ' (' + p.stage + ')'));
   });
   const eligible = people.filter(ok);
+  // People who got the re-introduction: start their real plan once it's had time to land.
+  eligible.filter(p => /^reintro-/.test(stageOf(p) || '') && daysAgo(rows[p.id].started) >= FUNNEL.reintroDays)
+    .forEach(p => start(p, stageOf(p).slice(8), 'after re-intro'));
   // In priority order, until tonight's limit is used up.
   // Hot/Warm tags stay on for good, so only a tag added tonight moves someone up from Warm or Nurture.
   eligible.filter(p => has(p, 'Hot') && (!stageOf(p) || (p.newHot && /warm|nurture/.test(stageOf(p))))).forEach(p => start(p, 'hot', 'Tier A'));
