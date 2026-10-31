@@ -34,8 +34,8 @@ const SETS = {
              ['Which one fits you?', 'It depends on your budget and timeline. Have your lender run both side by side before you write the offer.']]},
 };
 
-// Color palettes. Pick with PALETTE=<name>. Default "site" (black/white/red, matches juliancrider.com; chosen Oct 31).
-// "gold" is for luxury listing tours and high-end community spotlights. "desert" is the original terracotta look.
+// Color palettes. Pick with PALETTE=<name>. Default "quiet" (black/white, red only on the tag and button; Julián's pick Oct 31).
+// Julián doesn't want gold ("everyone uses it"); "site" is the bolder red version, "desert" the original terracotta.
 const PALETTES = {
   desert: {paper:'#e9dcc6', ink:'#1e1b18', ink2:'#3b342c', muted:'#7a6b58', accent:'#c2603d', 'on-accent':'#f6efe3', hi:'#e8a27d',
     dark:'#1e1b18', light:'#f6efe3', soft:'#d9cbb4', 'muted-dark':'#8d7f6c', shade:'rgba(30,27,24,.88)', photo:'saturate(.85) contrast(1.05) sepia(.18)'},
@@ -49,7 +49,7 @@ const PALETTES = {
   navy: {paper:'#eef1f4', ink:'#0f1b2d', ink2:'#33405a', muted:'#7d889b', accent:'#1f6feb', 'on-accent':'#ffffff', hi:'#8fd3ff',
     dark:'#0f1b2d', light:'#ffffff', soft:'#bcc6d6', 'muted-dark':'#6d7a91', shade:'rgba(10,20,36,.9)', photo:'saturate(.9) contrast(1.08)'},
 };
-const PAL = PALETTES[process.env.PALETTE || 'site'];
+const PAL = PALETTES[process.env.PALETTE || 'quiet'];
 const VARS = ':root{' + Object.entries(PAL).map(([k, v]) => `--${k}:${v}`).join(';') + '}';
 const data = (f, t) => `data:${t};base64,` + fs.readFileSync(f).toString('base64');
 const font = (n, f) => `@font-face{font-family:${n};src:url(${data(path.join(FONTS, f), 'font/ttf')});font-weight:100 900}`;
