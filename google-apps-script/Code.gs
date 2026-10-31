@@ -333,6 +333,12 @@ function scoreLead(tabName, d) {
   else if (/sell|home value/.test(type)) { tags.push('Likely Seller'); pts += 20; }
   else if (/new construction|buying|relocat/.test(type)) pts += 10;
   if (/^Owning/.test(String(d.status || '')) && pts >= 15) tags.push('Likely Seller');
+  // Julián's focus: out-of-state buyers at $1.3M+ moving within ~60 days (booking form: Price range, Lives in)
+  const lux = /Price range: \$(1\.3M–\$3\.3M|3\.3M\+)/.test(notes);
+  const away = /Lives in: (California|Another state|Outside)/.test(notes);
+  if (lux) { tags.push('Luxury Buyer'); pts += 15; }
+  if (away) tags.push('Relocation');
+  if (lux && away && /^(Ready now|1–3 months)$/.test(tl)) { tags.push('Luxury Relocation 60 Days'); pts = Math.max(pts, 45); }
   const t = pts >= 45 ? 'A' : pts >= 25 ? 'B' : 'C';
   tags.unshift('Intake Tier ' + t, 'Tier ' + t);
   if (t !== 'C') tags.push(t === 'A' ? 'Hot' : 'Warm');
