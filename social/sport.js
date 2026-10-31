@@ -34,19 +34,22 @@ const SETS = {
              ['Which one fits you?', 'It depends on your budget and timeline. Have your lender run both side by side before you write the offer.']]},
 };
 
-// Color palettes. Pick with PALETTE=<name>. Default "site" (black/white/red, matches juliancrider.com; chosen Oct 31).
-// "gold" is for luxury listing tours and high-end community spotlights. "desert" is the original terracotta look.
+// Color palettes. Pick with PALETTE=<name>. Default "quiet" (black/white, red only on the tag and button; Julián's pick Oct 31).
+// Julián doesn't want gold ("everyone uses it"); "site" is the bolder red version, "desert" the original terracotta.
 const PALETTES = {
   desert: {paper:'#e9dcc6', ink:'#1e1b18', ink2:'#3b342c', muted:'#7a6b58', accent:'#c2603d', 'on-accent':'#f6efe3', hi:'#e8a27d',
     dark:'#1e1b18', light:'#f6efe3', soft:'#d9cbb4', 'muted-dark':'#8d7f6c', shade:'rgba(30,27,24,.88)', photo:'saturate(.85) contrast(1.05) sepia(.18)'},
   site: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#d13438', 'on-accent':'#ffffff', hi:'#ef4044',
+    dark:'#0b0b0c', light:'#ffffff', soft:'#c7c7cc', 'muted-dark':'#6e6e73', shade:'rgba(0,0,0,.88)', photo:'saturate(.95) contrast(1.08)'},
+  // Calmer version of "site": red only on the small tag and button; headlines and numbers stay black/white.
+  quiet: {paper:'#f4f4f2', ink:'#111111', ink2:'#3a3a3c', muted:'#8a8a8e', accent:'#b3262b', 'on-accent':'#ffffff', hi:'#ffffff', big:'#111111',
     dark:'#0b0b0c', light:'#ffffff', soft:'#c7c7cc', 'muted-dark':'#6e6e73', shade:'rgba(0,0,0,.88)', photo:'saturate(.95) contrast(1.08)'},
   gold: {paper:'#f3f1ec', ink:'#0e0e0e', ink2:'#3a3835', muted:'#8c857a', accent:'#b8963e', 'on-accent':'#0e0e0e', hi:'#d9b860',
     dark:'#0e0e0e', light:'#f7f5f0', soft:'#cfc8bb', 'muted-dark':'#7d776d', shade:'rgba(10,10,10,.9)', photo:'saturate(.8) contrast(1.1)'},
   navy: {paper:'#eef1f4', ink:'#0f1b2d', ink2:'#33405a', muted:'#7d889b', accent:'#1f6feb', 'on-accent':'#ffffff', hi:'#8fd3ff',
     dark:'#0f1b2d', light:'#ffffff', soft:'#bcc6d6', 'muted-dark':'#6d7a91', shade:'rgba(10,20,36,.9)', photo:'saturate(.9) contrast(1.08)'},
 };
-const PAL = PALETTES[process.env.PALETTE || 'site'];
+const PAL = PALETTES[process.env.PALETTE || 'quiet'];
 const VARS = ':root{' + Object.entries(PAL).map(([k, v]) => `--${k}:${v}`).join(';') + '}';
 const data = (f, t) => `data:${t};base64,` + fs.readFileSync(f).toString('base64');
 const font = (n, f) => `@font-face{font-family:${n};src:url(${data(path.join(FONTS, f), 'font/ttf')});font-weight:100 900}`;
@@ -65,7 +68,7 @@ const CSS = FONT_CSS + VARS + `*{margin:0;padding:0;box-sizing:border-box}body{w
 .yard{position:absolute;left:70px;right:70px;bottom:70px;display:flex;gap:16px;align-items:center;font:500 20px Osw;letter-spacing:.24em;color:var(--soft)}
 .yard i{flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--soft) 0 18px,transparent 18px 30px)}
 .card .col{position:absolute;top:110px;left:70px;right:90px}
-.card .big{font:400 300px/1 Anton;color:var(--accent)}
+.card .big{font:400 300px/1 Anton;color:var(--big,var(--accent))}
 .card h2{margin-top:40px;font:400 92px/1 Anton;text-transform:uppercase;color:var(--ink)}
 .card .bar{margin:44px 0 36px;width:120px;height:8px;background:var(--ink)}
 .card p{font:400 38px/1.45 Inter;color:var(--ink2)}
