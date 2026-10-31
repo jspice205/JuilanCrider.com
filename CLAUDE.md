@@ -54,7 +54,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Tags: every scored contact has one of `Tier A` (Hot) / `Tier B` (Warm) / `Tier C` (Nurture or Cold), refreshed
   nightly. `Intake Tier A/B/C` = how strong their sign-up was (an input, never overwritten). `Hot`/`Warm` tags are
   never added automatically for Farm, Legacy or "Not DNC checked" contacts.
-- Funnel (`runFunnel`, after nightly scoring), max 50/night. The API can't touch Automations 2.0 (403), but on Oct 31
+- Funnel (`runFunnel`, after daily scoring at ~7am PT so emails land in the morning), max 50/day. The API can't touch Automations 2.0 (403), but on Oct 31
   Claude found it can still create/start **Action Plans**: JC Hot 22, JC Warm 23, JC Legacy Re-Intro 24, JC Farm Best 25,
   JC Long-Term Nurture 26 (FUNNEL.plans; stopOnContacted false). API-started plans begin Paused, so the script PUTs
   status Running; it pauses the old JC plan on stage moves/pauses. Tested: Hot 1 delivered to test contact 2221 (Trash).
