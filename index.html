@@ -1981,12 +1981,14 @@ function bookFlow(preset){
       <div class="field"><span class="lab">When works best?</span><div class="chips" data-chips="when" data-opts="This week|Next week|Weekend|Flexible"></div></div>
       <div class="field"><span class="lab">How should we meet?</span><div class="chips" data-chips="how" data-opts="Phone call|Video call|In person"></div></div>
       <div class="field"><span class="lab">Timeline</span><div class="chips" data-chips="tl3" data-opts="Ready now|1–3 months|3–6 months|6–12 months|Just exploring"></div></div>
-      ${/Buying|New|Relocating/.test(st.type)?`<div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="pa" data-opts="Yes|Not yet|Paying cash"></div></div>`:''}
+      ${/Buying|New|Relocating/.test(st.type)?`<div class="field"><span class="lab">Price range</span><div class="chips" data-chips="pr" data-opts="Under $500K|$500K–$1M|$1M–$1.3M|$1.3M–$3.3M|$3.3M+"></div></div>
+      <div class="field"><span class="lab">Where do you live now?</span><div class="chips" data-chips="from" data-opts="Las Vegas area|California|Another state|Outside the U.S."></div></div>
+      <div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="pa" data-opts="Yes|Not yet|Paying cash"></div></div>`:''}
       ${st.type!=='Just a question'?`<div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="ag" data-opts="No|Talking to a few|Yes, signed with one"></div></div>`:''}
       ${/Selling/.test(st.type)?`<div class="field"><label for="addr">Property address</label><input id="addr" autocomplete="street-address"></div>`:''}
       <div class="duo"><button class="pill ghost" id="back2">Back</button><button class="pill" id="next2">Continue</button></div>`);
     $('back2').onclick = () => { st.step=1; s1(); };
-    $('next2').onclick = () => { st.when=chipVal(sheet,'when'); st.how=chipVal(sheet,'how'); st.tl=chipVal(sheet,'tl3'); st.pa=chipVal(sheet,'pa'); st.ag=chipVal(sheet,'ag'); st.addr=$('addr')?$('addr').value.trim():''; st.step=3; s3(); };
+    $('next2').onclick = () => { st.when=chipVal(sheet,'when'); st.how=chipVal(sheet,'how'); st.tl=chipVal(sheet,'tl3'); st.pa=chipVal(sheet,'pa'); st.pr=chipVal(sheet,'pr'); st.from=chipVal(sheet,'from'); st.ag=chipVal(sheet,'ag'); st.addr=$('addr')?$('addr').value.trim():''; st.step=3; s3(); };
   }
   function s3(){
     openRaw('Book a consultation', bar()+contactFields+`<div class="field"><label for="fNote">Anything I should know?</label><textarea id="fNote" rows="3"></textarea></div>
@@ -1994,7 +1996,7 @@ function bookFlow(preset){
     $('back3').onclick = () => { st.step=2; s2(); };
     $('send').onclick = () => { if (!requireContact()) return;
       sendLead({tab:'Website Leads', type:'Consultation: '+st.type, ...contactVals(), property:st.addr||'', timeline:st.tl||'', source:'juliancrider.com',
-        notes: joinNotes(['When: '+(st.when||''), 'Meet by: '+(st.how||''), 'Pre-approved: '+(st.pa||''),
+        notes: joinNotes(['When: '+(st.when||''), 'Meet by: '+(st.how||''), 'Price range: '+(st.pr||''), 'Lives in: '+(st.from||''), 'Pre-approved: '+(st.pa||''),
           'Working with agent: '+(st.ag==='Yes, signed with one'?'Yes, with a signed agreement':(st.ag||'')), 'Note: '+$('fNote').value.trim()])});
       if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
       pickTime({...contactVals(), type: st.type, notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl].filter(Boolean).join(' · ')}); };
