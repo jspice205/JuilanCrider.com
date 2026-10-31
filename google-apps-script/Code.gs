@@ -704,20 +704,22 @@ function scoreFubDatabase() {
 // as personal and protects your email reputation). Runs after the nightly scoring; you never start anything by hand.
 //   Hot (Tier A) or Warm (Tier B) or Legacy re-intro or Farm – Best  →  then the 3-year Long-Term Nurture.
 //   Tier C (not farm/legacy) goes straight to Long-Term Nurture. Hot upgrades anyone in Warm or Nurture.
-// How it starts them: Follow Up Boss Automations can't be started through the API, so the script adds a trigger tag
-// (e.g. "JC Hot") and the Automation named the same starts on "Tag added". Moving to a new stage removes the old tag.
-// People tagged "Text OK" get the "+ Text" tag (e.g. "JC Hot + Text") once that automation is live.
-// Replies don't stop anything: the automation keeps going until they book or you pause it.
+// How it starts them (Oct 31): the API can't touch Automations 2.0, but it can still build and start Action Plans.
+// Claude built JC Hot/Warm/Legacy Re-Intro/Farm Best/Long-Term Nurture as Action Plans (ids in FUNNEL.plans, emails
+// from templates 141-180, stop-on-contact OFF). The script starts the plan (the API starts it Paused, so it then sets
+// it Running), stops the person's previous JC plan, and adds the matching JC tag so Smart Lists can show the stage.
+// People tagged "Text OK" get the "+ Text" tag (e.g. "JC Hot + Text") once that stage is in textLive.
+// Replies don't stop anything: the plan keeps going until they book or you pause it.
 // Pause: someone in a deal (stage Active Client, Pending, Under Contract or Closed) or tagged "Pause" gets their JC
-// tag removed. When that changes (deal fell through, you removed "Pause"), they restart in Long-Term Nurture.
-// Never started: no good email, past clients/sphere/trash, Has Agent. LIVE lists which automations Julián has built;
-// nothing is tagged for a stage until it's listed there.
+// plan paused and tag removed. When that changes (deal fell through, you removed "Pause"), they restart in Long-Term
+// Nurture. Never started: no good email, past clients/sphere/trash, Has Agent. Only stages in LIVE are started.
 // The "Funnel" tab shows who is in which stage.
 // ============================================================
 const FUNNEL = {
   perNight: 50,
   tags: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
-  live: [],      // stages whose automation exists, e.g. ['hot', 'warm', 'legacy', 'farm', 'nurture']
+  plans: {hot: 22, warm: 23, legacy: 24, farm: 25, nurture: 26},  // Follow Up Boss Action Plan ids
+  live: ['hot', 'warm', 'legacy', 'farm', 'nurture'],  // stages that start people (all five built Oct 31)
   textLive: [],  // stages whose "+ Text" automation exists, e.g. ['hot', 'warm', 'nurture']
   handoffDays: {hot: 25, warm: 65, legacy: 25, farm: 60}  // days after starting, move on to Long-Term Nurture
 };
@@ -746,9 +748,19 @@ function runFunnel(people) {
     if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
     rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today};
   };
+  const planIds = Object.keys(FUNNEL.plans).map(k => FUNNEL.plans[k]);
+  // Pause any JC plan this person is running (moving stages, or a deal/Pause tag).
+  const stopPlans = p => (fubFetch('actionPlansPeople?personId=' + p.id, null, 'get').actionPlansPeople || [])
+    .filter(a => planIds.indexOf(a.actionPlanId) >= 0 && a.status === 'Running')
+    .forEach(a => fubFetch('actionPlansPeople/' + a.id, {status: 'Paused'}, 'put'));
   const start = (p, stage, why) => {
     if (used >= FUNNEL.perNight || FUNNEL.live.indexOf(stage) < 0) return;
     const tag = FUNNEL.tags[stage] + (has(p, 'Text OK') && FUNNEL.textLive.indexOf(stage) >= 0 ? ' + Text' : '');
+    try {
+      stopPlans(p);
+      const ap = fubFetch('actionPlansPeople', {personId: p.id, actionPlanId: FUNNEL.plans[stage]});
+      if (ap.status !== 'Running') fubFetch('actionPlansPeople/' + ap.id, {status: 'Running'}, 'put');
+    } catch (e) { console.log('Funnel: could not start ' + stage + ' for ' + p.id + ': ' + e.message); return; }
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0).concat(tag);
     fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next;
     record(p, stage, tag, why);
@@ -758,6 +770,7 @@ function runFunnel(people) {
   // Pause anyone now in a deal or tagged "Pause" (doesn't count toward tonight's limit; nothing is sent).
   people.filter(p => stageOf(p) && stageOf(p) !== 'paused' && paused(p)).forEach(p => {
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0);
+    try { stopPlans(p); } catch (e) { console.log('Funnel: could not pause plan for ' + p.id + ': ' + e.message); }
     if (next.length !== (p.tags || []).length) { fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next; }
     record(p, 'paused', '', 'paused from ' + stageOf(p) + (has(p, 'Pause') ? ' (Pause tag)' : ' (' + p.stage + ')'));
   });
