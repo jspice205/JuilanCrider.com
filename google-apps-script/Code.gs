@@ -373,21 +373,37 @@ function sendToFub(tabName, d) {
   if (d.property) event.property = {street: d.property};
   const res = fubFetch('events', event);
   console.log('Sent to Follow Up Boss');
+  const personId = () => {
+    let id = res.personId || (res.person && res.person.id);
+    if (!id) {
+      const email = (person.emails || [])[0], phone = String(d.phone || '').replace(/\D/g, '');
+      const found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email.value), null, 'get').people) ||
+                    (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
+      id = found.length && found[0].id;
+    }
+    return id;
+  };
+  // Welcome email (FUB Action Plan "JC Welcome", template 183) right after an open-house sign-in or a website
+  // account/guide sign-up. Plans started through the API begin Paused, so switch it to Running.
+  if ((tabName === 'Sign-Ins' || /account|guide/i.test(d.type || '')) && (person.emails || []).length) {
+    try {
+      const id = personId();
+      if (id) {
+        const ap = fubFetch('actionPlansPeople', {personId: id, actionPlanId: WELCOME_PLAN});
+        if (ap.status !== 'Running') fubFetch('actionPlansPeople/' + ap.id, {status: 'Running'}, 'put');
+      }
+    } catch (err) { console.error('Welcome email: ' + err); }
+  }
   // A task only when they reached out from the website (showing request, consultation). Open house sign-ins get
   // the automated plans instead; Julián engages once they reply.
   if (person.tags.indexOf('Hot') >= 0 && tabName !== 'Sign-Ins') {
     try {
-      let id = res.personId || (res.person && res.person.id);
-      if (!id) {
-        const email = (person.emails || [])[0], phone = String(d.phone || '').replace(/\D/g, '');
-        const found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email.value), null, 'get').people) ||
-                      (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
-        id = found.length && found[0].id;
-      }
+      const id = personId();
       if (id) createCallTask(id, `New ${d.type || 'lead'}: call within 5 minutes`);
     } catch (err) { console.error('Call task: ' + err); }
   }
 }
+const WELCOME_PLAN = 29;  // FUB Action Plan "JC Welcome (sign-in)": one email, template 183 "Thanks for stopping by"
 
 /**
  * One-time import of the leads already in this sheet (Sign-Ins and Website Leads) into Follow Up Boss.
@@ -741,6 +757,8 @@ function runFunnel(people) {
     const tags = p.tags || [], stage = String(p.stage || '');
     if (!(p.emails || []).some(e => validEmail(e.value) && !/invalid|bounce|bad/i.test(e.status || ''))) return false;
     if (/trash|unresponsive|do not|past client|sphere/i.test(stage) || paused(p)) return false;
+    // Brand-new people just got the welcome email; start their drip after 2 days so they don't get two at once.
+    if (p.created && (Date.now() - new Date(p.created)) / 864e5 < 2) return false;
     return !tags.some(t => /^(Has Agent|Partner|Do Not Contact)$|^Test\b/i.test(t));
   };
   const record = (p, stage, tag, why) => {
