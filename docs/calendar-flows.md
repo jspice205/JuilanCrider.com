@@ -20,3 +20,12 @@ Plan for the website calendar (`bookFlow`/`pickTime`, Apps Script `bookingSlots`
   public page. Drop "drinks" from anything public.
 - Keep the useful questions (topic, timeline, pre-approval, agent status, price range, where they live now);
   drop menus and drink orders.
+
+Old intake questions worth keeping (from the Calendly screenshots):
+- Seller consultation (1 hr, in person or Zoom): address, phone, target list price, how much is owed, when to list,
+  how they heard about Julián. Description: "You set your price and we'll advertise your home… the memories you've made
+  will always remain." (Drop the old IS Luxury / Ivan Sher branding and the 702.875.1382 number; use 702-498-2571.)
+- Home tour (30 min): location/MLS #, other addresses to add, tour type (drive by / in person / virtual tour), what they
+  like about the home, how they heard. "As your scheduling liaison I'll set up your itinerary… any day 9am-6pm."
+- Golf (Julián's favorite meeting place, ties to his podcast The Course of Business): 9 or 18, tee time booked?, where to
+  book. Offer as a private invite for past clients, sphere and serious buyers/sellers, not a public booking button.
