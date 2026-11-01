@@ -1400,14 +1400,14 @@ const CONTACT_CARD = 'Julian Crider Contact Card';     // Google Drive .vcf sent
 const OPEN_HOUSE_TEXTS = {
   // Buyers and lookers: the goal is a second showing. Later texts are skipped once they reply (Julián takes over).
   guest: [
-    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house today 👋 || [voice] || Thanks again for coming by. Curious, was it what you expected, or not quite? || [contact card]"},
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house today 👋🏾 || [voice] || Thanks again for coming by. Curious, was it what you expected, or not quite? || [contact card]"},
     {step: 'oh-24h', hours: 24, text: "Hi {first}, Julián again. If that one wasn't quite the one, what would the next home need to have that it didn't? 🏡"},
     {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   neighbor: [
-    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house today 👋 || [voice] || Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [contact card]"},
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house today 👋🏾 || [voice] || Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [contact card]"},
     {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
   agent: [
-    {step: 'oh-2h', hours: 2, text: "Hi {first}, Julián here 👋 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, Julián here 👋🏾 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]
 };
 
 function queueOpenHouseTexts(personId, d, kind) {
