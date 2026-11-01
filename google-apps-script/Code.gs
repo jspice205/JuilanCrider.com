@@ -1393,18 +1393,18 @@ const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
   headers: ['Due', 'Person ID', 'Name', 'Step', 'Status', 'Tries', 'Sent', 'Text']};
 
 /** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
-const OPEN_HOUSE_VOICE = 'Julians Open House Audio';  // Google Drive file sent with the first text (not to agents)
+const OPEN_HOUSE_VOICE = 'Quick hello';  // Google Drive voice note (the file name is what people see, so keep it casual)
 const CONTACT_CARD = 'Julian Crider Contact Card';     // Google Drive .vcf sent after it, so they can save Julián
 // Each text can be several bubbles separated by " || ". [voice] = the voice note, [contact card] = the contact card.
 // The first bubble has to be a text (Messages can't start a new conversation with a file on this Mac).
 const OPEN_HOUSE_TEXTS = {
   // Buyers and lookers: the goal is a second showing. Later texts are skipped once they reply (Julián takes over).
   guest: [
-    {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks again for coming by. Just curious, was it what you expected or not quite? || [voice] || juliancrider.com/?relocate"},
+    {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks again for coming by. Just curious, was it what you expected or not quite? || [voice] || [contact card] || juliancrider.com/?relocate"},
     {step: 'oh-24h', hours: 24, text: "Hey {first}, Julián again. If that one wasn't quite the one, what would the next home need to have that it didn't? 🏡"},
     {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   neighbor: [
-    {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [voice] || juliancrider.com/?relocate"},
+    {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [voice] || [contact card] || juliancrider.com/?relocate"},
     {step: 'oh-72h', hours: 72, text: "Hey {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
   agent: [
     {step: 'oh-2h', hours: 2, text: "Hey {first}, Julián here 👋🏾 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]
