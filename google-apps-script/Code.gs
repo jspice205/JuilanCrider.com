@@ -318,6 +318,7 @@ function fubPerson(tabName, d) {
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
   // "Do you live in this neighborhood? Yes" on the open-house form: neighbor welcome + seller-style follow-up.
   if (tabName === 'Sign-Ins' && /Neighbor: Yes/.test(d.notes || '')) tags.push('Open House Neighbor', 'Likely Seller');
+  if (tabName === 'Sign-Ins' && /Text OK: Yes/.test(d.notes || '')) tags.push('Text OK');  // checked the text-consent box
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
   if (tabName !== 'Sign-Ins') tags.push('Text OK');  // website forms carry the "agree to be contacted by text" line
   scoreLead(tabName, d).forEach(t => { if (tags.indexOf(t) < 0) tags.push(t); });
@@ -403,6 +404,11 @@ function sendToFub(tabName, d) {
         if (ap.status !== 'Running') fubFetch('actionPlansPeople/' + ap.id, {status: 'Running'}, 'put');
       }
     } catch (err) { console.error('Welcome email: ' + err); }
+  }
+  // Open-house follow-up texts (2 hours and 72 hours later), only for guests who checked the text-consent box.
+  if (tabName === 'Sign-Ins' && person.tags.indexOf('Text OK') >= 0 && person.tags.indexOf('Has Agent') < 0 && d.phone) {
+    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, person.tags.indexOf('Open House Neighbor') >= 0); }
+    catch (err) { console.error('Open house texts: ' + err); }
   }
   // A task only when they reached out from the website (showing request, consultation). Open house sign-ins get
   // the automated plans instead; Julián engages once they reply.
@@ -674,6 +680,7 @@ function scoreFubContinue() { scoreFubDatabase(); }
 
 function scoreFubDatabase() {
   const started = Date.now();
+  try { ensureTextQueueTrigger(); } catch (e) { console.log('Text queue trigger: ' + e.message); }
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'scoreFubContinue').forEach(t => ScriptApp.deleteTrigger(t));
   // Shared brokerage account: score and tag only contacts assigned to Julián (the owner of the API key).
   const me = fubFetch('me', null, 'get').id;
@@ -1309,7 +1316,7 @@ function bbWebhook(e) {
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), key = 'BB_TASK_' + person.id;
   if (props.getProperty(key) !== today) {
     createCallTask(person.id, 'They texted back: "' + text.slice(0, 120) + '" Answer today.', 'Text');
-    props.setProperty(key, today);
+    props.setProperty(key, today);  // also tells the text queue they replied (skip the next scheduled text)
   }
   return json({status: 'ok'});
 }
@@ -1330,4 +1337,64 @@ function testText() {
   const to = PropertiesService.getScriptProperties().getProperty('TEST_TEXT_TO') || TEXTING.myNumber;
   bbSend(to, 'Test from your website script: texting is connected. ✅');
   console.log('Test text sent to ' + to + '. Check that phone.');
+}
+
+
+// ============================================================
+// TEXT QUEUE: scheduled texts (sent from Julián's number through the texting Mac). Each row in the "Text Queue" tab is
+// one text; you can edit the wording in the sheet before it goes out. processTextQueue runs every 15 minutes, only
+// sends 9am-8pm Pacific, retries for 6 hours if the Mac is off, and skips a text if the person already texted back.
+// ============================================================
+const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
+  headers: ['Due', 'Person ID', 'Name', 'Step', 'Status', 'Tries', 'Sent', 'Text']};
+
+/** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
+const OPEN_HOUSE_TEXTS = {
+  guest: [
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for coming by today. Curious, was it what you expected from the photos, or not quite?"},
+    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. Has your search changed since {street}, or are you still looking for something like it? Would it be a bad idea if I sent you 2 or 3 homes I'd look at?"}],
+  neighbor: [
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for stopping by, neighbor. It's always good to meet the people who actually live here."},
+    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. A few neighbors asked what their own homes would sell for after seeing {street}. Would it be crazy if I ran a quick, private number for yours? No visit needed."}]
+};
+
+function queueOpenHouseTexts(personId, d, neighbor) {
+  const first = String(d.name || '').trim().split(/\s+/)[0] || 'there';
+  const street = String(d.property || '').split(',')[0].trim() || 'the open house';
+  const sheet = ensureTab(getSS(), TEXT_QUEUE_TAB);
+  (neighbor ? OPEN_HOUSE_TEXTS.neighbor : OPEN_HOUSE_TEXTS.guest).forEach(t => sheet.appendRow([
+    new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), t.step, 'pending', 0, '',
+    t.text.replace(/\{first\}/g, first).replace(/\{on_street\}/g, street === 'the open house' ? '' : ' on ' + street)
+      .replace(/\{street\}/g, street)]));
+  ensureTextQueueTrigger();
+}
+
+function ensureTextQueueTrigger() {
+  if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'processTextQueue'))
+    ScriptApp.newTrigger('processTextQueue').timeBased().everyMinutes(15).create();
+}
+
+function processTextQueue() {
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
+  if (hour < 9 || hour >= 20) return;  // quiet hours: wait for the morning
+  const sheet = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const props = PropertiesService.getScriptProperties();
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, TEXT_QUEUE_TAB.headers.length).getValues();
+  let sentNow = 0;
+  rows.forEach((r, i) => {
+    const [due, id, , step, status, tries, , text] = r;
+    if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
+    const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
+    // Later steps are skipped once they've texted back: Julián is in the conversation now.
+    if (step !== 'oh-2h' && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    try {
+      const res = bbTextPerson(id, text);
+      cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
+    } catch (err) {
+      const n = (Number(tries) || 0) + 1;
+      cell(6, n);
+      if (n >= 24) cell(5, 'failed: ' + String(err.message).slice(0, 150));  // ~6 hours of retries
+    }
+  });
 }
