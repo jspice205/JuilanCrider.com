@@ -40,6 +40,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   paste, Deploy > Manage deployments > New version).
   Booking: `bookingSlots`/`bookSlot` (GET ?action=slots, POST action=book) read free time from his default Google
   Calendar (Mon–Sat 9–6 PT, 30 min, 3 h notice) and create the event + FUB note/task.
+- Texting (bottom of Code.gs): BlueBubbles 1.9.7 on Mariel's MacBook Air (macOS 10.14, so newer versions won't run;
+  auto-update off), Messages signed in as julian.crider@gmail.com / 702-498-2571, Cloudflare proxy (URL changes on
+  restart; the `new-server` webhook updates BB_URL). Script Properties BB_URL, BB_PASSWORD, BB_KEY. `bbTextPerson` texts
+  only `Text OK` (never `Text Opt-Out`) and logs to FUB textMessages; webhook logs replies from FUB contacts + one
+  "They texted back" Text task per day; STOP → `Text Opt-Out`; non-FUB senders ignored. `setupTexting`, `testText`.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`
