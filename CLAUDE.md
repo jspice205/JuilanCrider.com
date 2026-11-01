@@ -47,7 +47,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "They texted back" Text task per day; STOP → `Text Opt-Out`; non-FUB senders ignored. `setupTexting`, `testText`.
   Open-house texts: sign-in form has an unchecked text-consent box (Text OK: Yes → tag `Text OK`); consenting guests
   (not Has Agent) get 2 texts via the "Text Queue" sheet tab (editable before send): +2h thank-you and +72h no-oriented
-  question (OPEN_HOUSE_TEXTS guest/neighbor). processTextQueue every 15 min, 9am-8pm PT, retries ~6h, skips later
+  question (OPEN_HOUSE_TEXTS guest: 2h+voice/48h/72h aiming for a 2nd showing; neighbor: 2h+voice/72h value;
+  agent: 2h feedback). Form asks "What brings you in today?" (Looking to buy / Just looking / I live nearby / I'm a real
+  estate agent → tags Agent+Partner, no welcome email or buyer drip). Voice note = Drive file "Julians Open House Audio"
+  (bbSendAudio, /message/attachment); if missing, the text still goes. processTextQueue every 15 min, 9am-8pm PT, retries ~6h, skips later
   steps once they've texted back. FUB rejects textMessages (its texting is off), so texts are logged as notes.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,

@@ -319,9 +319,12 @@ function fubPerson(tabName, d) {
   // "Do you live in this neighborhood? Yes" on the open-house form: neighbor welcome + seller-style follow-up.
   if (tabName === 'Sign-Ins' && /Neighbor: Yes/.test(d.notes || '')) tags.push('Open House Neighbor', 'Likely Seller');
   if (tabName === 'Sign-Ins' && /Text OK: Yes/.test(d.notes || '')) tags.push('Text OK');  // checked the text-consent box
+  // Other agents previewing the home: tagged Partner (kept out of buyer emails, scoring and the funnel).
+  const isAgent = tabName === 'Sign-Ins' && /Visitor: I.m a real estate agent/.test(d.notes || '');
+  if (isAgent) tags.push('Agent', 'Partner');
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
   if (tabName !== 'Sign-Ins') tags.push('Text OK');  // website forms carry the "agree to be contacted by text" line
-  scoreLead(tabName, d).forEach(t => { if (tags.indexOf(t) < 0) tags.push(t); });
+  scoreLead(tabName, d).forEach(t => { if (tags.indexOf(t) < 0 && !(isAgent && /^(Hot|Warm|Likely Seller)$/.test(t))) tags.push(t); });
   const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
   if (validEmail(d.email)) person.emails = [{value: String(d.email).trim()}];
   if (d.phone) person.phones = [{value: d.phone}];
@@ -395,7 +398,7 @@ function sendToFub(tabName, d) {
   };
   // Welcome email (FUB Action Plan "JC Welcome", template 183) right after an open-house sign-in or a website
   // account/guide sign-up. Plans started through the API begin Paused, so switch it to Running.
-  if ((tabName === 'Sign-Ins' || /account|guide/i.test(d.type || '')) && (person.emails || []).length) {
+  if ((tabName === 'Sign-Ins' || /account|guide/i.test(d.type || '')) && (person.emails || []).length && person.tags.indexOf('Agent') < 0) {
     try {
       const id = personId();
       if (id) {
@@ -407,7 +410,8 @@ function sendToFub(tabName, d) {
   }
   // Open-house follow-up texts (2 hours and 72 hours later), only for guests who checked the text-consent box.
   if (tabName === 'Sign-Ins' && person.tags.indexOf('Text OK') >= 0 && person.tags.indexOf('Has Agent') < 0 && d.phone) {
-    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, person.tags.indexOf('Open House Neighbor') >= 0); }
+    const kind = person.tags.indexOf('Agent') >= 0 ? 'agent' : person.tags.indexOf('Open House Neighbor') >= 0 ? 'neighbor' : 'guest';
+    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, kind); }
     catch (err) { console.error('Open house texts: ' + err); }
   }
   // A task only when they reached out from the website (showing request, consultation). Open house sign-ins get
@@ -1267,27 +1271,50 @@ function bbSend(phone, text) {
     ['SMS, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'SMS', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})]];
   let last;
   for (const [label, fn] of tries) {
-    try { const r = fn(); console.log('Texted ' + to + ' (' + label + ').'); return r; }
+    try { const r = fn(); console.log('Texted ' + to + ' (' + label + ').'); return {service: label.split(',')[0], result: r}; }
     catch (err) { last = err; console.log(label + ' failed: ' + String(err.message).slice(0, 300)); }
   }
   throw last;
 }
 
 /** Texts a Follow Up Boss contact (only if tagged "Text OK") and logs it on their timeline. */
-function bbTextPerson(personId, text) {
+function bbTextPerson(personId, text, opts) {
   const p = fubFetch('people/' + personId + '?fields=id,firstName,tags,phones', null, 'get');
   const tags = p.tags || [];
   if (tags.indexOf('Text OK') < 0 || tags.indexOf('Text Opt-Out') >= 0) return 'skipped: no text consent';
   const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
   if (!phone) return 'skipped: no mobile number';
   const msg = String(text).replace(/%contact_first_name%/g, p.firstName || 'there');
-  bbSend(phone, msg);
+  const sent = bbSend(phone, msg);
+  // Optional voice note right after the text (same conversation), e.g. "Julians Open House Audio" in Google Drive.
+  if (opts && opts.voice) {
+    try { bbSendAudio(phone, sent.service, opts.voice); fubFetch('notes', {personId: p.id, subject: 'Voice note sent', body: opts.voice}); }
+    catch (err) { console.log('Text sent, voice note failed: ' + err.message); }
+  }
   try { fubFetch('textMessages', {personId: p.id, message: msg, toNumber: phone, fromNumber: TEXTING.myNumber, isIncoming: false}); }
   catch (err) {  // FUB only takes textMessages when its own texting is on; save it as a note instead
     try { fubFetch('notes', {personId: p.id, subject: 'Text sent to ' + (p.firstName || 'contact'), body: msg}); }
     catch (e2) { console.log('Sent, but could not log the text in Follow Up Boss: ' + e2.message); }
   }
   return 'sent';
+}
+
+/** Sends an audio file from Google Drive (found by name) into the conversation with this number. */
+function bbSendAudio(phone, service, driveName) {
+  const props = PropertiesService.getScriptProperties(), cacheKey = 'AUDIO_' + driveName;
+  let file;
+  try { file = props.getProperty(cacheKey) && DriveApp.getFileById(props.getProperty(cacheKey)); } catch (e) {}
+  if (!file) {
+    const it = DriveApp.searchFiles('title contains "' + driveName.replace(/"/g, '') + '" and trashed = false');
+    if (!it.hasNext()) throw new Error('No Google Drive file named "' + driveName + '"');
+    file = it.next(); props.setProperty(cacheKey, file.getId());
+  }
+  const blob = file.getBlob(), name = /\.[a-z0-9]{2,4}$/i.test(file.getName()) ? file.getName() : file.getName() + '.m4a';
+  const p = PropertiesService.getScriptProperties(), url = p.getProperty('BB_URL'), pw = p.getProperty('BB_PASSWORD');
+  const res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/v1/message/attachment?password=' + encodeURIComponent(pw), {
+    method: 'post', muteHttpExceptions: true, payload: {chatGuid: (service || 'iMessage') + ';-;' + bbE164(phone),
+      tempGuid: 'jc-' + Utilities.getUuid(), name: name, method: 'apple-script', attachment: blob.setName(name)}});
+  if (res.getResponseCode() >= 300) throw new Error('Voice note: ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 300));
 }
 
 function bbWebhook(e) {
@@ -1349,21 +1376,26 @@ const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
   headers: ['Due', 'Person ID', 'Name', 'Step', 'Status', 'Tries', 'Sent', 'Text']};
 
 /** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
+const OPEN_HOUSE_VOICE = 'Julians Open House Audio';  // Google Drive file sent with the first text (not to agents)
 const OPEN_HOUSE_TEXTS = {
+  // Buyers and lookers: the goal is a second showing. Each later text is skipped once they reply (Julián takes over).
   guest: [
-    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for coming by today. Curious, was it what you expected from the photos, or not quite?"},
-    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. Has your search changed since {street}, or are you still looking for something like it? Would it be a bad idea if I sent you 2 or 3 homes I'd look at?"}],
+    {step: 'oh-2h', hours: 2, voice: true, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for coming by today. Curious, was it what you expected from the photos, or not quite?"},
+    {step: 'oh-48h', hours: 48, text: "Hi {first}, Julián again. If {street} wasn't quite the one, what would the next home need to have that it didn't?"},
+    {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes like it for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   neighbor: [
-    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for stopping by, neighbor. It's always good to meet the people who actually live here."},
-    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. A few neighbors asked what their own homes would sell for after seeing {street}. Would it be crazy if I ran a quick, private number for yours? No visit needed."}]
+    {step: 'oh-2h', hours: 2, voice: true, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for stopping by, neighbor. It's always good to meet the people who actually live here."},
+    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. A few neighbors asked what their own homes would sell for after seeing {street}. Would it be crazy if I ran a quick, private number for yours? No visit needed."}],
+  agent: [
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, Julián here. Thanks for previewing {street} today. Any feedback from you or your buyers? It really helps the sellers."}]
 };
 
-function queueOpenHouseTexts(personId, d, neighbor) {
+function queueOpenHouseTexts(personId, d, kind) {
   const first = String(d.name || '').trim().split(/\s+/)[0] || 'there';
   const street = String(d.property || '').split(',')[0].trim() || 'the open house';
   const sheet = ensureTab(getSS(), TEXT_QUEUE_TAB);
-  (neighbor ? OPEN_HOUSE_TEXTS.neighbor : OPEN_HOUSE_TEXTS.guest).forEach(t => sheet.appendRow([
-    new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), t.step, 'pending', 0, '',
+  (OPEN_HOUSE_TEXTS[kind] || OPEN_HOUSE_TEXTS.guest).forEach(t => sheet.appendRow([
+    new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), t.step + (t.voice ? ' +voice' : ''), 'pending', 0, '',
     t.text.replace(/\{first\}/g, first).replace(/\{on_street\}/g, street === 'the open house' ? '' : ' on ' + street)
       .replace(/\{street\}/g, street)]));
   ensureTextQueueTrigger();
@@ -1387,9 +1419,9 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (step !== 'oh-2h' && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^oh-2h/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
-      const res = bbTextPerson(id, text);
+      const res = bbTextPerson(id, text, / \+voice$/.test(step) ? {voice: OPEN_HOUSE_VOICE} : null);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
