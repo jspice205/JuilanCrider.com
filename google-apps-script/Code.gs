@@ -744,6 +744,12 @@ function scoreFubDatabase() {
 // ============================================================
 const FUNNEL = {
   perNight: 50,
+  // One-time catch-up (Nov 1 bug: these people got their plain first email before the designed re-intro).
+  // On this date they get the re-intro; their paused plan then resumes at email 2 four days later.
+  // Emilee (304) replied and 267/422/427 bounced, so they're left out. Counts toward the day's 50.
+  rerun: {date: '2026-11-02', ids: [242, 246, 247, 251, 253, 256, 258, 260, 263, 264, 272, 275, 276, 278, 1906,
+    244, 245, 250, 252, 254, 257, 259, 262, 268, 269, 270, 281, 286, 288, 293, 301, 306, 310,
+    419, 420, 421, 423, 424, 425, 426, 428, 429, 430, 431, 432, 433]},
   tags: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
   plans: {hot: 22, warm: 23, legacy: 24, farm: 25, nurture: 26},  // Follow Up Boss Action Plan ids
   // Older contacts (in FUB 30+ days, so they may not have heard from Julián in months or years) first get the designed
@@ -810,7 +816,12 @@ function runFunnel(people) {
     try {
       stopPlans(p);
       // Legacy 1 is a plain "It's been a while" email, so people who just got the designed re-intro skip it.
-      startPlan(p, stage === 'legacy' && /^reintro-/.test(stageOf(p) || '') ? FUNNEL.legacyAfterIntroPlan : FUNNEL.plans[stage]);
+      // A paused plan for this stage (e.g. the Nov 2 catch-up) resumes where it left off instead of starting over.
+      const alts = stage === 'legacy' ? [FUNNEL.plans.legacy, FUNNEL.legacyAfterIntroPlan] : [FUNNEL.plans[stage]];
+      const paused = (fubFetch('actionPlansPeople?personId=' + p.id, null, 'get').actionPlansPeople || [])
+        .filter(a => alts.indexOf(a.actionPlanId) >= 0 && a.status === 'Paused')[0];
+      if (paused) fubFetch('actionPlansPeople/' + paused.id, {status: 'Running'}, 'put');
+      else startPlan(p, stage === 'legacy' && /^reintro-/.test(stageOf(p) || '') ? FUNNEL.legacyAfterIntroPlan : FUNNEL.plans[stage]);
     } catch (e) { console.log('Funnel: could not start ' + stage + ' for ' + p.id + ': ' + e.message); return; }
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0).concat(tag);
     fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next;
@@ -826,6 +837,17 @@ function runFunnel(people) {
     record(p, 'paused', '', 'paused from ' + stageOf(p) + (has(p, 'Pause') ? ' (Pause tag)' : ' (' + p.stage + ')'));
   });
   const eligible = people.filter(ok);
+  // One-time catch-up: designed re-intro for people whose plain first email went out before it (see FUNNEL.rerun).
+  if (FUNNEL.rerun && FUNNEL.rerun.date === today) {
+    eligible.filter(p => FUNNEL.rerun.ids.indexOf(p.id) >= 0 && !/^reintro-|paused/.test(stageOf(p) || '')).forEach(p => {
+      if (used >= FUNNEL.perNight) return;
+      const stage = stageOf(p) || 'nurture';
+      try { stopPlans(p); startPlan(p, FUNNEL.reintroPlan); }
+      catch (e) { console.log('Funnel: catch-up re-intro failed for ' + p.id + ': ' + e.message); return; }
+      record(p, 'reintro-' + stage, '', 'catch-up re-intro, then resume ' + stage);
+      used++; started++; Utilities.sleep(120);
+    });
+  }
   // People who got the re-introduction: start their real plan once it's had time to land.
   eligible.filter(p => /^reintro-/.test(stageOf(p) || '') && daysAgo(rows[p.id].started) >= FUNNEL.reintroDays)
     .forEach(p => start(p, stageOf(p).slice(8), 'after re-intro'));
