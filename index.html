@@ -1989,6 +1989,8 @@ function openSheet(kind, opt={}){
       const agent = chipVal(sheet,'sagent');
       sendLead({tab:'Website Leads', type:'Showing request', ...contactVals(), property:prop, timeline:chipVal(sheet,'swhen'), source:'juliancrider.com',
         notes: joinNotes([prop ? '' : 'Property: none yet (wants help choosing homes)', 'Preferred time: '+$('sTime').value.trim(), 'Pre-approved: '+chipVal(sheet,'spre'), 'Working with agent: '+agent])});
+      // With an address (and no signed agent), let them pick a time from Julián's calendar right away.
+      if (prop && !/signed/.test(agent)) return pickTime({kind:'showing', property:prop, ...contactVals(), notes:'Showing request: ' + prop});
       $('sheetBody').innerHTML = doneHTML('Showing requested', /signed/.test(agent)
         ? 'Thanks! Since you have a signed agreement with another agent, they should schedule this tour for you. Julián is happy to answer questions anytime.'
         : prop ? 'Julián will confirm a time and text you the one-home agreement to sign before the tour.'
@@ -2008,12 +2010,15 @@ function bindOpeners(scope){ scope.querySelectorAll('[data-open]').forEach(b => 
 // After the screening questions, people pick an open time from Julián's Google Calendar (the Apps Script serves
 // free slots and books them). If times can't load, the request still goes in and Julián confirms by reply.
 function pickTime(c, note){
-  const tz = {timeZone:'America/Los_Angeles'}, requested = () => { $('sheetBody').innerHTML = doneHTML('Consultation requested','Julián will confirm a time within one business day.'); };
+  const showing = c.kind === 'showing';
+  const tz = {timeZone:'America/Los_Angeles'}, requested = () => { $('sheetBody').innerHTML = showing
+    ? doneHTML('Showing requested','Julián will confirm a time and text you the one-home agreement to sign before the tour.')
+    : doneHTML('Consultation requested','Julián will confirm a time within one business day.'); };
   openRaw('Pick a time', `<p class="fine">Loading open times…</p>`);
   fetch(SHEET_URL + '?action=slots').then(r => r.json()).then(d => {
     const days = {}; (d.slots || []).forEach(s => { const k = new Date(s).toLocaleDateString('en-US', {...tz, weekday:'long', month:'short', day:'numeric'}); (days[k] = days[k] || []).push(s); });
     const keys = Object.keys(days).slice(0, 5); if (!keys.length) return requested();
-    openRaw('Pick a time', (note ? `<p class="err" style="display:block">${note}</p>` : '') + `<p class="fine" style="margin:0 0 12px">30 minutes, Pacific time.</p>` +
+    openRaw(showing ? 'Pick a showing time' : 'Pick a time', (note ? `<p class="err" style="display:block">${note}</p>` : '') + `<p class="fine" style="margin:0 0 12px">${showing ? 'Showing at ' + c.property + '. ' : ''}30 minutes, Pacific time.</p>` +
       keys.map(k => `<span class="lab">${k}</span><div class="chips" style="margin-bottom:12px">${days[k].map(s => `<button type="button" class="chip" data-slot="${s}">${new Date(s).toLocaleTimeString('en-US', {...tz, hour:'numeric', minute:'2-digit'})}</button>`).join('')}</div>`).join(''));
     document.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => {
       $('sheetBody').innerHTML = `<p class="fine">Booking…</p>`;
@@ -2021,7 +2026,9 @@ function pickTime(c, note){
         .then(r => r.json()).then(res => {
           if (res.status === 'taken') return pickTime(c, res.message);
           if (res.status !== 'success') return requested();
-          $('sheetBody').innerHTML = doneHTML('You’re booked', `${res.label} (Pacific time).${c.email ? ' A calendar invite is on its way.' : ''} Julián will call you at ${c.phone}.`);
+          $('sheetBody').innerHTML = showing
+            ? doneHTML('Showing booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you there and text you a reminder 15 minutes before.`)
+            : doneHTML('You’re booked', `${res.label} (Pacific time).${c.email ? ' A calendar invite is on its way.' : ''} Julián will call you at ${c.phone}.`);
         }).catch(requested);
     });
   }).catch(requested);
