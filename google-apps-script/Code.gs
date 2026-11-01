@@ -193,6 +193,10 @@ function bookSlot(d) {
       createCallTask(found[0].id, `booked consultation ${label}`);
     }
   } catch (err) { console.error('Booking note: ' + err); }
+  try {  // confirmation text from Julián's number (the 15-minute reminder comes from remindUpcoming)
+    const first = String(d.name).trim().split(/\s+/)[0];
+    bbSend(d.phone, `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. Looking forward to it! If anything changes, just text me here.`);
+  } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
   return {status: 'success', label: label};
 }
 
@@ -215,7 +219,10 @@ function setupAutoUpdate() {
   ScriptApp.newTrigger('autoUpdateFromGitHub').timeBased().everyHours(1).create();  // only once updates actually work
 }
 
-function autoUpdateFromGitHub() { console.log(updateFromGitHub(true)); }
+function autoUpdateFromGitHub() {
+  console.log(updateFromGitHub(true));
+  try { ensureTextQueueTrigger(); } catch (e) { console.log('Text triggers: ' + e.message); }
+}
 
 function updateFromGitHub(auto) {
   const raw = f => UrlFetchApp.fetch(GITHUB_RAW + f + '?nocache=' + Date.now()).getContentText();
@@ -1422,8 +1429,43 @@ function queueOpenHouseTexts(personId, d, kind) {
 }
 
 function ensureTextQueueTrigger() {
-  if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'processTextQueue'))
-    ScriptApp.newTrigger('processTextQueue').timeBased().everyMinutes(15).create();
+  const has = name => ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === name);
+  if (!has('processTextQueue')) ScriptApp.newTrigger('processTextQueue').timeBased().everyMinutes(15).create();
+  if (!has('remindUpcoming')) ScriptApp.newTrigger('remindUpcoming').timeBased().everyMinutes(5).create();
+}
+
+// ============================================================
+// APPOINTMENT REMINDERS: a text about 15 minutes before any event on Julián's Google Calendar that has a phone number
+// in its notes (website bookings add "Phone: …" automatically; for a showing, add the client's number to the event).
+// Title with "Showing" → showing wording (uses the event's location). Skips anyone tagged Text Opt-Out.
+// ============================================================
+function remindUpcoming() {
+  const now = Date.now(), props = PropertiesService.getScriptProperties();
+  const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 9 * 6e4), new Date(now + 21 * 6e4));
+  events.forEach(ev => {
+    const key = 'REM_' + ev.getId().slice(0, 40) + '_' + ev.getStartTime().getTime();
+    if (props.getProperty(key) || ev.isAllDayEvent()) return;
+    const blob = [ev.getDescription(), ev.getLocation(), ev.getTitle()].join('\n');
+    const m = blob.match(/(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/);
+    if (!m) return;
+    const phone = m[1] + m[2] + m[3];
+    if (bbE164(phone) === TEXTING.myNumber) return;
+    props.setProperty(key, '1');  // one reminder per event, even if sending fails
+    let person = null;
+    try { person = (fubFetch('people?limit=1&fields=id,firstName,tags&phone=' + phone, null, 'get').people || [])[0] || null; } catch (e) {}
+    if (person && (person.tags || []).indexOf('Text Opt-Out') >= 0) return;
+    const titleName = (ev.getTitle().match(/:\s*([A-Za-z\u00C0-\u017F'-]+)/) || [])[1];
+    const first = (person && person.firstName) || titleName || 'there';
+    const time = Utilities.formatDate(ev.getStartTime(), 'America/Los_Angeles', 'h:mm a');
+    const where = String(ev.getLocation() || '').split(',')[0].trim();
+    const text = /showing|tour/i.test(ev.getTitle())
+      ? `Hey ${first}, Julián here 👋🏾 Quick reminder, I'll see you ${where ? 'at ' + where + ' ' : ''}at ${time}. If anything changed, just text me. See you soon!`
+      : `Hey ${first}, Julián here 👋🏾 Quick reminder about our ${time} today. See you soon!`;
+    try {
+      bbSend(phone, text);
+      if (person) fubFetch('notes', {personId: person.id, subject: 'Reminder text sent', body: text});
+    } catch (err) { console.log('Reminder not sent for "' + ev.getTitle() + '": ' + err.message); }
+  });
 }
 
 function processTextQueue() {
