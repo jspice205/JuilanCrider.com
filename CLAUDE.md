@@ -90,6 +90,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Farm Best 2 (template 177 retired). Open-house form asks "Do you live in this neighborhood?"; Yes → tags `Open House
   Neighbor` + `Likely Seller`, plan "JC Neighbor Welcome" (32, template 186, emails/welcome-neighbor.html) instead of 29,
   then the Farm drip (no Neighbor Note). `juliancrider.com/?value` opens the home-value form.
+  Plain-text drip templates 141-180 end with "<p>Julián</p>" + EMAIL_FOOTER (name, title, brokerage, phone, site,
+  Instagram, address, license, reply-stop); applyEmailFooter runs once per EMAIL_FOOTER_VERSION from the hourly update.
+  When rewriting a template, keep the <!--jc-footer--> part (or bump the version to re-apply).
   Newsletter/content-drop sends: plans 27/28 (templates 181/182, emails/*.html). Contacts tagged "Test…" are skipped.
   The JC tags are still added so Smart Lists show the stage: Hot → `JC Hot`, Warm → `JC Warm`, Legacy →
   `JC Legacy Re-Intro`, Farm – Best → `JC Farm Best`, Tier C (not farm/legacy) → `JC Long-Term Nurture`; after
