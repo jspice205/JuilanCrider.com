@@ -21,7 +21,7 @@
 <meta property="og:image" content="https://juliancrider.com/og-image.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Modern Las Vegas homes at sunset">
+<meta property="og:image:alt" content="Las Vegas neighborhood park at sunset with the mountains behind">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://juliancrider.com/og-image.jpg">
 <script type="application/ld+json">
@@ -2130,6 +2130,8 @@ function askIntent(){
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
   // juliancrider.com/?value opens the home-value form (link in the neighbor emails).
   if (/[?&]value\b/.test(location.search)) { showTab('homes'); showPane('h-value'); return; }
+  // juliancrider.com/?relocate opens the Relocate tab (link sent after open-house texts).
+  if (/[?&]relocate\b/.test(location.search)) { showTab('relo'); return; }
   // juliancrider.com/?showing opens "Request a showing" (link to text or email a client).
   if (/[?&]showing\b/.test(location.search)) { setTimeout(() => openSheet('showing'), 300); return; }
   // juliancrider.com/?blog=<slug> opens that article (links in emails and posts).
