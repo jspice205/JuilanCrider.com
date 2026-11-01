@@ -1287,10 +1287,10 @@ function bbTextPerson(personId, text, opts) {
   const msg = String(text).replace(/%contact_first_name%/g, p.firstName || 'there');
   const sent = bbSend(phone, msg);
   // Optional voice note right after the text (same conversation), e.g. "Julians Open House Audio" in Google Drive.
-  if (opts && opts.voice) {
-    try { bbSendAudio(phone, sent.service, opts.voice); fubFetch('notes', {personId: p.id, subject: 'Voice note sent', body: opts.voice}); }
-    catch (err) { console.log('Text sent, voice note failed: ' + err.message); }
-  }
+  (opts && opts.files || []).forEach(name => {
+    try { bbSendAudio(phone, sent.service, name); fubFetch('notes', {personId: p.id, subject: 'Sent by text: ' + name, body: name}); }
+    catch (err) { console.log('Text sent, "' + name + '" not sent: ' + err.message); }
+  });
   try { fubFetch('textMessages', {personId: p.id, message: msg, toNumber: phone, fromNumber: TEXTING.myNumber, isIncoming: false}); }
   catch (err) {  // FUB only takes textMessages when its own texting is on; save it as a note instead
     try { fubFetch('notes', {personId: p.id, subject: 'Text sent to ' + (p.firstName || 'contact'), body: msg}); }
@@ -1309,7 +1309,8 @@ function bbSendAudio(phone, service, driveName) {
     if (!it.hasNext()) throw new Error('No Google Drive file named "' + driveName + '"');
     file = it.next(); props.setProperty(cacheKey, file.getId());
   }
-  const blob = file.getBlob(), name = /\.[a-z0-9]{2,4}$/i.test(file.getName()) ? file.getName() : file.getName() + '.m4a';
+  const blob = file.getBlob(), name = /\.[a-z0-9]{2,4}$/i.test(file.getName()) ? file.getName()
+    : file.getName() + (/vcard|vcf/i.test(blob.getContentType()) ? '.vcf' : '.m4a');
   const p = PropertiesService.getScriptProperties(), url = p.getProperty('BB_URL'), pw = p.getProperty('BB_PASSWORD');
   const res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/v1/message/attachment?password=' + encodeURIComponent(pw), {
     method: 'post', muteHttpExceptions: true, payload: {chatGuid: (service || 'iMessage') + ';-;' + bbE164(phone),
@@ -1377,11 +1378,12 @@ const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
 
 /** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
 const OPEN_HOUSE_VOICE = 'Julians Open House Audio';  // Google Drive file sent with the first text (not to agents)
+const CONTACT_CARD = 'Julian Crider Contact Card';     // Google Drive .vcf sent after it, so they can save Julián
 const OPEN_HOUSE_TEXTS = {
   // Buyers and lookers: the goal is a second showing. Each later text is skipped once they reply (Julián takes over).
   guest: [
     {step: 'oh-2h', hours: 2, voice: true, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for coming by today. Curious, was it what you expected from the photos, or not quite?"},
-    {step: 'oh-48h', hours: 48, text: "Hi {first}, Julián again. If {street} wasn't quite the one, what would the next home need to have that it didn't?"},
+    {step: 'oh-24h', hours: 24, text: "Hi {first}, Julián again. If {street} wasn't quite the one, what would the next home need to have that it didn't?"},
     {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes like it for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   neighbor: [
     {step: 'oh-2h', hours: 2, voice: true, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for stopping by, neighbor. It's always good to meet the people who actually live here."},
@@ -1421,7 +1423,7 @@ function processTextQueue() {
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
     if (!/^oh-2h/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
-      const res = bbTextPerson(id, text, / \+voice$/.test(step) ? {voice: OPEN_HOUSE_VOICE} : null);
+      const res = bbTextPerson(id, text, / \+voice$/.test(step) ? {files: [OPEN_HOUSE_VOICE, CONTACT_CARD]} : null);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
