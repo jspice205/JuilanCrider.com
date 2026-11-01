@@ -1432,3 +1432,14 @@ function processTextQueue() {
     }
   });
 }
+
+/** Test: sends the first open-house text + voice note + contact card right now to TEST_TEXT_TO (or Julián's number). */
+function testOpenHouseText() {
+  const to = PropertiesService.getScriptProperties().getProperty('TEST_TEXT_TO') || TEXTING.myNumber;
+  const text = OPEN_HOUSE_TEXTS.guest[0].text.replace(/\{first\}/g, 'there').replace(/\{on_street\}/g, ' on 8821 Montagna');
+  const sent = bbSend(to, text);
+  [OPEN_HOUSE_VOICE, CONTACT_CARD].forEach(name => {
+    try { bbSendAudio(to, sent.service, name); console.log('Sent ' + name); }
+    catch (err) { console.log(name + ' failed: ' + err.message); }
+  });
+}
