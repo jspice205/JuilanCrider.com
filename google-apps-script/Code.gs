@@ -1319,7 +1319,7 @@ function bbSendParts(phone, msg) {
 function bbSendAudio(phone, service, driveName) {
   const props = PropertiesService.getScriptProperties(), cacheKey = 'AUDIO_' + driveName;
   let file;
-  try { file = props.getProperty(cacheKey) && DriveApp.getFileById(props.getProperty(cacheKey)); } catch (e) {}
+  try { file = props.getProperty(cacheKey) && DriveApp.getFileById(props.getProperty(cacheKey)); if (file && file.isTrashed()) file = null; } catch (e) {}
   if (!file) {
     const it = DriveApp.searchFiles('title contains "' + driveName.replace(/"/g, '') + '" and trashed = false');
     if (!it.hasNext()) throw new Error('No Google Drive file named "' + driveName + '"');
