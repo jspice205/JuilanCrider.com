@@ -126,7 +126,8 @@ function doPost(e) {
     // ── Showing requests: send the buyer a confirmation right away ──
     if (tabName === 'Website Leads' && /showing/i.test(data.type || '') && validEmail(data.email)) {
       let signUrl = '';
-      if (agreementSettings().live && !/Working with agent: Yes, with a signed/.test(data.notes || '')) {
+      // The one-home agreement needs an address; without one, Julián sends it once they pick a home.
+      if (data.property && agreementSettings().live && !/Working with agent: Yes, with a signed/.test(data.notes || '')) {
         try { signUrl = createAgreement(data); } catch (err) { console.error('Agreement not created', err); }
       }
       try { confirmShowing(data, signUrl); } catch (err) { console.error('Buyer confirmation failed', err); }
@@ -973,8 +974,10 @@ function confirmShowing(d, signUrl) {
   const when = [d.timeline, (String(d.notes || '').match(/Preferred time: ([^|]+)/) || [])[1]].filter(Boolean).map(s => esc(s.trim())).join(', ');
   const hasAgent = /Working with agent: Yes, with a signed/.test(d.notes || '');
   const body = hasAgent
-    ? `<p>Thanks for your interest in <b>${esc(d.property)}</b>. Since you have a signed agreement with another agent, they should schedule this tour for you, and they'll be able to get you in quickly.</p>
+    ? `<p>Thanks for your interest in ${d.property ? `<b>${esc(d.property)}</b>` : 'seeing homes'}. Since you have a signed agreement with another agent, they should schedule this tour for you, and they'll be able to get you in quickly.</p>
        <p>If anything changes, or you have questions about the home or the neighborhood, I'm always happy to help.</p>`
+    : !d.property ? `<p>Thanks for reaching out about seeing homes${when ? ` (${when})` : ''}. I'll be in touch shortly to hear what you're looking for, then line up the homes worth seeing.</p>
+       <p>Before any tour, Nevada requires a short written buyer agreement. Once we pick a home, I'll send a non-exclusive one that covers only that home. It takes about a minute to sign.</p>`
     : `<p>Thanks for requesting a showing of <b>${esc(d.property)}</b>${when ? ` (${when})` : ''}. I'll confirm a time with you shortly.</p>
        <p style="margin:18px 0 6px"><b>What happens next</b></p>
        <ol style="margin:0 0 14px 18px;padding:0">
