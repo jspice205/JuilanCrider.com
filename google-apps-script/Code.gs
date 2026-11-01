@@ -98,6 +98,7 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
+    if (e.parameter && e.parameter.bb) return bbWebhook(e);  // BlueBubbles (texting Mac) events
     const data = JSON.parse(e.postData.contents);
     if (data.action === 'signAgreement') return signAgreement(data);
     if (data.action === 'book') return json(bookSlot(data));
@@ -1178,4 +1179,102 @@ function freddieRates() {
   if (!col('pmms30')) return null;
   return {ok: true, source: 'Freddie Mac weekly survey', asOf: last[0],
     rates: {f30: {rate: +col('pmms30'), change: null}, f15: {rate: +col('pmms15'), change: null}}};
+}
+
+
+// ============================================================
+// TEXTING: blue iMessages from Julián's Mac (BlueBubbles server app, Messages signed in to his Apple ID).
+// Script Properties: BB_URL (server address; BlueBubbles reports new ones by itself), BB_PASSWORD (server password),
+// BB_KEY (made by setupTexting; secret part of the webhook URL). Run setupTexting once, paste the webhook URL it
+// prints into BlueBubbles > API & Webhooks (events: New Messages, New Server URL), then run testText.
+// Only contacts tagged "Text OK" are ever texted. "STOP" replies remove Text OK and add "Text Opt-Out".
+// Texts from people who aren't in Follow Up Boss (friends, family) are ignored and never stored.
+// ============================================================
+const TEXTING = {webApp: 'https://script.google.com/macros/s/AKfycbzqOjOSjwfZynEC6uNUlhoewr9k34HKZhIfzKaUBScpcoZKHEQykJQJyEW7d9tETkK7/exec',
+  myNumber: '+17024982571'};
+
+function bbE164(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  return d.length === 10 ? '+1' + d : d.length === 11 && d[0] === '1' ? '+' + d : '';
+}
+
+function bbApi(path, body) {
+  const p = PropertiesService.getScriptProperties(), url = p.getProperty('BB_URL'), pw = p.getProperty('BB_PASSWORD');
+  if (!url || !pw) throw new Error('Texting is not set up yet: add BB_URL and BB_PASSWORD in Script Properties.');
+  const res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/v1/' + path + (path.indexOf('?') < 0 ? '?' : '&') +
+    'password=' + encodeURIComponent(pw), body ? {method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
+    muteHttpExceptions: true} : {muteHttpExceptions: true});
+  const code = res.getResponseCode();
+  if (code >= 300) throw new Error('Texting Mac answered ' + code + ': ' + res.getContentText().slice(0, 200) +
+    (code === 404 || code >= 500 ? ' (is the Mac on and BlueBubbles open?)' : ''));
+  return JSON.parse(res.getContentText() || '{}');
+}
+
+/** Sends one iMessage (falls back to a green SMS for non-iPhones, if Text Message Forwarding is on). */
+function bbSend(phone, text) {
+  const to = bbE164(phone);
+  if (!to) throw new Error('Not a US mobile number: ' + phone);
+  const send = svc => bbApi('message/text', {chatGuid: svc + ';-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'});
+  try { return send('iMessage'); } catch (err) { console.log('iMessage failed, trying SMS: ' + err.message); return send('SMS'); }
+}
+
+/** Texts a Follow Up Boss contact (only if tagged "Text OK") and logs it on their timeline. */
+function bbTextPerson(personId, text) {
+  const p = fubFetch('people/' + personId + '?fields=id,firstName,tags,phones', null, 'get');
+  const tags = p.tags || [];
+  if (tags.indexOf('Text OK') < 0 || tags.indexOf('Text Opt-Out') >= 0) return 'skipped: no text consent';
+  const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+  if (!phone) return 'skipped: no mobile number';
+  const msg = String(text).replace(/%contact_first_name%/g, p.firstName || 'there');
+  bbSend(phone, msg);
+  try { fubFetch('textMessages', {personId: p.id, message: msg, toNumber: phone, fromNumber: TEXTING.myNumber, isIncoming: false}); }
+  catch (err) { console.log('Sent, but could not log the text in Follow Up Boss: ' + err.message); }
+  return 'sent';
+}
+
+function bbWebhook(e) {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('BB_KEY') || e.parameter.bb !== props.getProperty('BB_KEY')) return json({status: 'ignored'});
+  const ev = JSON.parse((e.postData && e.postData.contents) || '{}'), data = ev.data || {};
+  if (ev.type === 'new-server') {
+    const url = typeof data === 'string' ? data : data.url || data.serverAddress || '';
+    if (/^https?:\/\//.test(url)) props.setProperty('BB_URL', url);
+    return json({status: 'ok'});
+  }
+  if (ev.type !== 'new-message' || data.isFromMe || !data.handle || !data.text) return json({status: 'ok'});
+  const from = bbE164(data.handle.address);
+  if (!from) return json({status: 'ok'});  // email handles etc.
+  const found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
+  if (!found.length) return json({status: 'ok'});  // not a Follow Up Boss contact: personal text, leave it alone
+  const person = found[0], text = String(data.text).slice(0, 1000);
+  try { fubFetch('textMessages', {personId: person.id, message: text, fromNumber: from, toNumber: TEXTING.myNumber, isIncoming: true}); }
+  catch (err) { fubFetch('notes', {personId: person.id, subject: 'Text from ' + (person.firstName || 'contact'), body: text}); }
+  if (/^\s*(stop|stopall|unsubscribe|end|quit|cancel|opt ?out)\b/i.test(text)) {
+    const tags = (person.tags || []).filter(t => t !== 'Text OK').concat('Text Opt-Out');
+    fubFetch('people/' + person.id, {tags: tags}, 'put');
+    return json({status: 'ok'});
+  }
+  // One "answer today" task per person per day (inbound-only rule: tasks only when they reach out).
+  const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), key = 'BB_TASK_' + person.id;
+  if (props.getProperty(key) !== today) {
+    createCallTask(person.id, 'They texted back: "' + text.slice(0, 120) + '" Answer today.', 'Text');
+    props.setProperty(key, today);
+  }
+  return json({status: 'ok'});
+}
+
+/** Run once after adding BB_URL and BB_PASSWORD: checks the Mac and prints the webhook URL for BlueBubbles. */
+function setupTexting() {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('BB_KEY')) props.setProperty('BB_KEY', Utilities.getUuid().replace(/-/g, ''));
+  const info = bbApi('server/info');
+  console.log('Connected to the texting Mac' + (info.data && info.data.detected_icloud ? ' (' + info.data.detected_icloud + ')' : '') + '.');
+  console.log('In BlueBubbles > API & Webhooks, add a webhook with this URL (events: New Messages and New Server URL):');
+  console.log(TEXTING.webApp + '?bb=' + props.getProperty('BB_KEY'));
+}
+
+/** Sends a test text to Julián's own number. */
+function testText() {
+  bbSend(TEXTING.myNumber, 'Test from your website script: texting is connected. ✅');
+  console.log('Test text sent to ' + TEXTING.myNumber + '. Check your iPhone.');
 }
