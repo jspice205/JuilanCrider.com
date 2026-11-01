@@ -1251,8 +1251,19 @@ function bbApi(path, body) {
 function bbSend(phone, text) {
   const to = bbE164(phone);
   if (!to) throw new Error('Not a US mobile number: ' + phone);
-  const send = svc => bbApi('message/text', {chatGuid: svc + ';-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'});
-  try { return send('iMessage'); } catch (err) { console.log('iMessage failed, trying SMS: ' + err.message); return send('SMS'); }
+  // Existing conversation: send into it. New number: on this Mac's macOS (10.14) Messages can't address an unknown
+  // "buddy", so start a new chat with the message instead. iMessage first, then green SMS (needs Text Message Forwarding).
+  const tries = [
+    ['iMessage, existing chat', () => bbApi('message/text', {chatGuid: 'iMessage;-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})],
+    ['iMessage, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'iMessage', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})],
+    ['SMS, existing chat', () => bbApi('message/text', {chatGuid: 'SMS;-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})],
+    ['SMS, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'SMS', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})]];
+  let last;
+  for (const [label, fn] of tries) {
+    try { const r = fn(); console.log('Texted ' + to + ' (' + label + ').'); return r; }
+    catch (err) { last = err; console.log(label + ' failed: ' + String(err.message).slice(0, 300)); }
+  }
+  throw last;
 }
 
 /** Texts a Follow Up Boss contact (only if tagged "Text OK") and logs it on their timeline. */
