@@ -1978,11 +1978,13 @@ function openSheet(kind, opt={}){
       <div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="sagent" data-opts="No|Yes, with a signed agreement|Yes, informally"></div></div>
       ${contactFields}
       <p class="fine" style="margin:-4px 0 14px">Before any tour, Nevada buyers sign a short written agreement. For a single showing, Julián uses a non-exclusive agreement that covers only this one home, so you’re free to work with anyone else. He’ll text you a link to sign it in about a minute.</p>
-      <p class="err" id="fErr">Add your first name and phone.</p>
+      <p class="err" id="fErr">Add your first name, phone and email.</p>
       <button class="pill block" id="go">Request showing</button>`);
     $('go').onclick = () => {
       const prop = $('sProp').value.trim();  // optional: they may want help picking homes first
-      const okContact = requireContact(); if (!okContact) return;
+      // Email is required here too: the confirmation and agreement go out by email.
+      const okContact = requireContact() && /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(($('fEmail') ? $('fEmail').value : '').trim());
+      $('fErr').style.display = okContact ? 'none' : 'block'; if (!okContact) return;
       const agent = chipVal(sheet,'sagent');
       sendLead({tab:'Website Leads', type:'Showing request', ...contactVals(), property:prop, timeline:chipVal(sheet,'swhen'), source:'juliancrider.com',
         notes: joinNotes([prop ? '' : 'Property: none yet (wants help choosing homes)', 'Preferred time: '+$('sTime').value.trim(), 'Pre-approved: '+chipVal(sheet,'spre'), 'Working with agent: '+agent])});
