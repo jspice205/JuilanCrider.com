@@ -181,21 +181,25 @@ function bookSlot(d) {
   if (!String(d.name || '').trim() || !String(d.phone || '').trim()) return {status: 'error', message: 'Name and phone are required.'};
   const end = new Date(slot.getTime() + BOOKING.minutes * 6e4), email = validEmail(d.email) ? String(d.email).trim() : '';
   const label = Utilities.formatDate(slot, BOOKING.tz, "EEE, MMM d 'at' h:mm a");
-  CalendarApp.getDefaultCalendar().createEvent(`Consultation: ${d.name} (${d.type || 'juliancrider.com'})`, slot, end, {
+  const showing = d.kind === 'showing' && d.property;
+  CalendarApp.getDefaultCalendar().createEvent(showing ? `Showing: ${d.name}` : `Consultation: ${d.name} (${d.type || 'juliancrider.com'})`, slot, end, {
     description: [`Booked on juliancrider.com`, `Phone: ${d.phone}`, email && `Email: ${email}`, d.notes].filter(Boolean).join('\n'),
-    guests: email, sendInvites: !!email});
+    location: showing ? String(d.property) : '', guests: email, sendInvites: !!email});
   try {  // log it on their Follow Up Boss contact (the lead itself arrives through the normal website form)
     const phone = String(d.phone).replace(/\D/g, '');
     const found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
                   (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
     if (found.length) {
-      fubFetch('notes', {personId: found[0].id, subject: 'Booked a consultation', body: `${label} (${BOOKING.minutes} min), booked on juliancrider.com`});
-      createCallTask(found[0].id, `booked consultation ${label}`);
+      fubFetch('notes', {personId: found[0].id, subject: showing ? 'Booked a showing' : 'Booked a consultation',
+        body: `${label} (${BOOKING.minutes} min)${showing ? ' at ' + d.property : ''}, booked on juliancrider.com`});
+      createCallTask(found[0].id, showing ? `showing ${label} at ${d.property}` : `booked consultation ${label}`);
     }
   } catch (err) { console.error('Booking note: ' + err); }
   try {  // confirmation text from Julián's number (the 15-minute reminder comes from remindUpcoming)
     const first = String(d.name).trim().split(/\s+/)[0];
-    bbSend(d.phone, `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. Looking forward to it! If anything changes, just text me here.`);
+    bbSend(d.phone, showing
+      ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
+      : `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. Looking forward to it! If anything changes, just text me here.`);
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
   return {status: 'success', label: label};
 }

@@ -55,6 +55,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Appointments: bookSlot texts a confirmation; remindUpcoming (every 5 min) texts ~15 min before any Google Calendar
   event with a phone number in its notes/location/title ("Showing"/"Tour" in title → showing wording with location);
   one per event, skips Text Opt-Out, logs a FUB note. Triggers are ensured hourly by autoUpdateFromGitHub.
+  Request a showing with an address (not signed with an agent) then opens pickTime; bookSlot with kind 'showing'
+  creates "Showing: Name" (location = address, phone in notes) → confirmation text + 15-min reminder.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`
