@@ -745,9 +745,9 @@ function scoreFubDatabase() {
 const FUNNEL = {
   perNight: 50,
   // One-time catch-up (Nov 1 bug: these people got their plain first email before the designed re-intro).
-  // On this date they get the re-intro; their paused plan then resumes at email 2 four days later.
+  // On this date (Tue) they get the re-intro; their paused plan then resumes at email 2 four days later.
   // Emilee (304) replied and 267/422/427 bounced, so they're left out. Counts toward the day's 50.
-  rerun: {date: '2026-11-02', ids: [242, 246, 247, 251, 253, 256, 258, 260, 263, 264, 272, 275, 276, 278, 1906,
+  rerun: {date: '2026-11-03', ids: [242, 246, 247, 251, 253, 256, 258, 260, 263, 264, 272, 275, 276, 278, 1906,
     244, 245, 250, 252, 254, 257, 259, 262, 268, 269, 270, 281, 286, 288, 293, 301, 306, 310,
     419, 420, 421, 423, 424, 425, 426, 428, 429, 430, 431, 432, 433]},
   tags: {hot: 'JC Hot', warm: 'JC Warm', legacy: 'JC Legacy Re-Intro', farm: 'JC Farm Best', nurture: 'JC Long-Term Nurture'},
