@@ -1238,8 +1238,12 @@ function bbApi(path, body) {
     'password=' + encodeURIComponent(pw), body ? {method: 'post', contentType: 'application/json', payload: JSON.stringify(body),
     muteHttpExceptions: true} : {muteHttpExceptions: true});
   const code = res.getResponseCode();
-  if (code >= 300) throw new Error('Texting Mac answered ' + code + ': ' + res.getContentText().slice(0, 200) +
-    (code === 404 || code >= 500 ? ' (is the Mac on and BlueBubbles open?)' : ''));
+  if (code >= 300) {
+    let why = res.getContentText();
+    try { const j = JSON.parse(why); why = [j.message, j.error && (j.error.message || j.error)].filter(Boolean).join(': '); } catch (e) {}
+    throw new Error('Texting Mac answered ' + code + ': ' + String(why).replace(/\\"/g, '"').slice(0, 900) +
+      (code === 404 || code === 502 || code === 530 ? ' (is the Mac on and BlueBubbles open?)' : ''));
+  }
   return JSON.parse(res.getContentText() || '{}');
 }
 
@@ -1308,6 +1312,8 @@ function setupTexting() {
 
 /** Sends a test text to Julián's own number. */
 function testText() {
-  bbSend(TEXTING.myNumber, 'Test from your website script: texting is connected. ✅');
-  console.log('Test text sent to ' + TEXTING.myNumber + '. Check your iPhone.');
+  // Texts TEST_TEXT_TO (Script Property, e.g. another phone) if set; otherwise Julián's own number.
+  const to = PropertiesService.getScriptProperties().getProperty('TEST_TEXT_TO') || TEXTING.myNumber;
+  bbSend(to, 'Test from your website script: texting is connected. ✅');
+  console.log('Test text sent to ' + to + '. Check that phone.');
 }
