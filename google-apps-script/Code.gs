@@ -1444,6 +1444,7 @@ function ensureTextQueueTrigger() {
 // Title with "Showing" → showing wording (uses the event's location). Skips anyone tagged Text Opt-Out.
 // ============================================================
 function remindUpcoming() {
+  try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   const now = Date.now(), props = PropertiesService.getScriptProperties();
   const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 9 * 6e4), new Date(now + 21 * 6e4));
   events.forEach(ev => {
@@ -1502,4 +1503,31 @@ function testOpenHouseText() {
   const to = PropertiesService.getScriptProperties().getProperty('TEST_TEXT_TO') || TEXTING.myNumber;
   bbSendParts(to, OPEN_HOUSE_TEXTS.guest[0].text.replace(/\{first\}/g, 'there'));
   console.log('Sent to ' + to + '. Lines above say if the voice note or contact card failed, and why.');
+}
+
+
+// ============================================================
+// OUTBOX: a Follow Up Boss note with the subject "Send text", written by Julián's account (user 2, e.g. Claude on his
+// behalf), is texted to that contact through BlueBubbles within ~5 minutes, then logged as "Text sent".
+// Bubbles can be split with " || ". Skips Text Opt-Out and notes older than 24 hours. Each note is sent once.
+// ============================================================
+function processFubOutbox() {
+  const props = PropertiesService.getScriptProperties();
+  const done = JSON.parse(props.getProperty('OUTBOX_DONE') || '[]');
+  const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+    .filter(n => /^send text$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
+      Date.now() - new Date(n.created) < 864e5);
+  notes.reverse().forEach(n => {
+    done.push(n.id); props.setProperty('OUTBOX_DONE', JSON.stringify(done.slice(-200)));  // mark first: never double-send
+    try {
+      const p = fubFetch('people/' + n.personId + '?fields=id,firstName,tags,phones', null, 'get');
+      if ((p.tags || []).indexOf('Text Opt-Out') >= 0) throw new Error('they opted out of texts');
+      const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+      if (!phone) throw new Error('no mobile number');
+      bbSendParts(phone, String(n.body || '').trim());
+      fubFetch('notes', {personId: p.id, subject: 'Text sent', body: n.body});
+    } catch (err) {
+      fubFetch('notes', {personId: n.personId, subject: 'Text NOT sent', body: err.message + '\n\n' + n.body});
+    }
+  });
 }

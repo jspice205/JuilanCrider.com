@@ -57,6 +57,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   one per event, skips Text Opt-Out, logs a FUB note. Triggers are ensured hourly by autoUpdateFromGitHub.
   Request a showing with an address (not signed with an agent) then opens pickTime; bookSlot with kind 'showing'
   creates "Showing: Name" (location = address, phone in notes) → confirmation text + 15-min reminder.
+  Outbox: a FUB note with subject "Send text" by user 2 (Claude via fub_api) is texted to that contact within ~5 min
+  (processFubOutbox, from remindUpcoming), then logged "Text sent"/"Text NOT sent". Use this to text clients for Julián.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`
