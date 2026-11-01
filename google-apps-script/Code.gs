@@ -1276,7 +1276,10 @@ function bbTextPerson(personId, text) {
   const msg = String(text).replace(/%contact_first_name%/g, p.firstName || 'there');
   bbSend(phone, msg);
   try { fubFetch('textMessages', {personId: p.id, message: msg, toNumber: phone, fromNumber: TEXTING.myNumber, isIncoming: false}); }
-  catch (err) { console.log('Sent, but could not log the text in Follow Up Boss: ' + err.message); }
+  catch (err) {  // FUB only takes textMessages when its own texting is on; save it as a note instead
+    try { fubFetch('notes', {personId: p.id, subject: 'Text sent to ' + (p.firstName || 'contact'), body: msg}); }
+    catch (e2) { console.log('Sent, but could not log the text in Follow Up Boss: ' + e2.message); }
+  }
   return 'sent';
 }
 
