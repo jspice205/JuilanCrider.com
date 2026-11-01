@@ -1285,7 +1285,7 @@ function bbTextPerson(personId, text, opts) {
   const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
   if (!phone) return 'skipped: no mobile number';
   const msg = String(text).replace(/%contact_first_name%/g, p.firstName || 'there');
-  const sent = bbSend(phone, msg);
+  const sent = bbSendParts(phone, msg);
   // Optional voice note right after the text (same conversation), e.g. "Julians Open House Audio" in Google Drive.
   (opts && opts.files || []).forEach(name => {
     try { bbSendAudio(phone, sent.service, name); fubFetch('notes', {personId: p.id, subject: 'Sent by text: ' + name, body: name}); }
@@ -1297,6 +1297,22 @@ function bbTextPerson(personId, text, opts) {
     catch (e2) { console.log('Sent, but could not log the text in Follow Up Boss: ' + e2.message); }
   }
   return 'sent';
+}
+
+/** Sends "bubble || [voice] || bubble || [contact card]" as separate messages, in order. Returns the first send. */
+function bbSendParts(phone, msg) {
+  const files = {'[voice]': OPEN_HOUSE_VOICE, '[contact card]': CONTACT_CARD};
+  let first = null;
+  String(msg).split(/\s*\|\|\s*/).filter(Boolean).forEach(part => {
+    if (files[part.toLowerCase()]) {
+      if (!first) throw new Error('The first bubble has to be text');
+      try { bbSendAudio(phone, first.service, files[part.toLowerCase()]); Utilities.sleep(1500); }
+      catch (err) { console.log(part + ' not sent: ' + err.message); }
+    } else {
+      const r = bbSend(phone, part); first = first || r; Utilities.sleep(1500);
+    }
+  });
+  return first;
 }
 
 /** Sends an audio file from Google Drive (found by name) into the conversation with this number. */
@@ -1379,17 +1395,19 @@ const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
 /** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
 const OPEN_HOUSE_VOICE = 'Julians Open House Audio';  // Google Drive file sent with the first text (not to agents)
 const CONTACT_CARD = 'Julian Crider Contact Card';     // Google Drive .vcf sent after it, so they can save Julián
+// Each text can be several bubbles separated by " || ". [voice] = the voice note, [contact card] = the contact card.
+// The first bubble has to be a text (Messages can't start a new conversation with a file on this Mac).
 const OPEN_HOUSE_TEXTS = {
-  // Buyers and lookers: the goal is a second showing. Each later text is skipped once they reply (Julián takes over).
+  // Buyers and lookers: the goal is a second showing. Later texts are skipped once they reply (Julián takes over).
   guest: [
-    {step: 'oh-2h', hours: 2, voice: true, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for coming by today. Curious, was it what you expected from the photos, or not quite?"},
-    {step: 'oh-24h', hours: 24, text: "Hi {first}, Julián again. If {street} wasn't quite the one, what would the next home need to have that it didn't?"},
-    {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes like it for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house today 👋 || [voice] || Thanks again for coming by. Curious, was it what you expected, or not quite? || [contact card]"},
+    {step: 'oh-24h', hours: 24, text: "Hi {first}, Julián again. If that one wasn't quite the one, what would the next home need to have that it didn't? 🏡"},
+    {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   neighbor: [
-    {step: 'oh-2h', hours: 2, voice: true, text: "Hi {first}, it's Julián from the open house{on_street}. Thanks for stopping by, neighbor. It's always good to meet the people who actually live here."},
-    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. A few neighbors asked what their own homes would sell for after seeing {street}. Would it be crazy if I ran a quick, private number for yours? No visit needed."}],
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, it's Julián from the open house today 👋 || [voice] || Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [contact card]"},
+    {step: 'oh-72h', hours: 72, text: "Hi {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
   agent: [
-    {step: 'oh-2h', hours: 2, text: "Hi {first}, Julián here. Thanks for previewing {street} today. Any feedback from you or your buyers? It really helps the sellers."}]
+    {step: 'oh-2h', hours: 2, text: "Hi {first}, Julián here 👋 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]
 };
 
 function queueOpenHouseTexts(personId, d, kind) {
@@ -1397,7 +1415,7 @@ function queueOpenHouseTexts(personId, d, kind) {
   const street = String(d.property || '').split(',')[0].trim() || 'the open house';
   const sheet = ensureTab(getSS(), TEXT_QUEUE_TAB);
   (OPEN_HOUSE_TEXTS[kind] || OPEN_HOUSE_TEXTS.guest).forEach(t => sheet.appendRow([
-    new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), t.step + (t.voice ? ' +voice' : ''), 'pending', 0, '',
+    new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), t.step, 'pending', 0, '',
     t.text.replace(/\{first\}/g, first).replace(/\{on_street\}/g, street === 'the open house' ? '' : ' on ' + street)
       .replace(/\{street\}/g, street)]));
   ensureTextQueueTrigger();
@@ -1423,7 +1441,7 @@ function processTextQueue() {
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
     if (!/^oh-2h/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
-      const res = bbTextPerson(id, text, / \+voice$/.test(step) ? {files: [OPEN_HOUSE_VOICE, CONTACT_CARD]} : null);
+      const res = bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
@@ -1433,13 +1451,9 @@ function processTextQueue() {
   });
 }
 
-/** Test: sends the first open-house text + voice note + contact card right now to TEST_TEXT_TO (or Julián's number). */
+/** Test: sends the first open-house message (greeting, voice note, question, contact card) now to TEST_TEXT_TO. */
 function testOpenHouseText() {
   const to = PropertiesService.getScriptProperties().getProperty('TEST_TEXT_TO') || TEXTING.myNumber;
-  const text = OPEN_HOUSE_TEXTS.guest[0].text.replace(/\{first\}/g, 'there').replace(/\{on_street\}/g, ' on 8821 Montagna');
-  const sent = bbSend(to, text);
-  [OPEN_HOUSE_VOICE, CONTACT_CARD].forEach(name => {
-    try { bbSendAudio(to, sent.service, name); console.log('Sent ' + name); }
-    catch (err) { console.log(name + ' failed: ' + err.message); }
-  });
+  bbSendParts(to, OPEN_HOUSE_TEXTS.guest[0].text.replace(/\{first\}/g, 'there'));
+  console.log('Sent to ' + to + '. Lines above say if the voice note or contact card failed, and why.');
 }
