@@ -2126,6 +2126,8 @@ function askIntent(){
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
   // juliancrider.com/?value opens the home-value form (link in the neighbor emails).
   if (/[?&]value\b/.test(location.search)) { showTab('homes'); showPane('h-value'); return; }
+  // juliancrider.com/?showing opens "Request a showing" (link to text or email a client).
+  if (/[?&]showing\b/.test(location.search)) { setTimeout(() => openSheet('showing'), 300); return; }
   // juliancrider.com/?blog=<slug> opens that article (links in emails and posts).
   const bm = location.search.match(/[?&]blog=([\w-]+)/), bi = bm ? BLOGS.findIndex(b => b.slug === bm[1]) : -1;
   if (bi >= 0) { setTimeout(() => openBlog(bi), 300); return; }

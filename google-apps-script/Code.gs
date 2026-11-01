@@ -748,7 +748,7 @@ const FUNNEL = {
   // Older contacts (in FUB 30+ days, so they may not have heard from Julián in months or years) first get the designed
   // "It's been a while" re-introduction (plan 30, template 184); their personal plan starts reintroDays later.
   // Farm contacts skip it (they've never talked to Julián; Farm Best 1 is their intro).
-  reintroPlan: 30, neighborPlan: 31, reintroDays: 4, reintroAfterDays: 30,
+  reintroPlan: 30, neighborPlan: 31, legacyAfterIntroPlan: 33, reintroDays: 4, reintroAfterDays: 30,
   live: ['hot', 'warm', 'legacy', 'farm', 'nurture'],  // stages that start people (all five built Oct 31)
   textLive: [],  // stages whose "+ Text" automation exists, e.g. ['hot', 'warm', 'nurture']
   handoffDays: {hot: 25, warm: 65, legacy: 25, farm: 60}  // days after starting, move on to Long-Term Nurture
@@ -780,7 +780,7 @@ function runFunnel(people) {
     if (cur) sheet.getRange(cur.row, 1, 1, vals.length).setValues([vals]); else sheet.appendRow(vals);
     rows[p.id] = {row: cur ? cur.row : sheet.getLastRow(), stage: stage, started: today};
   };
-  const planIds = Object.keys(FUNNEL.plans).map(k => FUNNEL.plans[k]);
+  const planIds = Object.keys(FUNNEL.plans).map(k => FUNNEL.plans[k]).concat(FUNNEL.legacyAfterIntroPlan);
   // Pause any JC plan this person is running (moving stages, or a deal/Pause tag).
   const stopPlans = p => (fubFetch('actionPlansPeople?personId=' + p.id, null, 'get').actionPlansPeople || [])
     .filter(a => planIds.indexOf(a.actionPlanId) >= 0 && a.status === 'Running')
@@ -794,7 +794,9 @@ function runFunnel(people) {
     // First email is a designed intro, then the plain-text drip a few days later:
     // Farm – Best homeowners get the "Neighbor Note" (31); anyone else in FUB 30+ days gets "It's been a while" (30).
     // Open-house neighbors already got their neighbor welcome at sign-in, so they skip it.
-    const old = p.created && (Date.now() - new Date(p.created)) / 864e5 >= FUNNEL.reintroAfterDays;
+    // "Old" = imported in the Oct 28-29 bulk load (FUB's created date is the import date, not when Julián met them)
+    // or in Follow Up Boss 30+ days.
+    const old = p.created && (new Date(p.created) < LIVE_SINCE || (Date.now() - new Date(p.created)) / 864e5 >= FUNNEL.reintroAfterDays);
     const intro = stageOf(p) ? 0 : stage === 'farm' ? (has(p, 'Open House Neighbor') ? 0 : FUNNEL.neighborPlan) : old ? FUNNEL.reintroPlan : 0;
     if (intro) {
       try { startPlan(p, intro); }
@@ -806,7 +808,8 @@ function runFunnel(people) {
     const tag = FUNNEL.tags[stage] + (has(p, 'Text OK') && FUNNEL.textLive.indexOf(stage) >= 0 ? ' + Text' : '');
     try {
       stopPlans(p);
-      startPlan(p, FUNNEL.plans[stage]);
+      // Legacy 1 is a plain "It's been a while" email, so people who just got the designed re-intro skip it.
+      startPlan(p, stage === 'legacy' && /^reintro-/.test(stageOf(p) || '') ? FUNNEL.legacyAfterIntroPlan : FUNNEL.plans[stage]);
     } catch (e) { console.log('Funnel: could not start ' + stage + ' for ' + p.id + ': ' + e.message); return; }
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0).concat(tag);
     fubFetch('people/' + p.id, {tags: next}, 'put'); p.tags = next;
