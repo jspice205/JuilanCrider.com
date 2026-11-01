@@ -225,10 +225,12 @@ function updateFromGitHub(auto) {
   const files = api('get', '/content').files || [];
   const cur = name => (files.filter(f => f.name === name)[0] || {}).source;
   if (cur('Code') === undefined) return 'No file named "Code" in this project, so nothing was changed.';
-  if (cur('Code') === code && cur('appsscript') === manifest) return 'Already up to date.';
+  // "Up to date" only once the website (web app deployment) is also running this exact code.
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, code + manifest));
+  const props = PropertiesService.getScriptProperties();
+  if (cur('Code') === code && cur('appsscript') === manifest && props.getProperty('DEPLOYED_HASH') === hash) return 'Already up to date.';
   const scopes = s => JSON.stringify(((s && JSON.parse(s).oauthScopes) || []).slice().sort());
   if (auto && scopes(cur('appsscript')) !== scopes(manifest)) {
-    const props = PropertiesService.getScriptProperties();
     if (props.getProperty('UPDATE_SCOPES_EMAILED') !== scopes(manifest)) {
       MailApp.sendEmail(NOTIFY_EMAIL, 'Your website script has an update that needs one click',
         'An update to your JC Open House Leads script needs new Google permissions. Open the sheet, then Extensions > Apps Script, ' +
@@ -241,9 +243,12 @@ function updateFromGitHub(auto) {
   api('put', '/content', {files: files.filter(f => f.name !== 'Code' && f.name !== 'appsscript').concat(
     [{name: 'appsscript', type: 'JSON', source: manifest}, {name: 'Code', type: 'SERVER_JS', source: code}])});
   const version = api('post', '/versions', {description: 'Update from GitHub'}).versionNumber;
-  (api('get', '/deployments').deployments || []).filter(dep => (dep.entryPoints || []).some(e => e.entryPointType === 'WEB_APP'))
+  // Repoint the website's deployment(s). Skip the read-only "Head" (test) deployment, which has no version number.
+  (api('get', '/deployments').deployments || [])
+    .filter(dep => (dep.entryPoints || []).some(e => e.entryPointType === 'WEB_APP') && (dep.deploymentConfig || {}).versionNumber)
     .forEach(dep => api('put', '/deployments/' + dep.deploymentId,
       {deploymentConfig: {scriptId: id, versionNumber: version, manifestFileName: 'appsscript', description: 'Update from GitHub'}}));
+  props.setProperty('DEPLOYED_HASH', hash);
   return 'Updated to version ' + version + ' and pointed the website at it.';
 }
 
