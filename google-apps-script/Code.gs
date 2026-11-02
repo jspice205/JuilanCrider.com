@@ -227,10 +227,54 @@ function setupAutoUpdate() {
 function autoUpdateFromGitHub() {
   console.log(updateFromGitHub(true));
   try { ensureTextQueueTrigger(); } catch (e) { console.log('Text triggers: ' + e.message); }
+  try { trackEmailOpens(); } catch (e) { console.log('Email opens: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
   } catch (e) { console.log('Email footer: ' + e.message); }
+}
+
+// EMAIL OPENS — hourly (from autoUpdateFromGitHub). Reads FUB's email events (opens, clicks, unsubscribes from your
+// action-plan emails) and tags your contacts "Opened Email" / "Clicked Email", so a Smart List on those tags shows
+// everyone who has engaged. The "Email Opens" sheet tab keeps one row per person + email + event with first/last
+// date and count, so you can see engagement grow over time. Tags are only added, never removed.
+const EMAIL_OPENS_TAB = {name: 'Email Opens', color: '#0078d4',
+  headers: ['Last', 'First', 'Name', 'Event', 'Email (campaign)', 'Count', 'FUB link', 'Person id']};
+function trackEmailOpens() {
+  const props = PropertiesService.getScriptProperties();
+  const seen = props.getProperty('EM_EVENTS_SEEN') || '';
+  const me = fubFetch('me', null, 'get').id;
+  const events = []; let next = '';
+  for (let i = 0; i < 100; i++) {
+    const r = fubFetch('emEvents?limit=100' + (next ? '&next=' + encodeURIComponent(next) : ''), null, 'get');
+    events.push(...(r.emEvents || []));
+    next = r._metadata && r._metadata.next; if (!next) break;
+  }
+  const ss = getSS(); const sheet = ss.getSheetByName(EMAIL_OPENS_TAB.name) || ensureTab(ss, EMAIL_OPENS_TAB);
+  const old = {}; sheet.getDataRange().getValues().slice(1).forEach(r => { if (r[7]) old[r[7] + '|' + r[4] + '|' + r[3]] = r; });
+  const people = {}, fmt = iso => Utilities.formatDate(new Date(iso), 'America/Los_Angeles', 'M/d/yyyy h:mm a');
+  const person = id => people[id] || (people[id] = (() => { try { return fubFetch('people/' + id + '?fields=id,name,tags,assignedUserId', null, 'get'); } catch (e) { return null; } })());
+  let latest = seen, tagged = 0; const rows = [];
+  events.sort((a, b) => a.updated < b.updated ? 1 : -1);
+  for (const e of events) {
+    const key = e.personId + '|' + e.campaignName + '|' + e.type, prev = old[key];
+    let name = prev && prev[2];
+    if (e.updated > seen && /open|click/.test(e.type)) {
+      const p = person(e.personId);
+      if (p && (!p.assignedUserId || p.assignedUserId === me)) {
+        name = p.name; const want = ['Opened Email'].concat(e.type === 'click' ? ['Clicked Email'] : []);
+        const tags = p.tags || [], add = want.filter(t => tags.indexOf(t) < 0);
+        if (add.length) { try { fubFetch('people/' + p.id, {tags: tags.concat(add)}, 'put'); p.tags = tags.concat(add); tagged++; Utilities.sleep(120); } catch (err) { console.log('Tag ' + p.id + ': ' + err.message); } }
+      }
+    }
+    if (!name) { const p = person(e.personId); name = p ? p.name : ''; }
+    if (e.updated > latest) latest = e.updated;
+    rows.push([fmt(e.updated), fmt(e.created), name, e.type, e.campaignName, e.count, 'https://app.followupboss.com/2/people/view/' + e.personId, e.personId].map(cell));
+  }
+  sheet.clearContents(); styleHeader(sheet, EMAIL_OPENS_TAB);
+  if (rows.length) sheet.getRange(2, 1, rows.length, EMAIL_OPENS_TAB.headers.length).setValues(rows);
+  if (latest) props.setProperty('EM_EVENTS_SEEN', latest);
+  console.log(`Email events: ${rows.length} rows, tagged ${tagged} people.`);
 }
 
 // Signature footer for the plain-text drip emails (Hot/Warm/Legacy 141-152, Nurture 153-176, Farm 177-180).

@@ -28,7 +28,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "JC Open House Leads" Google Sheet, deployed as the web app the site posts to (`SHEET_URL`).
   Handles: website leads → sheet tabs + email + Follow Up Boss; mortgage rates; buyer agreements
   (PDF to Drive, emails); FUB Inbox auto-import from Google Drive; lead scoring; FUB Scorecard +
-  Hot/Warm tagging (`scoreFubDatabase`, nightly via `setupNightlyScoring`; `activityScore` adds lead-side activity:
+  Hot/Warm tagging (`trackEmailOpens` hourly: FUB emEvents → tags `Opened Email`/`Clicked Email` + "Email Opens" sheet tab;
+  Smart List "Opened my emails" = tag Opened Email; `scoreFubDatabase`, nightly via `setupNightlyScoring`; `activityScore` adds lead-side activity:
   replies, calls in, DMs, new inquiries, site/IDX visits, email clicks, RealScout views, fading after 90 days, and
   -10 for "quiet: no reply after 3+ touches"); Monday digest; `loadFubTemplates` (Hot/Warm emails).
   Keys live in Script Properties (`FUB_API_KEY`, etc.), never in code.
@@ -74,6 +75,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   in Cloudflare → Edit code → Deploy.
 
 ## Follow Up Boss facts
+- Deceased contacts: stage Trash + tag `Deceased` (Jared Weiss 437, Don Alves 471, Bishop Cooper 460; Nov 2).
 - Shared brokerage account: Joey DeBenedetto (Broker, admin, user 1), Julián (Agent, user 2), Tana Cogan (Agent, 3).
   Julián can't create Automations or enable texting (admin must submit texting registration); his email isn't
   connected to FUB yet. Scoring and funnel only touch contacts assigned to user 2 (checked via GET me).
