@@ -223,6 +223,8 @@ img{max-width:100%;display:block}
 /* App frame */
 .app{max-width:500px;margin:0 auto;min-height:100%;background:var(--bg);position:relative;padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
 @media (min-width:600px){.app{box-shadow:0 0 0 1px var(--hair)}}
+/* iPad portrait and small tablets: use the full screen width like desktop (keeps the bottom tab bar) */
+@media (min-width:768px) and (max-width:1023px){body{background:var(--bg)}.app{max-width:none;box-shadow:none}.vid video{aspect-ratio:21/9}.sheet{max-width:640px}}
 
 /* Top bar */
 .top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--hair)}
