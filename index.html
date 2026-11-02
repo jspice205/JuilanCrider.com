@@ -392,6 +392,11 @@ img{max-width:100%;display:block}
 .sheet{position:fixed;left:50%;bottom:0;transform:translate(-50%,100%);width:100%;max-width:500px;max-height:92vh;overflow-y:auto;background:var(--bg);border-radius:22px 22px 0 0;z-index:50;transition:transform .28s cubic-bezier(.2,.8,.2,1);padding:8px 0 calc(24px + env(safe-area-inset-bottom,0px))}
 .sheet.on{transform:translate(-50%,0)}
 :root[data-theme="dark"] .sheet{background:#0e0e0f;border-top:1px solid var(--hair)}
+.scrim.full{background:var(--bg);opacity:1}
+.sheet.full,.sheet.full.on{top:0;bottom:0;left:0;right:0;width:100%;max-width:none;max-height:none;height:100%;border-radius:0;border:0;transform:none;opacity:1;pointer-events:auto;padding:max(24px,env(safe-area-inset-top,0px)) 0 calc(32px + env(safe-area-inset-bottom,0px))}
+.sheet.full:not(.on){display:none}
+.sheet.full > *{max-width:540px;margin-left:auto;margin-right:auto}
+.sheet.full .grab{display:none}
 @media (prefers-reduced-motion:reduce){.sheet,.scrim{transition:none}}
 .grab{width:38px;height:5px;border-radius:3px;background:var(--hair);margin:4px auto 6px}
 .shead{display:flex;align-items:center;padding:4px 8px 4px 16px}
@@ -778,7 +783,7 @@ img{max-width:100%;display:block}
         <div class="field"><label for="ohPhone">Phone</label><input id="ohPhone" type="tel" autocomplete="tel"></div>
         <div class="consent">📱 <b style="display:inline">Julián will text you</b> a few homes like this one.
           <span style="display:block;margin-top:4px;color:var(--ink2);font-size:13px">By entering your phone number, you agree Julián Crider may call or text you about homes. Msg &amp; data rates may apply. Reply STOP anytime to opt out.</span>
-          <label class="opt"><input type="checkbox" id="ohNoText"><span class="dot"></span><span><b style="display:inline;font-size:13px">Do not text me.</b> Email only.</span></label></div>
+          <label class="opt"><input type="checkbox" id="ohNoText"><span class="dot"></span><span><b style="display:inline;font-size:13px">Do not text me.</b></span></label></div>
         <div class="field"><label for="ohEmail">Email</label><input id="ohEmail" type="email" autocomplete="email"></div>
         <div class="field"><span class="lab">What brings you in today?</span><div class="chips" data-chips="nb" data-opts="Looking to buy|Just looking|I live nearby|I’m a real estate agent"></div></div>
         <div class="field"><span class="lab">How well does this home fit what you’re looking for?</span><div class="scale" data-chips="fit"></div></div>
@@ -1938,9 +1943,10 @@ $('ohAgain').onclick = () => { $('ohForm').reset(); $('ohForm').querySelectorAll
    every answer after that enriches the contact (action 'enrich'). "Form: funnel" vs "Form: page" lets us compare answer rates. */
 function openHouseFunnel(prop){
   const st = {};
+  sheet.classList.add('full'); scrim.classList.add('full');  // its own full screen, no site behind it
   const consent = `<div class="consent">📱 <b style="display:inline">Julián will text you</b> homes that fit what you’re looking for.
     <span style="display:block;margin-top:4px;color:var(--ink2);font-size:13px">By entering your phone number, you agree Julián Crider may call or text you about homes. Msg &amp; data rates may apply. Reply STOP anytime to opt out.</span>
-    <label class="opt"><input type="checkbox" id="fnNoText"><span class="dot"></span><span><b style="display:inline;font-size:13px">Do not text me.</b> Email only.</span></label></div>`;
+    <label class="opt"><input type="checkbox" id="fnNoText"><span class="dot"></span><span><b style="display:inline;font-size:13px">Do not text me.</b></span></label></div>`;
   openRaw('Sign in with Julián', `<p style="color:var(--ink2);margin:-4px 0 16px">At an open house or browsing from home, this takes 20 seconds.</p>
     <div class="field"><label for="fnProp">Which open house did you visit? <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="fnProp" placeholder="Address, community, or leave blank" value="${(prop||'').replace(/"/g,'&quot;')}"></div>
     <div class="duo"><div class="field"><label for="fnFirst">First name</label><input id="fnFirst" autocomplete="given-name"></div>
@@ -1957,9 +1963,10 @@ function openHouseFunnel(prop){
     sendLead({tab:'Sign-Ins', name:st.name, phone:st.phone, email:st.email, property:st.property, neighbor:/live nearby/.test(nb) ? 'Yes' : '', score:'', status:'', timeline:'', source:'',
       notes: joinNotes(['Visitor: '+nb, 'Neighbor: '+(/live nearby/.test(nb) ? 'Yes' : ''), 'Text OK: '+(st.phone && !$('fnNoText').checked ? 'Yes' : ''), 'Form: funnel', st.property ? '' : 'Signed up: online (no open house)', 'Signed in on: juliancrider.com'])});
     if (/agent/i.test(nb)) return finish();
+    if (!st.property) qs.shift();  // no open house: skip "how well does this home fit"
     ask(0);
   };
-  const qs = [
+  let qs = [
     {k:'fit', q:'How well does this home fit what you’re looking for?', scale:true},
     {k:'agent', q:'Are you working with an agent?', o:'No|Yes, with a signed agreement|Yes, informally'},
     {k:'preapp', q:'Pre-approved for a loan?', o:'Yes|Not yet|Paying cash'},
@@ -2013,7 +2020,7 @@ function openRaw(title, html){
   $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; sheet.scrollTop = 0;
   sheet.classList.add('on'); scrim.classList.add('on'); buildChips(sheet); bindOpeners(sheet); $('sheetClose').focus();
 }
-function closeSheet(){ sheet.classList.remove('on'); scrim.classList.remove('on'); if (lastFocus) lastFocus.focus(); }
+function closeSheet(){ sheet.classList.remove('on','full'); scrim.classList.remove('on','full'); if (lastFocus) lastFocus.focus(); }
 scrim.onclick = closeSheet; $('sheetClose').onclick = closeSheet;
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeSheet(); });
 const contactFields = `<div class="duo"><div class="field"><label for="fFirst">First name</label><input id="fFirst" autocomplete="given-name"></div>
