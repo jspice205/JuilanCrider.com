@@ -62,6 +62,23 @@
   .stat b{display:block;font:300 24px/1.1 Inter}
   .stat small{font-size:9.5px;color:#777}
   .note{font-size:12px;line-height:1.65;color:#333}
+  .bio{display:grid;grid-template-columns:1fr 2.4in;gap:28px;margin-top:20px}
+  .bio p{font-size:12.5px;line-height:1.7;color:#333;margin:0 0 12px}
+  .bio img{width:100%;height:6.2in;object-fit:cover;object-position:top;border-radius:4px}
+  .sig{font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;margin-top:6px}
+  .hero2{width:100%;height:2.6in;object-fit:cover;border-radius:4px;margin-top:18px}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 6px}
+  .card img{width:100%;height:1.35in;object-fit:cover;border-radius:3px;display:block}
+  .card b{display:block;font-size:11px;margin-top:6px}.card small{font-size:10px;color:#777;line-height:1.5;display:block}
+  .card .p{font:300 18px/1.2 Inter;margin-top:2px}
+  .bars{margin-top:12px}
+  .bars .r{display:grid;grid-template-columns:52px 1fr 120px;gap:8px;align-items:center;font-size:9.5px;color:#777;margin:3px 0}
+  .bars .t{position:relative;height:14px}
+  .bars .l,.bars .s{position:absolute;left:0;top:0;height:14px;background:#d9d6d0;border-radius:2px}
+  .bars .s{background:#111;height:14px}
+  .bars .n{font-size:9px;color:#555;white-space:nowrap}
+  .vals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+  .vals div{border-top:1px solid #e3e3e3;padding-top:8px}.vals b{display:block;font:300 20px/1.2 Inter}.vals small{font-size:9.5px;color:#777}
   .disc{font-size:8.5px;color:#999;line-height:1.5;position:absolute;left:.7in;right:.7in;bottom:.8in}
 </style></head><body>
 <div id="out"></div>
@@ -84,9 +101,13 @@ function render(c){
     <div class="inner"><div class="kicker">Comparative market analysis</div>
       <h1 class="addr" style="margin-top:14px">${s.street},<br>${s.cityZip}</h1>
       <div class="meta"><div>Prepared for<b>${c.preparedFor}</b></div><div>Dated<b>${c.date}</b></div><div>Prepared by<b>${a.name}</b></div></div></div>
-    <div class="toc"><div>The home<small>Page 2</small></div><div>Pricing<small>Page 3</small></div><div>Sold comps<small>Page 4</small></div><div>Competition<small>Page 5</small></div></div>
+    <div class="toc">${(c.bio ? ['About Julián'] : []).concat(['The home','Pricing','Sold comps','Competition'], c.market ? ['Market trends'] : []).map((t,i) => `<div>${t}<small>Page ${i+2}</small></div>`).join('')}</div>
     <div class="agent"><img src="${a.photo}" alt=""><div class="c"><b>${a.name}</b><br>${a.title} · ${a.team}<br>${a.phone} · ${a.email} · ${a.site}</div></div>
   </section>
+  ${c.bio ? `<section class="pg"><div class="kicker">Your agent</div><h2 style="font-size:40px;margin-top:10px" class="serif">${a.name}</h2>
+    <div class="bio"><div>${c.bio.map(x => `<p>${x}</p>`).join('')}<div class="sig">Let’s find your next move.</div>
+      <p class="muted" style="font-size:11px;margin-top:8px">${a.name} · Licensed Nevada REALTOR® S.0177760<br>${a.team}<br>Call or text anytime: ${a.phone} · ${a.email}</p></div>
+      <img src="${c.bioPhoto || a.photo}" alt="${a.name}"></div>${foot(++n)}</section>` : ''}
 
   <section class="pg"><div class="kicker">${s.area}</div><h2 style="font-size:36px;margin-top:10px">${s.street}, ${s.cityZip}</h2>
     <div class="facts">
@@ -94,8 +115,10 @@ function render(c){
       <div><b>${s.sqft.toLocaleString()}</b><span>Living sq ft</span></div><div><b>${s.lot.toLocaleString()}</b><span>Lot sq ft</span></div>
       <div><b>${s.built}</b><span>Year built</span></div><div><b>${s.stories}</b><span>Stories</span></div>
       <div><b>${s.garage}</b><span>Garage</span></div><div><b>${s.type}</b><span>Property</span></div></div>
+    ${c.homePhoto ? `<img class="hero2" src="${c.homePhoto}" alt="">` : ''}
     <div class="rule"></div>
     <div class="note">${c.homeNotes}</div>
+    ${c.otherValues ? `<div class="vals">${c.otherValues.map(v => `<div><b>${v[1]}</b><small>${v[0]}</small></div>`).join('')}</div>` : ''}
     ${foot(++n)}</section>
 
   <section class="pg"><div class="kicker">Pricing</div><h2 style="margin-top:10px">Recommended list price</h2>
@@ -107,6 +130,7 @@ function render(c){
     ${foot(++n)}</section>
 
   <section class="pg"><div class="kicker">Sold comparables</div><h2 style="margin-top:10px">What buyers actually paid</h2>
+    ${c.featured ? `<div class="cards">${c.featured.map(f => `<div class="card"><img src="${f.photo}" alt=""><b>${f.addr}</b><div class="p">${$m(f.price)}</div><small>${f.line}</small></div>`).join('')}</div>` : ''}
     <table>${head}${comps(c.sold)}</table>
     <div class="note" style="margin-top:16px">${c.soldNote}</div>
     ${foot(++n)}</section>
@@ -114,8 +138,15 @@ function render(c){
   <section class="pg"><div class="kicker">The competition</div><h2 style="margin-top:10px">What a buyer will compare it to today</h2>
     <table>${head}${comps(c.active)}</table>
     <div class="note" style="margin-top:16px">${c.activeNote}</div>
+    ${c.market ? '' : `<div class="disc">${c.disclaimer}</div>`}
+    ${foot(++n)}</section>
+  ${c.market ? `<section class="pg"><div class="kicker">Market trends · ${c.market.area}</div><h2 style="margin-top:10px">${c.market.title}</h2>
+    <div class="stat">${c.market.stats.map(x => `<div><b>${x[1]}</b><small>${x[0]}</small></div>`).join('')}</div>
+    <div class="note" style="margin-top:18px">${c.market.note}</div>
+    <div style="margin-top:20px" class="kicker">Homes for sale vs. homes sold each month</div>
+    <div class="bars">${c.market.months.map(m => { const max = Math.max(...c.market.months.map(x => x[1])); return `<div class="r"><span>${m[0]}</span><div class="t"><div class="l" style="width:${m[1]/max*100}%"></div><div class="s" style="width:${m[2]/max*100}%"></div></div><span class="n">${m[2]} sold / ${m[1]} for sale</span></div>`; }).join('')}</div>
     <div class="disc">${c.disclaimer}</div>
-    ${foot(++n)}</section>`;
+    ${foot(++n)}</section>` : ''}`;
 }
 if (window.CMA) render(window.CMA); else document.getElementById('out').innerHTML = '<p style="padding:40px;font:14px Inter">Load a report by setting window.CMA before this page runs.</p>';
 </script></body></html>
