@@ -1,0 +1,121 @@
+<!doctype html>
+<!-- Julián's comp report (CMA) template. Calm black-and-white, letter-size pages, prints to PDF.
+     Fill window.CMA (see the sample shape in renderSample below) and open in a browser or render with Playwright:
+       page.addInitScript(`window.CMA = ${JSON.stringify(data)}`) → page.goto(this file) → page.pdf({format:'Letter'})
+     Pricing uses Julián's "Comp like an Appraiser" method: (highest sold $/sf − lowest sold $/sf) ÷ 2 / 3 / 4,
+     add back the lowest $/sf, times the home's square feet = high / medium / average list price.
+     Never commit a client's report data to this repo; keep it local and share the PDF privately. -->
+<html lang="en"><head><meta charset="utf-8"><title>Comparative Market Analysis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Cormorant+Garamond:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  @page{size:Letter;margin:0}
+  *{box-sizing:border-box}
+  body{margin:0;background:#e9e7e3;font-family:Inter,Helvetica,Arial,sans-serif;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pg{width:8.5in;height:11in;margin:0 auto 18px;background:#fff;position:relative;overflow:hidden;padding:.7in .7in .9in;page-break-after:always}
+  @media print{body{background:#fff}.pg{margin:0}}
+  .kicker{font:500 10px/1 Inter;letter-spacing:.22em;text-transform:uppercase;color:#777}
+  .serif{font-family:'Cormorant Garamond',Georgia,serif;font-weight:400}
+  h1.addr{font:300 54px/1.02 Inter;letter-spacing:-.02em;margin:0}
+  h2{font:300 30px/1.1 Inter;letter-spacing:-.01em;margin:0 0 6px}
+  .rule{height:1px;background:#111;margin:22px 0}
+  .thin{height:1px;background:#e3e3e3;margin:14px 0}
+  .muted{color:#777}
+  .foot{position:absolute;left:.7in;right:.7in;bottom:.45in;display:flex;justify-content:space-between;align-items:center;font-size:9px;color:#888}
+  .foot img{height:26px;width:26px;border-radius:50%;object-fit:cover;margin-right:8px;vertical-align:middle}
+  /* cover */
+  .cover{background:#111;color:#fff;padding:.8in}
+  .cover .kicker{color:#aaa}
+  .cover .hero{position:absolute;left:0;right:0;top:0;height:6.4in;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent);background:#222 center/cover no-repeat;opacity:.55}
+  .cover .inner{position:absolute;left:.8in;right:.8in;top:4.4in}
+  .cover .meta{display:flex;gap:44px;margin-top:26px;font-size:12px;color:#ddd}
+  .cover .meta b{display:block;font-weight:500;color:#fff;font-size:14px;margin-top:4px}
+  .cover .toc{position:absolute;left:.8in;right:.8in;bottom:1.6in;display:flex;gap:26px}
+  .cover .toc div{flex:1;border-top:1px solid #555;padding-top:8px;font-size:11px;color:#ccc}
+  .cover .toc small{display:block;color:#888;font-size:9px;margin-top:3px}
+  .cover .agent{position:absolute;left:0;right:0;bottom:0;background:#fff;color:#111;padding:.28in .8in;display:flex;align-items:center;gap:16px}
+  .cover .agent img{width:58px;height:58px;border-radius:50%;object-fit:cover}
+  .cover .agent .c{font-size:11px;line-height:1.55;color:#444}
+  .cover .agent .c b{color:#111;font-size:13px}
+  /* facts */
+  .facts{display:grid;grid-template-columns:repeat(4,1fr);gap:18px 10px;margin-top:18px}
+  .facts b{display:block;font:300 28px/1.1 Inter}
+  .facts span{font-size:10px;color:#777;letter-spacing:.06em;text-transform:uppercase}
+  /* pricing */
+  .big{font:300 64px/1 Inter;letter-spacing:-.02em;margin:10px 0 4px}
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  .tier{border-top:1px solid #111;padding-top:10px}
+  .tier b{display:block;font:300 26px/1.1 Inter}
+  .tier small{font-size:10px;color:#777}
+  .tier.on{border-top:3px solid #b3262b}
+  .reco{background:#f4f3f1;padding:18px 20px;margin-top:22px;border-radius:4px}
+  .reco b{font-weight:600}
+  .steps{font-size:11px;color:#555;line-height:1.7;margin-top:16px}
+  /* tables */
+  table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:10px}
+  th{text-align:left;font-weight:500;color:#777;font-size:9px;letter-spacing:.08em;text-transform:uppercase;border-bottom:1px solid #111;padding:6px 6px 6px 0}
+  td{padding:7px 6px 7px 0;border-bottom:1px solid #eee;vertical-align:top}
+  td.n,th.n{text-align:right}
+  tr.hl td{background:#f6f5f3}
+  .stat{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:16px}
+  .stat div{border-top:1px solid #111;padding-top:8px}
+  .stat b{display:block;font:300 24px/1.1 Inter}
+  .stat small{font-size:9.5px;color:#777}
+  .note{font-size:12px;line-height:1.65;color:#333}
+  .disc{font-size:8.5px;color:#999;line-height:1.5;position:absolute;left:.7in;right:.7in;bottom:.8in}
+</style></head><body>
+<div id="out"></div>
+<script>
+const $m = n => '$' + Math.round(n).toLocaleString('en-US');
+const ppsf = (p, sf) => sf ? '$' + (p / sf).toFixed(0) : '—';
+function method(c){  // Julián's "Comp like an Appraiser"
+  const hi = c.highPpsf, lo = c.lowPpsf, d = hi - lo, sf = c.subject.sqft;
+  return [2,3,4].map(k => ({k, ppsf: lo + d / k, price: (lo + d / k) * sf}));
+}
+function render(c){
+  const s = c.subject, tiers = method(c), a = c.agent;
+  const foot = n => `<div class="foot"><span><img src="${a.photo}" alt="">${a.name} · ${a.title} · ${a.phone} · ${a.site}</span><span>Page ${n}</span></div>`;
+  const comps = rows => rows.map(r => `<tr class="${r.hl ? 'hl' : ''}"><td><b>${r.addr}</b><br><span class="muted">${r.note || ''}</span></td><td class="n">${r.bd}/${r.ba}</td><td class="n">${r.sqft ? r.sqft.toLocaleString() : '—'}</td><td class="n">${r.yr}</td><td class="n">${r.dist || ''}</td><td>${r.date || ''}</td><td class="n">${r.dom ?? ''}</td><td class="n">${ppsf(r.price, r.sqft)}</td><td class="n"><b>${$m(r.price)}</b></td></tr>`).join('');
+  const head = `<tr><th>Address</th><th class="n">Bd/Ba</th><th class="n">Sq ft</th><th class="n">Built</th><th class="n">Dist</th><th>Date</th><th class="n">DOM</th><th class="n">$/sf</th><th class="n">Price</th></tr>`;
+  let n = 1;
+  document.getElementById('out').innerHTML = `
+  <section class="pg cover">
+    <div class="hero" style="background-image:url('${c.cover}')"></div>
+    <div class="inner"><div class="kicker">Comparative market analysis</div>
+      <h1 class="addr" style="margin-top:14px">${s.street},<br>${s.cityZip}</h1>
+      <div class="meta"><div>Prepared for<b>${c.preparedFor}</b></div><div>Dated<b>${c.date}</b></div><div>Prepared by<b>${a.name}</b></div></div></div>
+    <div class="toc"><div>The home<small>Page 2</small></div><div>Pricing<small>Page 3</small></div><div>Sold comps<small>Page 4</small></div><div>Competition<small>Page 5</small></div></div>
+    <div class="agent"><img src="${a.photo}" alt=""><div class="c"><b>${a.name}</b><br>${a.title} · ${a.team}<br>${a.phone} · ${a.email} · ${a.site}</div></div>
+  </section>
+
+  <section class="pg"><div class="kicker">${s.area}</div><h2 style="font-size:36px;margin-top:10px">${s.street}, ${s.cityZip}</h2>
+    <div class="facts">
+      <div><b>${s.beds}</b><span>Bedrooms</span></div><div><b>${s.baths}</b><span>Baths</span></div>
+      <div><b>${s.sqft.toLocaleString()}</b><span>Living sq ft</span></div><div><b>${s.lot.toLocaleString()}</b><span>Lot sq ft</span></div>
+      <div><b>${s.built}</b><span>Year built</span></div><div><b>${s.stories}</b><span>Stories</span></div>
+      <div><b>${s.garage}</b><span>Garage</span></div><div><b>${s.type}</b><span>Property</span></div></div>
+    <div class="rule"></div>
+    <div class="note">${c.homeNotes}</div>
+    ${foot(++n)}</section>
+
+  <section class="pg"><div class="kicker">Pricing</div><h2 style="margin-top:10px">Recommended list price</h2>
+    <div class="big">${c.recommendation.headline}</div><div class="muted" style="font-size:12px">${c.recommendation.sub}</div>
+    <div class="tiers">${tiers.map((t, i) => `<div class="tier ${t.k === 4 ? 'on' : ''}"><small>${['High (no upgrades considered)', 'Medium (some upgrades)', 'Average (most likely)'][i]}</small><b>${$m(t.price)}</b><small>${'$' + t.ppsf.toFixed(2)} per sq ft</small></div>`).join('')}</div>
+    <div class="reco note">${c.recommendation.text}</div>
+    <div class="steps"><b>How this was priced (comp like an appraiser):</b> ${c.methodNote} Highest sold price per sq ft ${'$' + c.highPpsf.toFixed(2)}, lowest ${'$' + c.lowPpsf.toFixed(2)}; the difference (${'$' + (c.highPpsf - c.lowPpsf).toFixed(2)}) divided by 2, 3 and 4, added back to the lowest, times ${s.sqft.toLocaleString()} sq ft.</div>
+    <div class="stat">${c.stats.map(x => `<div><b>${x[1]}</b><small>${x[0]}</small></div>`).join('')}</div>
+    ${foot(++n)}</section>
+
+  <section class="pg"><div class="kicker">Sold comparables</div><h2 style="margin-top:10px">What buyers actually paid</h2>
+    <table>${head}${comps(c.sold)}</table>
+    <div class="note" style="margin-top:16px">${c.soldNote}</div>
+    ${foot(++n)}</section>
+
+  <section class="pg"><div class="kicker">The competition</div><h2 style="margin-top:10px">What a buyer will compare it to today</h2>
+    <table>${head}${comps(c.active)}</table>
+    <div class="note" style="margin-top:16px">${c.activeNote}</div>
+    <div class="disc">${c.disclaimer}</div>
+    ${foot(++n)}</section>`;
+}
+if (window.CMA) render(window.CMA); else document.getElementById('out').innerHTML = '<p style="padding:40px;font:14px Inter">Load a report by setting window.CMA before this page runs.</p>';
+</script></body></html>
