@@ -102,6 +102,7 @@ function doPost(e) {
     const data = JSON.parse(e.postData.contents);
     if (data.action === 'signAgreement') return signAgreement(data);
     if (data.action === 'book') return json(bookSlot(data));
+    if (data.action === 'enrich') return json(enrichSignIn(data));
     const ss = getSS();
     const timestamp = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
 
@@ -383,7 +384,7 @@ function scoreLead(tabName, d) {
   const notes = String(d.notes || ''), type = String(d.type || '').toLowerCase(), tl = String(d.timeline || '');
   if (/Working with agent: Yes, with a signed/.test(notes)) return ['Intake Tier C', 'Tier C', 'Has Agent'];
   const tags = [];
-  let pts = ({'ASAP / Already looking': 30, 'Ready now': 30, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
+  let pts = ({'ASAP / Already looking': 30, 'Already looking': 30, 'Ready now': 30, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
   const interest = Number(d.score) || 0;
   pts += interest >= 8 ? 20 : interest >= 6 ? 10 : interest ? 3 : 0;
   if (/Pre-approved: Yes|Pre-approved: Paying cash|Paying cash/.test(notes)) pts += 10;
@@ -1575,4 +1576,51 @@ function processFubOutbox() {
       fubFetch('notes', {personId: n.personId, subject: 'Text NOT sent', body: err.message + '\n\n' + n.body});
     }
   });
+}
+
+
+// ============================================================
+// OPEN HOUSE FUNNEL: answers given after the step-by-step sign-in (juliancrider.com/?openhouse) are added to the
+// contact already created at step 1: FUB note + refreshed tier tags, the Sign-Ins sheet row, and if they turn out to
+// have a signed agent, their scheduled texts are cancelled.
+// ============================================================
+function enrichSignIn(d) {
+  const phone = String(d.phone || '').replace(/\D/g, ''), email = validEmail(d.email) ? String(d.email).trim() : '';
+  const lines = [['Interest (1–10)', d.score], ['Currently', d.status], ['Timeline', d.timeline], ['How they heard', d.source], ['Details', d.notes]]
+    .filter(x => x[1]).map(x => x[0] + ': ' + x[1]);
+  // Sign-Ins sheet: fill in the row created at step 1 (latest row with this phone).
+  try {
+    const sh = getSS().getSheetByName('Sign-Ins');
+    if (sh && sh.getLastRow() > 1 && phone) {
+      const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 10).getValues();
+      for (let i = vals.length - 1; i >= 0; i--) {
+        if (String(vals[i][2]).replace(/\D/g, '').slice(-10) === phone.slice(-10)) {
+          sh.getRange(i + 2, 6, 1, 5).setValues([[cell(d.score), cell(d.status), cell(d.timeline), cell(d.source),
+            cell([vals[i][9], d.notes].filter(Boolean).join(' | '))]]);
+          break;
+        }
+      }
+    }
+  } catch (err) { console.error('Enrich sheet: ' + err); }
+  if (!PropertiesService.getScriptProperties().getProperty('FUB_API_KEY')) return {status: 'ok'};
+  try {
+    const found = (email && fubFetch('people?limit=1&fields=id,tags&email=' + encodeURIComponent(email), null, 'get').people) ||
+                  (phone && fubFetch('people?limit=1&fields=id,tags&phone=' + phone, null, 'get').people) || [];
+    if (!found.length) return {status: 'ok'};
+    const person = found[0];
+    if (lines.length) fubFetch('notes', {personId: person.id, subject: 'Open house details (funnel)', body: lines.join('\n')});
+    // Re-score with the full answers; keep every other tag.
+    const fresh = scoreLead('Sign-Ins', d);
+    const keep = (person.tags || []).filter(t => !/^(Intake )?Tier [ABC]$|^(Hot|Warm)$/.test(t) || fresh.indexOf(t) >= 0);
+    const tags = keep.concat(fresh.filter(t => keep.indexOf(t) < 0));
+    if (tags.indexOf('Agent') >= 0) tags.splice(0, tags.length, ...tags.filter(t => !/^(Hot|Warm|Likely Seller)$/.test(t)));
+    fubFetch('people/' + person.id, {tags: tags}, 'put');
+    if (tags.indexOf('Has Agent') >= 0) {  // signed with another agent: no follow-up texts
+      const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+      if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach((r, i) => {
+        if (String(r[1]) === String(person.id) && r[4] === 'pending') sh.getRange(i + 2, 5).setValue('skipped: has agent');
+      });
+    }
+  } catch (err) { console.error('Enrich FUB: ' + err); }
+  return {status: 'ok'};
 }
