@@ -15,7 +15,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   **Don't add tabs**; use a hamburger/menu if more space is needed. Key pieces: `showTab()`,
   `openRaw()` sheets, `bindOpeners()`, Request a showing form, Book a consultation (`bookFlow`: screens pre-approval + agent status; signed-with-agent gets a polite no;
   then `pickTime` shows open slots from his calendar via the Apps Script), first-visit "What brings you here?"
-  question (`askIntent`, shows until answered up to 3 visits; `?start` forces it). Book flow also asks Price range and
+  question (`askIntent`, shows until answered up to 3 visits; `?start` forces it).
+  Mortgage rates + calculator live under Homes > Home value (`showValueRates`), not in the Feed. Book flow also asks Price range and
   "Where do you live now?"; `scoreLead` tags `Luxury Buyer` ($1.3M+), `Relocation` (lives outside NV) and
   `Luxury Relocation 60 Days` (both + Ready now/1–3 months → Hot). Julián's target: out-of-state $1.3M–$3.3M buyers;
   never target/exclude by sex, family status or age (Fair Housing), community map
