@@ -55,7 +55,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (bbSendAudio, /message/attachment); if missing, the text still goes. processTextQueue every 15 min, 9am-8pm PT, retries ~6h, skips later
   steps once they've texted back. FUB rejects textMessages (its texting is off), so texts are logged as notes.
   Sign-in funnel: juliancrider.com/?signin (or ?openhouse; also a button on Homes > Open house) = same questions one per
-  screen, not tied to a listing (open house optional). No open house → "Signed up: online" → tags Website Lead + Online
+  screen, not tied to a listing (open house optional). Every ?signin lead → source juliancrider.com + tag Website Lead (plus Open House if named). No open house → "Signed up: online" → tags Website Lead + Online
   Sign-In, source juliancrider.com, OPEN_HOUSE_TEXTS.online (first text ~3 min, no open-house voice note). Step 1 (name,
   phone, email, visitor type) signs them in, later answers post action 'enrich' (enrichSignIn: FUB note, re-tier tags, fills the
   Sign-Ins row, cancels queued texts if Has Agent). Notes carry "Form: funnel" / "Form: page" for the A/B answer-rate test.
