@@ -1720,12 +1720,18 @@ function calcHTML(id, v={}){
 }
 function num(x){ return parseFloat(String(x).replace(/[^0-9.]/g,'')) || 0; }
 function payment(loan, rate, years){ const r = rate/100/12, n = years*12; return r ? loan*r/(1-Math.pow(1+r,-n)) : loan/n; }
-function calcVals(el){ const g = k => el.querySelector(`[data-k="${k}"]`).value; return {price:num(g('price')), down:num(g('down')), rate:num(g('rate')), term:num(g('term')), tax:num(g('tax')), ins:num(g('ins')), hoa:num(g('hoa'))}; }
+function calcVals(el){ const g = k => { const x = el.querySelector(`[data-k="${k}"]`); return x ? x.value : ''; };
+  return {price:num(g('price')), down:num(g('down')), rate:num(g('rate')), term:num(g('term')), tax:num(g('tax')), ins:num(g('ins')), hoa:num(g('hoa')), type:g('type')||'conv', vause:g('vause')||'first'}; }
+// VA funding fee (% of the loan, financed): first use 2.15% under 5% down, 1.5% at 5%+, 1.25% at 10%+; later use 3.3% under 5% down;
+// waived for veterans with a service-connected disability rating. FHA: 1.75% upfront MIP financed + about 0.55%/yr.
+function vaFeePct(v){ if (v.vause==='exempt') return 0; if (v.down>=10) return 1.25; if (v.down>=5) return 1.5; return v.vause==='subsequent' ? 3.3 : 2.15; }
 function monthly(v){
-  const loan = v.price*(1-v.down/100);
+  const base = v.price*(1-v.down/100);
+  const feePct = v.type==='va' ? vaFeePct(v) : v.type==='fha' ? 1.75 : 0, fee = base*feePct/100, loan = base + fee;
   const pi = payment(loan, v.rate, v.term);
-  const tax = v.price*v.tax/100/12, ins = v.ins/12, hoa = v.hoa, pmi = v.down < 20 ? loan*0.005/12 : 0;
-  return {loan, pi, tax, ins, hoa, pmi, total: pi+tax+ins+hoa+pmi};
+  const pmi = v.type==='va' || v.down>=100 ? 0 : v.type==='fha' ? base*0.0055/12 : (v.down < 20 ? loan*0.005/12 : 0);
+  const tax = v.price*v.tax/100/12, ins = v.ins/12, hoa = v.hoa;
+  return {loan, base, fee, feePct, pi, tax, ins, hoa, pmi, total: pi+tax+ins+hoa+pmi};
 }
 function bindCalc(id){
   const el = $(id);
@@ -1781,6 +1787,7 @@ function estRows(e){
   if (e.kind==='buyer') return `<div class="est">
     <div class="row2"><span>Purchase price</span><span>${money(e.v.price)}</span></div>
     <div class="row2"><span>Down payment (${e.v.down}%)</span><span>${money(e.down)}</span></div>
+    ${e.m.fee ? `<div class="row2"><span>${e.v.type==='va'?'VA funding fee':'FHA upfront MIP'} (${e.m.feePct}%, added to loan)</span><span>${money(e.m.fee)}</span></div>` : ''}
     ${e.lines.map(l=>`<div class="row2"><span>${l[0]}</span><span>${money(l[1])}</span></div>`).join('')}
     <div class="row2 sub"><span>Closing costs and prepaids</span><span>${money(e.costs)}</span></div>
     <div class="row2 total"><span>Estimated cash to close</span><span>${money(e.cashToClose)}</span></div>
@@ -1791,10 +1798,12 @@ function estRows(e){
     <div class="row2"><span>Mortgage payoff</span><span>−${money(e.payoff)}</span></div>
     <div class="row2 total"><span>Estimated net proceeds</span><span>${money(e.net)}</span></div></div>`;
 }
-function openBuyer(){
+function openBuyer(opt){
   openRaw('Buyer cost estimate', `<p style="color:var(--ink2);margin-bottom:12px">Estimate your cash to close and monthly payment. Download a copy to share with your lender.</p>
    <div class="cgrid" id="bIn">
     <div class="field full"><label>Purchase price</label><input data-k="price" inputmode="numeric" value="650000"></div>
+    <div class="field"><label>Loan type</label><select data-k="type"><option value="conv">Conventional</option><option value="va">VA</option><option value="fha">FHA</option></select></div>
+    <div class="field"><label>VA loan use</label><select data-k="vause"><option value="first">First VA loan</option><option value="subsequent">Used VA before</option><option value="exempt">Fee waived (disability)</option></select></div>
     <div class="field"><label>Down payment %</label><input data-k="down" inputmode="decimal" value="20"></div>
     <div class="field"><label>Interest rate %</label><input data-k="rate" inputmode="decimal" value="6.875"></div>
     <div class="field"><label>Loan term</label><select data-k="term"><option value="30">30 years</option><option value="15">15 years</option></select></div>
@@ -1805,7 +1814,10 @@ function openBuyer(){
    <button class="pill block" style="margin-top:14px" id="dl">Download PDF</button>
    <p class="fine">Estimates only, not a Loan Estimate. Your lender and escrow company provide exact figures. Set down payment to 100 for a cash purchase.</p>`);
   const el = $('bIn');
-  const upd = () => { lastEstimate = buyerCalc(calcVals(el)); $('bOut').innerHTML = estRows(lastEstimate); };
+  const vaUse = el.querySelector('[data-k="vause"]').closest('.field');
+  const upd = () => { const v = calcVals(el); vaUse.style.display = v.type==='va' ? '' : 'none'; lastEstimate = buyerCalc(v); $('bOut').innerHTML = estRows(lastEstimate); };
+  el.querySelector('[data-k="type"]').addEventListener('change', e => { const d = el.querySelector('[data-k="down"]'); d.value = e.target.value==='va' ? '0' : e.target.value==='fha' ? '3.5' : '20'; });
+  if (opt && opt.va) { el.querySelector('[data-k="type"]').value = 'va'; el.querySelector('[data-k="down"]').value = '0'; }
   el.querySelectorAll('input,select').forEach(i=>i.oninput=upd); upd();
   $('dl').onclick = printEstimate;
 }
@@ -1835,7 +1847,7 @@ function printEstimate(){
   let title, rows, big;
   if (e.kind==='buyer'){
     title = 'Buyer cost estimate';
-    rows = `<tr class="sec"><td>Purchase</td><td></td></tr><tr><td>Purchase price</td><td>${money(e.v.price)}</td></tr><tr><td>Down payment (${e.v.down}%)</td><td>${money(e.down)}</td></tr><tr><td>Loan amount</td><td>${money(e.m.loan)}</td></tr>
+    rows = `<tr class="sec"><td>Purchase</td><td></td></tr><tr><td>Purchase price</td><td>${money(e.v.price)}</td></tr><tr><td>Down payment (${e.v.down}%)</td><td>${money(e.down)}</td></tr>${e.m.fee?`<tr><td>${e.v.type==='va'?'VA funding fee':'FHA upfront MIP'} (${e.m.feePct}%, financed)</td><td>${money(e.m.fee)}</td></tr>`:''}<tr><td>Loan amount${e.v.type==='va'?' (VA)':e.v.type==='fha'?' (FHA)':''}</td><td>${money(e.m.loan)}</td></tr>
       <tr class="sec"><td>Closing costs and prepaids</td><td></td></tr>${e.lines.map(l=>`<tr><td>${l[0]}</td><td>${money(l[1])}</td></tr>`).join('')}<tr><td><b>Total closing costs</b></td><td><b>${money(e.costs)}</b></td></tr>
       <tr class="sec"><td>Monthly payment</td><td></td></tr><tr><td>Principal and interest (${e.v.rate}%, ${e.v.term} yrs)</td><td>${money(e.m.pi)}</td></tr><tr><td>Property tax</td><td>${money(e.m.tax)}</td></tr><tr><td>Insurance</td><td>${money(e.m.ins)}</td></tr>${e.m.hoa?`<tr><td>HOA</td><td>${money(e.m.hoa)}</td></tr>`:''}${e.m.pmi?`<tr><td>Mortgage insurance</td><td>${money(e.m.pmi)}</td></tr>`:''}<tr><td><b>Total monthly</b></td><td><b>${money(e.m.total)}</b></td></tr>`;
     big = ['Estimated cash to close', money(e.cashToClose)];
@@ -2147,7 +2159,7 @@ function openSheet(kind, opt={}){
     };
   }
   if (kind==='calc'){ openRaw('', calcHTML('sheetCalc')); bindCalc('sheetCalc'); }
-  if (kind==='buyer') openBuyer();
+  if (kind==='buyer') openBuyer(opt);
   if (kind==='net') openNet();
   if (kind==='book') bookFlow(opt.type);
 }
@@ -2289,6 +2301,10 @@ function askIntent(){
   // juliancrider.com/?signin (or ?openhouse) opens the step-by-step sign-in funnel (works at an open house or from home).
   const ohm = location.search.match(/[?&](?:openhouse|signin)(?:=([^&]*))?/);
   if (ohm) { setTimeout(() => openHouseFunnel(decodeURIComponent((ohm[1]||'').replace(/[+-]/g,' '))), 300); return; }
+  // juliancrider.com/?buyer (or ?buyer=va) opens the printable buyer cost estimate; ?net opens the seller net sheet.
+  const bym = location.search.match(/[?&]buyer(?:=(\w+))?/);
+  if (bym) { setTimeout(() => openSheet('buyer', {va: bym[1]==='va'}), 300); return; }
+  if (/[?&]net\b/.test(location.search)) { setTimeout(() => openSheet('net'), 300); return; }
   // juliancrider.com/?relocate opens the Relocate tab (link sent after open-house texts).
   if (/[?&]relocate\b/.test(location.search)) { showTab('relo'); return; }
   // juliancrider.com/?showing opens "Request a showing" (link to text or email a client).

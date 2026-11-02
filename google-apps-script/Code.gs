@@ -349,7 +349,8 @@ function fubEventType(tabName, d) {
   return 'General Inquiry';
 }
 
-function fubSource(tabName, d) { return tabName === 'Sign-Ins' && !/Signed up: online/.test((d && d.notes) || '') ? 'Open House' : 'juliancrider.com'; }
+// Sign-ins through the website link (?signin funnel) count as website leads, even when they name an open house.
+function fubSource(tabName, d) { return tabName === 'Sign-Ins' && !/Signed up: online|Form: funnel/.test((d && d.notes) || '') ? 'Open House' : 'juliancrider.com'; }
 
 /** A "Call" task due today (Pacific) in Follow Up Boss, assigned to the account owner. */
 function createCallTask(personId, reason, type) {
@@ -360,7 +361,8 @@ function createCallTask(personId, reason, type) {
 
 function fubPerson(tabName, d) {
   const parts = String(d.name || '').trim().split(/\s+/);
-  const tags = tabName === 'Sign-Ins' ? (/Signed up: online/.test(d.notes || '') ? ['Website Lead', 'Online Sign-In'] : ['Open House']) : ['Website Lead', 'juliancrider.com'];
+  const tags = tabName === 'Sign-Ins' ? (/Signed up: online/.test(d.notes || '') ? ['Website Lead', 'Online Sign-In']
+    : /Form: funnel/.test(d.notes || '') ? ['Website Lead', 'Open House'] : ['Open House']) : ['Website Lead', 'juliancrider.com'];
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
   // "Do you live in this neighborhood? Yes" on the open-house form: neighbor welcome + seller-style follow-up.
   if (tabName === 'Sign-Ins' && /Neighbor: Yes/.test(d.notes || '')) tags.push('Open House Neighbor', 'Likely Seller');
