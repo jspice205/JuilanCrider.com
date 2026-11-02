@@ -392,7 +392,7 @@ img{max-width:100%;display:block}
 /* Sheet */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
 .scrim.on{opacity:1;pointer-events:auto}
-.sheet{position:fixed;left:50%;bottom:0;transform:translate(-50%,100%);width:100%;max-width:500px;max-height:92vh;overflow-y:auto;background:var(--bg);border-radius:22px 22px 0 0;z-index:50;transition:transform .28s cubic-bezier(.2,.8,.2,1);padding:8px 0 calc(24px + env(safe-area-inset-bottom,0px))}
+.sheet{position:fixed;left:50%;bottom:0;transform:translate(-50%,100%);width:100%;max-width:500px;max-height:92vh;max-height:calc(100dvh - 12px);overflow-y:auto;overscroll-behavior:contain;background:var(--bg);border-radius:22px 22px 0 0;z-index:50;transition:transform .28s cubic-bezier(.2,.8,.2,1);padding:8px 0 calc(24px + env(safe-area-inset-bottom,0px))}
 .sheet.on{transform:translate(-50%,0)}
 :root[data-theme="dark"] .sheet{background:#0e0e0f;border-top:1px solid var(--hair)}
 .scrim.full{background:var(--bg);opacity:1}
@@ -408,7 +408,10 @@ img{max-width:100%;display:block}
 .sheet.full.fcenter .sbody{flex:1;display:flex;flex-direction:column;justify-content:center;width:100%;padding-bottom:12vh}
 @media (prefers-reduced-motion:reduce){.sheet,.scrim{transition:none}}
 .grab{width:38px;height:5px;border-radius:3px;background:var(--hair);margin:4px auto 6px}
-.shead{display:flex;align-items:center;padding:4px 8px 4px 16px}
+.shead{display:flex;align-items:center;padding:4px 8px 4px 16px;position:sticky;top:0;z-index:3;background:var(--bg)}
+:root[data-theme="dark"] .shead{background:#0e0e0f}
+.sheet.full .shead{top:env(safe-area-inset-top,0px)}
+.igwrap{margin:18px 0}.igwrap .instagram-media{margin:0 auto!important;min-width:0!important;width:100%!important}
 .shead h2{flex:1;font-size:20px;font-weight:800;letter-spacing:-.02em}
 .sbody{padding:4px 16px 8px}
 
@@ -1137,7 +1140,9 @@ const BLOGS = [
 {slug:'las-vegas-car-auction-2026', kw:'broad arrow las vegas auction 2026 results', cat:['cars','vegas','lux'], tag:'Car Week', mins:4, cta:'book', img:'img/escrow-strip-night.jpg',
  title:'A record Ferrari sale at Wynn, and what it says about Las Vegas luxury',
  ex:'Car week brought eight-figure Ferraris to the Strip. The same rules that set those prices apply to luxury homes here.',
- body:['On October 31, Broad Arrow held its second annual Las Vegas auction at Wynn Las Vegas, as part of the Concours at Wynn weekend. The next day, the Concours team posted a carousel of the standout sales on Instagram (linked below). Here’s what sold, and why I think it matters if you’re shopping for a luxury home in Las Vegas.',
+ ig:'https://www.instagram.com/p/DfNMiC8GCQJ/',
+ body:['On October 31, Broad Arrow held its second annual Las Vegas auction at Wynn Las Vegas, as part of the Concours at Wynn weekend. The next day, the Concours team posted a carousel of the standout sales on Instagram. Swipe through it below, then here’s what sold, and why I think it matters if you’re shopping for a luxury home in Las Vegas.',
+ '[[ig]]',
  '## The headline sales',
  'A 1997 Ferrari F50 with just 106 miles on it sold for a reported $17 million. Broad Arrow had estimated it at more than $20 million, so it came in under the estimate. It still set a new record for the model, beating the $14.575 million paid for an F50 at Mecum’s Monterey sale in August.',
  'The top price of the night was a reported $18.5 million for a one-of-a-kind Ferrari Daytona SP3. The 86-car catalog also included a 2003 Ferrari Enzo, a 1971 Lamborghini Miura P400 SV and a 2023 Bugatti Chiron Super Sport, each estimated in the millions.',
@@ -1154,7 +1159,7 @@ const BLOGS = [
   ['The Supercar Blog: 1997 Ferrari F50 with 106 miles sells for a record $17 million','https://www.thesupercarblog.com/1997-ferrari-f50-with-just-106-miles-sells-for-record-17-million'],
   ['The Supercar Blog: Ferrari Daytona SP3 sells for $18.5 million in Las Vegas','https://thesupercarblog.com/ferrari-daytona-sp3-sells-for-18-5-million-at-auction-in-las-vegas'],
   ['Broad Arrow: results of the 2025 inaugural Las Vegas auction','https://www.globenewswire.com/news-release/2025/11/03/3179684/0/en/RECORD-SETTING-2-2-MILLION-BUGATTI-VEYRON-LEADS-BROAD-ARROW-S-INAUGURAL-LAS-VEGAS-AUCTION.html']],
- refnote:'Sale prices are as reported by the press the day after the auction and may change when Broad Arrow publishes final results. Photos of the cars belong to @lasvegasconcours; view them in the original post.'},
+ refnote:'Sale prices are as reported by the press the day after the auction and may change when Broad Arrow publishes final results. Photos of the cars belong to @lasvegasconcours and are shown through Instagram’s embed.'},
 {slug:'hoa-questions', kw:'las vegas hoa questions', cat:['vegas','buy'], tag:'Buyer Playbook', mins:4, cta:'book', img:'social/carousels/hoa-1.jpg',
  title:'5 questions to ask before you buy in an HOA',
  ex:'Most buyers only ask about the monthly fee. These five questions tell you what you’re really buying into.',
@@ -1664,14 +1669,23 @@ const CTA = {
 };
 function openBlog(i){
   const b = BLOGS[i];
-  const body = b.body.map(p => p.startsWith('## ') ? `<h2>${p.slice(3)}</h2>` : `<p>${p}</p>`).join('');
+  const body = b.body.map(p => p === '[[ig]]' ? igEmbed(b.ig) : p.startsWith('## ') ? `<h2>${p.slice(3)}</h2>` : `<p>${p}</p>`).join('');
   openRaw('', `<article class="reader"><div class="hero"><img src="${b.img}" alt=""></div><div class="kick">${b.tag}, ${b.mins} min read</div><h1>${b.title}</h1>${body}
     <div class="take"><div class="who">Julián J. Crider</div><p>Questions about your situation? I’m happy to talk it through.</p></div>
     <button class="pill block" id="blogCta">${CTA[b.cta][0]}</button>
     ${b.refs?`<a class="pill ghost block" style="margin-top:8px" href="${b.refs[0][1]}" target="_blank" rel="noopener">See the original post</a>
     <h2>Sources</h2><ol class="refs">${b.refs.map(r=>`<li><a href="${r[1]}" target="_blank" rel="noopener">${r[0]}</a></li>`).join('')}</ol>
-    ${b.refnote?`<p class="srcnote">${b.refnote}</p>`:''}`:''}</article>`);
+    ${b.refnote?`<p class="srcnote">${b.refnote}</p>`:''}`:''}
+    <button class="pill ghost block" style="margin-top:14px" onclick="closeSheet()">Back to the feed</button></article>`);
   $('blogCta').onclick = CTA[b.cta][1];
+  if (b.ig) loadIgEmbeds();
+}
+// Official Instagram embed: the photos stay hosted by Instagram and credited to the account that posted them.
+function igEmbed(url){ return `<div class="igwrap"><blockquote class="instagram-media" data-instgrm-captioned data-instgrm-permalink="${url}?utm_source=ig_embed" data-instgrm-version="14"><a href="${url}" target="_blank" rel="noopener">View this post on Instagram</a></blockquote></div>`; }
+function loadIgEmbeds(){
+  if (window.instgrm) { window.instgrm.Embeds.process(); return; }
+  if (document.getElementById('igjs')) return;
+  const s = document.createElement('script'); s.id = 'igjs'; s.async = true; s.src = 'https://www.instagram.com/embed.js'; document.body.appendChild(s);
 }
 function openNews(i){
   const n = NEWS[i];
