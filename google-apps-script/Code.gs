@@ -349,7 +349,7 @@ function fubEventType(tabName, d) {
   return 'General Inquiry';
 }
 
-function fubSource(tabName) { return tabName === 'Sign-Ins' ? 'Open House' : 'juliancrider.com'; }
+function fubSource(tabName, d) { return tabName === 'Sign-Ins' && !/Signed up: online/.test((d && d.notes) || '') ? 'Open House' : 'juliancrider.com'; }
 
 /** A "Call" task due today (Pacific) in Follow Up Boss, assigned to the account owner. */
 function createCallTask(personId, reason, type) {
@@ -360,7 +360,7 @@ function createCallTask(personId, reason, type) {
 
 function fubPerson(tabName, d) {
   const parts = String(d.name || '').trim().split(/\s+/);
-  const tags = tabName === 'Sign-Ins' ? ['Open House'] : ['Website Lead', 'juliancrider.com'];
+  const tags = tabName === 'Sign-Ins' ? (/Signed up: online/.test(d.notes || '') ? ['Website Lead', 'Online Sign-In'] : ['Open House']) : ['Website Lead', 'juliancrider.com'];
   if (tabName === 'Sign-Ins' && /juliancrider\.com/.test(d.notes || '')) tags.push('juliancrider.com');
   // "Do you live in this neighborhood? Yes" on the open-house form: neighbor welcome + seller-style follow-up.
   if (tabName === 'Sign-Ins' && /Neighbor: Yes/.test(d.notes || '')) tags.push('Open House Neighbor', 'Likely Seller');
@@ -423,7 +423,7 @@ function sendToFub(tabName, d) {
   if (!PropertiesService.getScriptProperties().getProperty('FUB_API_KEY')) return;
   const person = fubPerson(tabName, d);
   const event = {
-    source: fubSource(tabName),
+    source: fubSource(tabName, d),
     system: 'juliancrider.com',
     type: fubEventType(tabName, d),
     message: [d.type, d.timeline && 'Timeline: ' + d.timeline, d.notes, badEmailNote(d.email)].filter(Boolean).join('\n'),
@@ -456,7 +456,8 @@ function sendToFub(tabName, d) {
   }
   // Open-house follow-up texts (2 hours and 72 hours later), only for guests who checked the text-consent box.
   if (tabName === 'Sign-Ins' && person.tags.indexOf('Text OK') >= 0 && person.tags.indexOf('Has Agent') < 0 && d.phone) {
-    const kind = person.tags.indexOf('Agent') >= 0 ? 'agent' : person.tags.indexOf('Open House Neighbor') >= 0 ? 'neighbor' : 'guest';
+    const kind = person.tags.indexOf('Agent') >= 0 ? 'agent' : person.tags.indexOf('Open House Neighbor') >= 0 ? 'neighbor'
+      : /Signed up: online/.test(d.notes || '') ? 'online' : 'guest';
     try { const id = personId(); if (id) queueOpenHouseTexts(id, d, kind); }
     catch (err) { console.error('Open house texts: ' + err); }
   }
@@ -1461,6 +1462,11 @@ const OPEN_HOUSE_TEXTS = {
   neighbor: [
     {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [contact card] || juliancrider.com/?relocate || [voice]"},
     {step: 'oh-72h', hours: 72, text: "Hey {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
+  // Signed up online through the funnel (no open house given): quick hello within minutes, no open-house voice note.
+  online: [
+    {step: 'oh-2h', hours: 0.05, text: "Hey {first}, it's Julián 👋🏾 Thanks for signing up. Just curious, what has you looking at homes right now? || [contact card] || juliancrider.com/?relocate"},
+    {step: 'oh-24h', hours: 24, text: "Hey {first}, Julián again. What would your next home need to have that your current one doesn't? 🏡"},
+    {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   agent: [
     {step: 'oh-2h', hours: 2, text: "Hey {first}, Julián here 👋🏾 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]
 };

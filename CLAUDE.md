@@ -53,13 +53,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   estate agent → tags Agent+Partner, no welcome email or buyer drip). Voice note = Drive file "Quick hello.m4a" (name shows to recipients); contact card = emails/julian-crider.vcf (HD photo from img/julian-headshot-hd.jpg)
   (bbSendAudio, /message/attachment); if missing, the text still goes. processTextQueue every 15 min, 9am-8pm PT, retries ~6h, skips later
   steps once they've texted back. FUB rejects textMessages (its texting is off), so texts are logged as notes.
-  Open House Funnel: juliancrider.com/?openhouse(=address) = same questions one per screen; step 1 (home, name, phone,
-  email, visitor type) signs them in, later answers post action 'enrich' (enrichSignIn: FUB note, re-tier tags, fills the
+  Sign-in funnel: juliancrider.com/?signin (or ?openhouse; also a button on Homes > Open house) = same questions one per
+  screen, not tied to a listing (open house optional). No open house → "Signed up: online" → tags Website Lead + Online
+  Sign-In, source juliancrider.com, OPEN_HOUSE_TEXTS.online (first text ~3 min, no open-house voice note). Step 1 (name,
+  phone, email, visitor type) signs them in, later answers post action 'enrich' (enrichSignIn: FUB note, re-tier tags, fills the
   Sign-Ins row, cancels queued texts if Has Agent). Notes carry "Form: funnel" / "Form: page" for the A/B answer-rate test.
   Appointments: bookSlot texts a confirmation; remindUpcoming (every 5 min) texts ~15 min before any Google Calendar
   event with a phone number in its notes/location/title ("Showing"/"Tour" in title → showing wording with location);
   one per event, skips Text Opt-Out, logs a FUB note. Triggers are ensured hourly by autoUpdateFromGitHub.
-  Request a showing with an address (not signed with an agent) then opens pickTime; bookSlot with kind 'showing'
+  Request a showing (button "Next: pick a time") with an address (not signed with an agent) then opens pickTime; bookSlot with kind 'showing'
   creates "Showing: Name" (location = address, phone in notes) → confirmation text + 15-min reminder.
   Outbox: a FUB note with subject "Send text" by user 2 (Claude via fub_api) is texted to that contact within ~5 min
   (processFubOutbox, from remindUpcoming; 9am-8pm PT only, notes up to 36h old), then logged "Text sent"/"Text NOT sent". Use this to text clients for Julián.

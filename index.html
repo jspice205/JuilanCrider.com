@@ -770,6 +770,7 @@ img{max-width:100%;display:block}
     </div>
 
     <div class="pane" id="h-open">
+      <button type="button" class="pill block" style="margin-bottom:18px" onclick="openHouseFunnel('')">Sign in one question at a time →</button>
       <form id="ohForm" novalidate>
         <div class="field"><label for="ohProp">Which home are you viewing?</label><input id="ohProp" placeholder="Street address or community"></div>
         <div class="duo"><div class="field"><label for="ohFirst">First name</label><input id="ohFirst" autocomplete="given-name"></div>
@@ -1937,23 +1938,24 @@ $('ohAgain').onclick = () => { $('ohForm').reset(); $('ohForm').querySelectorAll
    every answer after that enriches the contact (action 'enrich'). "Form: funnel" vs "Form: page" lets us compare answer rates. */
 function openHouseFunnel(prop){
   const st = {};
-  const consent = `<div class="consent">📱 <b style="display:inline">Julián will text you</b> a few homes like this one.
+  const consent = `<div class="consent">📱 <b style="display:inline">Julián will text you</b> homes that fit what you’re looking for.
     <span style="display:block;margin-top:4px;color:var(--ink2);font-size:13px">By entering your phone number, you agree Julián Crider may call or text you about homes. Msg &amp; data rates may apply. Reply STOP anytime to opt out.</span>
     <label class="opt"><input type="checkbox" id="fnNoText"><span class="dot"></span><span><b style="display:inline;font-size:13px">Do not text me.</b> Email only.</span></label></div>`;
-  openRaw('Open house sign-in', `<div class="field"><label for="fnProp">Which home are you viewing?</label><input id="fnProp" placeholder="Street address or community" value="${(prop||'').replace(/"/g,'&quot;')}"></div>
+  openRaw('Sign in with Julián', `<p style="color:var(--ink2);margin:-4px 0 16px">At an open house or browsing from home, this takes 20 seconds.</p>
+    <div class="field"><label for="fnProp">Which open house did you visit? <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input id="fnProp" placeholder="Address, community, or leave blank" value="${(prop||'').replace(/"/g,'&quot;')}"></div>
     <div class="duo"><div class="field"><label for="fnFirst">First name</label><input id="fnFirst" autocomplete="given-name"></div>
     <div class="field"><label for="fnLast">Last name</label><input id="fnLast" autocomplete="family-name"></div></div>
     <div class="field"><label for="fnPhone">Phone</label><input id="fnPhone" type="tel" autocomplete="tel"></div>${consent}
     <div class="field"><label for="fnEmail">Email</label><input id="fnEmail" type="email" autocomplete="email"></div>
     <div class="field"><span class="lab">What brings you in today?</span><div class="chips" data-chips="fnb" data-opts="Looking to buy|Just looking|I live nearby|I’m a real estate agent"></div></div>
-    <p class="err" id="fnErr">Add the home, your first and last name, and phone.</p><button class="pill block" id="fnGo">Sign in</button>`);
+    <p class="err" id="fnErr">Add your first and last name, and phone.</p><button class="pill block" id="fnGo">Sign in</button>`);
   $('fnGo').onclick = () => {
-    const ok = ['fnProp','fnFirst','fnLast','fnPhone'].every(id => $(id).value.trim());
+    const ok = ['fnFirst','fnLast','fnPhone'].every(id => $(id).value.trim());
     $('fnErr').style.display = ok ? 'none' : 'block'; if (!ok) return;
     const nb = chipVal(sheet,'fnb');
     Object.assign(st, {name:($('fnFirst').value+' '+$('fnLast').value).trim(), first:$('fnFirst').value.trim(), phone:$('fnPhone').value.trim(), email:$('fnEmail').value.trim(), property:$('fnProp').value.trim(), nb});
     sendLead({tab:'Sign-Ins', name:st.name, phone:st.phone, email:st.email, property:st.property, neighbor:/live nearby/.test(nb) ? 'Yes' : '', score:'', status:'', timeline:'', source:'',
-      notes: joinNotes(['Visitor: '+nb, 'Neighbor: '+(/live nearby/.test(nb) ? 'Yes' : ''), 'Text OK: '+(st.phone && !$('fnNoText').checked ? 'Yes' : ''), 'Form: funnel', 'Signed in on: juliancrider.com'])});
+      notes: joinNotes(['Visitor: '+nb, 'Neighbor: '+(/live nearby/.test(nb) ? 'Yes' : ''), 'Text OK: '+(st.phone && !$('fnNoText').checked ? 'Yes' : ''), 'Form: funnel', st.property ? '' : 'Signed up: online (no open house)', 'Signed in on: juliancrider.com'])});
     if (/agent/i.test(nb)) return finish();
     ask(0);
   };
@@ -2044,7 +2046,8 @@ function openSheet(kind, opt={}){
       ${contactFields}
       <p class="fine" style="margin:-4px 0 14px">Before any tour, Nevada buyers sign a short written agreement. For a single showing, Julián uses a non-exclusive agreement that covers only this one home, so you’re free to work with anyone else. He’ll text you a link to sign it in about a minute.</p>
       <p class="err" id="fErr">Add your first name, phone and email.</p>
-      <button class="pill block" id="go">Request showing</button>`);
+      <button class="pill block" id="go">Next: pick a time 📅</button>
+      <p class="fine" style="text-align:center;margin-top:8px">You’ll choose an open time from Julián’s calendar.</p>`);
     $('go').onclick = () => {
       const prop = $('sProp').value.trim();  // optional: they may want help picking homes first
       // Email is required here too: the confirmation and agreement go out by email.
@@ -2201,8 +2204,8 @@ function askIntent(){
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
   // juliancrider.com/?value opens the home-value form (link in the neighbor emails).
   if (/[?&]value\b/.test(location.search)) { showTab('homes'); showPane('h-value'); return; }
-  // juliancrider.com/?openhouse(=address) opens the step-by-step Open House Funnel.
-  const ohm = location.search.match(/[?&]openhouse(?:=([^&]*))?/);
+  // juliancrider.com/?signin (or ?openhouse) opens the step-by-step sign-in funnel (works at an open house or from home).
+  const ohm = location.search.match(/[?&](?:openhouse|signin)(?:=([^&]*))?/);
   if (ohm) { setTimeout(() => openHouseFunnel(decodeURIComponent((ohm[1]||'').replace(/[+-]/g,' '))), 300); return; }
   // juliancrider.com/?relocate opens the Relocate tab (link sent after open-house texts).
   if (/[?&]relocate\b/.test(location.search)) { showTab('relo'); return; }
