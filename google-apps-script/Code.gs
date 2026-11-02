@@ -1489,7 +1489,7 @@ function testText() {
 // ============================================================
 // TEXT QUEUE: scheduled texts (sent from Julián's number through the texting Mac). Each row in the "Text Queue" tab is
 // one text; you can edit the wording in the sheet before it goes out. processTextQueue runs every 15 minutes, only
-// sends 9am-8pm Pacific, retries for 6 hours if the Mac is off, and skips a text if the person already texted back.
+// sends 9am-9pm Pacific (federal TCPA limit for marketing texts is 8am-9pm), retries for 6 hours if the Mac is off, and skips a text if the person already texted back.
 // ============================================================
 const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
   headers: ['Due', 'Person ID', 'Name', 'Step', 'Status', 'Tries', 'Sent', 'Text']};
@@ -1571,7 +1571,7 @@ function remindUpcoming() {
 
 function processTextQueue() {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
-  if (hour < 9 || hour >= 20) return;  // quiet hours: wait for the morning
+  if (hour < 9 || hour >= 21) return;  // quiet hours: wait for the morning
   const sheet = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
   if (!sheet || sheet.getLastRow() < 2) return;
   const props = PropertiesService.getScriptProperties();
@@ -1609,7 +1609,7 @@ function testOpenHouseText() {
 // ============================================================
 function processFubOutbox() {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
-  if (hour < 9 || hour >= 20) return;  // quiet hours: texts wait until 9am
+  if (hour < 9 || hour >= 21) return;  // quiet hours: texts wait until 9am
   const props = PropertiesService.getScriptProperties();
   const done = JSON.parse(props.getProperty('OUTBOX_DONE') || '[]');
   const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
