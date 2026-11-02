@@ -479,6 +479,7 @@ img{max-width:100%;display:block}
 .take .who{margin-bottom:4px}
 .take p{font-size:16px;margin:0}
 .srcnote{font-size:12px;color:var(--muted);margin-top:10px}
+.refs{padding-left:20px;font-size:14px;line-height:1.5}.refs li{margin:6px 0}.refs a{color:inherit}
 
 /* Calculator */
 .calc{margin:14px 16px;border:1px solid var(--hair);border-radius:18px;padding:16px}
@@ -1133,6 +1134,27 @@ const NEWS = [
  take:'Global buyers compare cities. Las Vegas competes on taxes, space, privacy and flight access.'}
 ];
 const BLOGS = [
+{slug:'las-vegas-car-auction-2026', kw:'broad arrow las vegas auction 2026 results', cat:['cars','vegas','lux'], tag:'Car Week', mins:4, cta:'book', img:'img/escrow-strip-night.jpg',
+ title:'A record Ferrari sale at Wynn, and what it says about Las Vegas luxury',
+ ex:'Car week brought eight-figure Ferraris to the Strip. The same rules that set those prices apply to luxury homes here.',
+ body:['On October 31, Broad Arrow held its second annual Las Vegas auction at Wynn Las Vegas, as part of the Concours at Wynn weekend. The next day, the Concours team posted a carousel of the standout sales on Instagram (linked below). Here’s what sold, and why I think it matters if you’re shopping for a luxury home in Las Vegas.',
+ '## The headline sales',
+ 'A 1997 Ferrari F50 with just 106 miles on it sold for a reported $17 million. Broad Arrow had estimated it at more than $20 million, so it came in under the estimate. It still set a new record for the model, beating the $14.575 million paid for an F50 at Mecum’s Monterey sale in August.',
+ 'The top price of the night was a reported $18.5 million for a one-of-a-kind Ferrari Daytona SP3. The 86-car catalog also included a 2003 Ferrari Enzo, a 1971 Lamborghini Miura P400 SV and a 2023 Bugatti Chiron Super Sport, each estimated in the millions.',
+ 'For scale, last year’s first Las Vegas sale totaled about $13.7 million for the whole auction, and its top car, a Bugatti Veyron, brought $2.2 million. This year, a single car came close to the entire 2025 sale.',
+ '## Las Vegas is now a collector-car city',
+ 'Between the Concours at Wynn, the Tour d’Elegance on the Strip and the SEMA Show this week, early November puts some of the world’s most valuable cars in one place. Collectors fly in for it, and many of them start asking what it would be like to live here: no state income tax, an easy flight from most of the West, and homes built with room for a serious collection.',
+ '## What a car auction teaches about pricing a home',
+ 'The F50 is a good lesson. It set a record, and it still sold below its estimate. Rarity and condition got it a record price, and the market still decided what that price was. Luxury homes work the same way. A one-of-a-kind estate in The Summit or MacDonald Highlands can set a record and still fall short of an ambitious list price. The sellers who do best price on real comparable sales, not on hope.',
+ '## If you’re bringing a collection',
+ 'More of my out-of-state clients ask about the garage before the kitchen. In Las Vegas and Henderson, that can mean climate-controlled bays, car lifts, a gallery garage you can see from the living room, RV or trailer parking, and a community whose HOA rules actually allow it. Not every luxury neighborhood allows all of that, so it’s worth checking the CC&Rs before you fall for a house.',
+ 'Would it be a bad idea to see a few homes with a real collector garage while you’re in town? Tell me how many cars you need room for and I’ll send you the short list.'],
+ refs:[['Las Vegas Concours on Instagram: the standout sales from Broad Arrow’s Las Vegas auction (Nov 1, 2026)','https://www.instagram.com/p/DfNMiC8GCQJ/'],
+  ['Broad Arrow: pre-sale catalog and estimates for the Oct 31 auction','https://www.stocktitan.net/news/HGTY/broad-arrow-brings-supercar-heaven-to-october-31-auction-in-fb5jdee7xm4g.html'],
+  ['The Supercar Blog: 1997 Ferrari F50 with 106 miles sells for a record $17 million','https://www.thesupercarblog.com/1997-ferrari-f50-with-just-106-miles-sells-for-record-17-million'],
+  ['The Supercar Blog: Ferrari Daytona SP3 sells for $18.5 million in Las Vegas','https://thesupercarblog.com/ferrari-daytona-sp3-sells-for-18-5-million-at-auction-in-las-vegas'],
+  ['Broad Arrow: results of the 2025 inaugural Las Vegas auction','https://www.globenewswire.com/news-release/2025/11/03/3179684/0/en/RECORD-SETTING-2-2-MILLION-BUGATTI-VEYRON-LEADS-BROAD-ARROW-S-INAUGURAL-LAS-VEGAS-AUCTION.html']],
+ refnote:'Sale prices are as reported by the press the day after the auction and may change when Broad Arrow publishes final results. Photos of the cars belong to @lasvegasconcours; view them in the original post.'},
 {slug:'hoa-questions', kw:'las vegas hoa questions', cat:['vegas','buy'], tag:'Buyer Playbook', mins:4, cta:'book', img:'social/carousels/hoa-1.jpg',
  title:'5 questions to ask before you buy in an HOA',
  ex:'Most buyers only ask about the monthly fee. These five questions tell you what you’re really buying into.',
@@ -1603,7 +1625,7 @@ function newsCard(n,i){
     ${actions(n.title)}</article>`;
 }
 function blogMatch(b){
-  const map = {vegas:['vegas','buy','sell','open','agent'], new:['new'], invest:['lux'], journal:null};
+  const map = {vegas:['vegas','buy','sell','open','agent'], new:['new'], invest:['lux'], cars:['cars'], journal:null};
   if (storyOn === 'journal') return true;
   const want = map[storyOn]; return want ? b.cat.some(c => want.includes(c)) : false;
 }
@@ -1645,7 +1667,10 @@ function openBlog(i){
   const body = b.body.map(p => p.startsWith('## ') ? `<h2>${p.slice(3)}</h2>` : `<p>${p}</p>`).join('');
   openRaw('', `<article class="reader"><div class="hero"><img src="${b.img}" alt=""></div><div class="kick">${b.tag}, ${b.mins} min read</div><h1>${b.title}</h1>${body}
     <div class="take"><div class="who">Julián J. Crider</div><p>Questions about your situation? I’m happy to talk it through.</p></div>
-    <button class="pill block" id="blogCta">${CTA[b.cta][0]}</button></article>`);
+    <button class="pill block" id="blogCta">${CTA[b.cta][0]}</button>
+    ${b.refs?`<a class="pill ghost block" style="margin-top:8px" href="${b.refs[0][1]}" target="_blank" rel="noopener">See the original post</a>
+    <h2>Sources</h2><ol class="refs">${b.refs.map(r=>`<li><a href="${r[1]}" target="_blank" rel="noopener">${r[0]}</a></li>`).join('')}</ol>
+    ${b.refnote?`<p class="srcnote">${b.refnote}</p>`:''}`:''}</article>`);
   $('blogCta').onclick = CTA[b.cta][1];
 }
 function openNews(i){
