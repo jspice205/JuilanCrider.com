@@ -235,12 +235,14 @@ function autoUpdateFromGitHub() {
 // Signature footer for the plain-text drip emails (Hot/Warm/Legacy 141-152, Nurture 153-176, Farm 177-180).
 // Small and simple on purpose: it keeps the personal look but has the brokerage, address, license and opt-out the law
 // requires. Change the text and bump EMAIL_FOOTER_VERSION; the hourly update re-applies it to every template.
-const EMAIL_FOOTER_VERSION = 'v1';
-const EMAIL_FOOTER = '<!--jc-footer--><p style="margin:22px 0 0 0;padding-top:12px;border-top:1px solid #e5e5e5;font:13px/1.55 Helvetica,Arial,sans-serif;color:#111">' +
+const EMAIL_FOOTER_VERSION = 'v2';
+const EMAIL_FOOTER = '<!--jc-footer--><table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:22px;border-top:1px solid #e5e5e5;padding-top:12px"><tr>' +
+  '<td valign="top" style="padding:12px 12px 0 0"><img src="https://juliancrider.com/emails/img/julian-sq.jpg" width="56" height="56" alt="Julián Crider" style="display:block;width:56px;height:56px;border-radius:50%;border:0"></td>' +
+  '<td valign="top" style="padding-top:12px;font:13px/1.55 Helvetica,Arial,sans-serif;color:#111">' +
   '<b>Julián J. Crider</b><br>REALTOR® · Developer · Advisor<br>The DeBenedetto Team at Boeckle &amp; Co.<br>' +
   '<a href="tel:+17024982571" style="color:#111">702-498-2571</a> · <a href="https://juliancrider.com" style="color:#111">juliancrider.com</a> · ' +
-  '<a href="https://www.instagram.com/juliancriderestates/" style="color:#111">Instagram</a></p>' +
-  '<p style="margin:6px 0 0 0;font:11px/1.5 Helvetica,Arial,sans-serif;color:#888">4775 W Teco Ave #220, Las Vegas, NV 89118 · NV S.0177760<br>' +
+  '<a href="https://www.instagram.com/juliancriderestates/" style="color:#111">Instagram</a></td></tr></table>' +
+  '<p style="margin:8px 0 0 0;font:11px/1.5 Helvetica,Arial,sans-serif;color:#888">4775 W Teco Ave #220, Las Vegas, NV 89118 · NV S.0177760<br>' +
   'Prefer fewer emails? Just reply "stop."</p>';
 
 function applyEmailFooter() {
