@@ -399,12 +399,20 @@ img{max-width:100%;display:block}
 .sbody{padding:4px 16px 8px}
 
 /* Forms */
-.field{margin-bottom:14px}
-.field label,.lab{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+.field{margin-bottom:22px}
+.field label,.lab{display:block;font-size:15px;font-weight:700;color:var(--ink);margin-bottom:10px;line-height:1.35}
 .field input,.field select,.field textarea{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid transparent;border-radius:12px;padding:12px 14px}
 .field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--ink)}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
-.chip{padding:9px 14px;border-radius:999px;background:var(--surface);font-size:14px;font-weight:600;border:1px solid var(--hair)}
+.chip{padding:9px 14px;border-radius:999px;background:var(--surface);font-size:14px;font-weight:500;color:var(--ink2);border:1px solid var(--hair)}
+.consent{display:block;padding:14px 16px;border:1.5px solid var(--ink);border-radius:14px;margin:-6px 0 22px;font-size:14px;line-height:1.45;color:var(--ink)}
+.consent b{display:block;font-size:15px;margin-bottom:4px}
+.consent .opt{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:13px;color:var(--ink2);cursor:pointer}
+.consent .opt input{position:absolute;opacity:0;width:1px;height:1px}
+.consent .dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--ink2);flex:0 0 22px;display:grid;place-items:center}
+.consent .opt input:checked + .dot{background:var(--ink);border-color:var(--ink)}
+.consent .opt input:checked + .dot::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--bg)}
+.consent .opt input:focus-visible + .dot{outline:2px solid var(--ink);outline-offset:2px}
 .chip.on{background:var(--ink);color:var(--bg)}
 .scale{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
 .scale .chip{padding:9px 0;text-align:center;border-radius:10px}
@@ -767,8 +775,10 @@ img{max-width:100%;display:block}
         <div class="duo"><div class="field"><label for="ohFirst">First name</label><input id="ohFirst" autocomplete="given-name"></div>
         <div class="field"><label for="ohLast">Last name</label><input id="ohLast" autocomplete="family-name"></div></div>
         <div class="field"><label for="ohPhone">Phone</label><input id="ohPhone" type="tel" autocomplete="tel"></div>
+        <div class="consent">📱 <b style="display:inline">Julián will text you</b> a few homes like this one.
+          <span style="display:block;margin-top:4px;color:var(--ink2);font-size:13px">By entering your phone number, you agree Julián Crider may call or text you about homes. Msg &amp; data rates may apply. Reply STOP anytime to opt out.</span>
+          <label class="opt"><input type="checkbox" id="ohNoText"><span class="dot"></span><span>No texts, please</span></label></div>
         <div class="field"><label for="ohEmail">Email</label><input id="ohEmail" type="email" autocomplete="email"></div>
-        <label class="fine" style="display:flex;gap:10px;align-items:flex-start;margin:-4px 0 14px"><input type="checkbox" id="ohText" style="margin-top:3px"> <span>OK to text me about this home and others like it. Msg &amp; data rates may apply. Reply STOP to opt out.</span></label>
         <div class="field"><span class="lab">What brings you in today?</span><div class="chips" data-chips="nb" data-opts="Looking to buy|Just looking|I live nearby|I’m a real estate agent"></div></div>
         <div class="field"><span class="lab">How well does this home fit what you’re looking for?</span><div class="scale" data-chips="fit"></div></div>
         <div class="field"><span class="lab">Are you working with an agent?</span><div class="chips" data-chips="agent" data-opts="No|Yes, with a signed agreement|Yes, informally"></div></div>
@@ -1918,7 +1928,7 @@ $('ohForm').onsubmit = e => { e.preventDefault();
   const f = $('ohForm');
   sendLead({tab:'Sign-Ins', name:($('ohFirst').value+' '+$('ohLast').value).trim(), phone:$('ohPhone').value.trim(), email:$('ohEmail').value.trim(),
     property:$('ohProp').value.trim(), neighbor:/live nearby/.test(chipVal(f,'nb')) ? 'Yes' : '', score:chipVal(f,'fit'), status:chipVal(f,'now'), timeline:chipVal(f,'tl'), source:$('ohHeard').value,
-    notes: joinNotes(['Notes: '+$('ohNotes').value.trim(), 'Visitor: '+chipVal(f,'nb'), 'Neighbor: '+(/live nearby/.test(chipVal(f,'nb')) ? 'Yes' : ''), 'Text OK: '+($('ohText').checked ? 'Yes' : ''), 'Working with agent: '+chipVal(f,'agent'), 'Pre-approved: '+chipVal(f,'preapp'), 'Signed in on: juliancrider.com'])});
+    notes: joinNotes(['Notes: '+$('ohNotes').value.trim(), 'Visitor: '+chipVal(f,'nb'), 'Neighbor: '+(/live nearby/.test(chipVal(f,'nb')) ? 'Yes' : ''), 'Text OK: '+($('ohPhone').value.trim() && !$('ohNoText').checked ? 'Yes' : ''), 'Working with agent: '+chipVal(f,'agent'), 'Pre-approved: '+chipVal(f,'preapp'), 'Signed in on: juliancrider.com'])});
   $('ohForm').hidden = true; $('ohDone').hidden = false; };
 $('ohAgain').onclick = () => { $('ohForm').reset(); $('ohForm').querySelectorAll('.chip').forEach(c=>c.classList.remove('on')); $('ohForm').hidden = false; $('ohDone').hidden = true; };
 $('valForm').onsubmit = e => { e.preventDefault();
