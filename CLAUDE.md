@@ -53,7 +53,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   question (OPEN_HOUSE_TEXTS guest: 2h "Hey… question || [contact card] || juliancrider.com/?relocate || [voice]"/24h/72h aiming for a 2nd showing; no street address; neighbor: 2h+voice/72h value;
   agent: 2h feedback). Form asks "What brings you in today?" (Looking to buy / Just looking / I live nearby / I'm a real
   estate agent → tags Agent+Partner, no welcome email or buyer drip). Voice note = Drive file "Quick hello.m4a" (name shows to recipients); contact card = emails/julian-crider.vcf (HD photo from img/julian-headshot-hd.jpg)
-  (bbSendAudio, /message/attachment); if missing, the text still goes. processTextQueue every 15 min, 9am-8pm PT, retries ~6h, skips later
+  (bbSendAudio, /message/attachment); if missing, the text still goes. processTextQueue every 15 min, 9am-9pm PT (TCPA: never after 9pm), retries ~6h, skips later
   steps once they've texted back. FUB rejects textMessages (its texting is off), so texts are logged as notes.
   Sign-in funnel: juliancrider.com/?signin (or ?openhouse; also a button on Homes > Open house) = same questions one per
   screen, not tied to a listing (open house optional). Every ?signin lead → source juliancrider.com + tag Website Lead (plus Open House if named). No open house → "Signed up: online" → tags Website Lead + Online
@@ -66,7 +66,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Request a showing (button "Next: pick a time") with an address (not signed with an agent) then opens pickTime; bookSlot with kind 'showing'
   creates "Showing: Name" (location = address, phone in notes) → confirmation text + 15-min reminder.
   Outbox: a FUB note with subject "Send text" by user 2 (Claude via fub_api) is texted to that contact within ~5 min
-  (processFubOutbox, from remindUpcoming; 9am-8pm PT only, notes up to 36h old), then logged "Text sent"/"Text NOT sent". Use this to text clients for Julián.
+  (processFubOutbox, from remindUpcoming; 9am-9pm PT (TCPA: never after 9pm) only, notes up to 36h old), then logged "Text sent"/"Text NOT sent". Use this to text clients for Julián.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`
