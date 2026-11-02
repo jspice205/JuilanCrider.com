@@ -46,13 +46,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   only `Text OK` (never `Text Opt-Out`) and logs to FUB textMessages; webhook logs replies from FUB contacts + one
   "They texted back" Text task per day; STOP → `Text Opt-Out`; non-FUB senders ignored. `setupTexting`, `testText`.
   Open-house texts: sign-in form shows a consent card under Phone ("By entering your phone number, you agree… Reply STOP")
-  with a "No texts, please" option; phone given and not opted out → Text OK: Yes → tag `Text OK`; consenting guests
+  with a "Do not text me. Email only." option; phone given and not opted out → Text OK: Yes → tag `Text OK`; consenting guests
   (not Has Agent) get 2 texts via the "Text Queue" sheet tab (editable before send): +2h thank-you and +72h no-oriented
   question (OPEN_HOUSE_TEXTS guest: 2h "Hey… question || [contact card] || juliancrider.com/?relocate || [voice]"/24h/72h aiming for a 2nd showing; no street address; neighbor: 2h+voice/72h value;
   agent: 2h feedback). Form asks "What brings you in today?" (Looking to buy / Just looking / I live nearby / I'm a real
   estate agent → tags Agent+Partner, no welcome email or buyer drip). Voice note = Drive file "Quick hello.m4a" (name shows to recipients); contact card = emails/julian-crider.vcf (HD photo from img/julian-headshot-hd.jpg)
   (bbSendAudio, /message/attachment); if missing, the text still goes. processTextQueue every 15 min, 9am-8pm PT, retries ~6h, skips later
   steps once they've texted back. FUB rejects textMessages (its texting is off), so texts are logged as notes.
+  Open House Funnel: juliancrider.com/?openhouse(=address) = same questions one per screen; step 1 (home, name, phone,
+  email, visitor type) signs them in, later answers post action 'enrich' (enrichSignIn: FUB note, re-tier tags, fills the
+  Sign-Ins row, cancels queued texts if Has Agent). Notes carry "Form: funnel" / "Form: page" for the A/B answer-rate test.
   Appointments: bookSlot texts a confirmation; remindUpcoming (every 5 min) texts ~15 min before any Google Calendar
   event with a phone number in its notes/location/title ("Showing"/"Tour" in title → showing wording with location);
   one per event, skips Text Opt-Out, logs a FUB note. Triggers are ensured hourly by autoUpdateFromGitHub.
