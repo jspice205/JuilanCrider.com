@@ -29,3 +29,14 @@ Old intake questions worth keeping (from the Calendly screenshots):
   like about the home, how they heard. "As your scheduling liaison I'll set up your itinerary… any day 9am-6pm."
 - Golf (Julián's favorite meeting place, ties to his podcast The Course of Business): 9 or 18, tee time booked?, where to
   book. Offer as a private invite for past clients, sphere and serious buyers/sellers, not a public booking button.
+
+## Julián's decisions (Nov 2, 2026) — build from these
+- **No coffee or lunch meetings anymore.** In person = golf course meetings only (plus home tours/showings).
+- **Golf** (private invite link, not a public button): Mon 8am–3pm, Tue 8am–3pm, Thu 11am–4pm, Fri 8am–3pm (PT).
+  Ask "9 or 18?" (old Calendly blocked 5 hrs for 18; 9 holes ≈ 2.5 hrs), tee time booked?, where to book.
+- **Zoom / Google Meet** for out-of-town clients: Mon–Sat, no longer than 45 min (old Calendly Zoom was 30 min;
+  use 30 min default, 45 max). Use the old Zoom Presentation description/questions, updated (no IS Luxury, 702-498-2571).
+- **Home tours / showings**: already live (Request a showing → pick a time, Mon–Sat 9–6, 30 min).
+- **Phone call**: 30 min, current hours (Mon–Sat 9–6).
+- Every booking: Google Calendar event (Meet link for virtual), FUB appointment + note with answers, confirmation text,
+  15-minute reminder text (remindUpcoming already handles any event with a phone in the notes).
