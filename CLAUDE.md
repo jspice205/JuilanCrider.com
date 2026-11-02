@@ -67,6 +67,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   creates "Showing: Name" (location = address, phone in notes) → confirmation text + 15-min reminder.
   Outbox: a FUB note with subject "Send text" by user 2 (Claude via fub_api) is texted to that contact within ~5 min
   (processFubOutbox, from remindUpcoming; 9am-9pm PT (TCPA: never after 9pm) only, notes up to 36h old), then logged "Text sent"/"Text NOT sent". Use this to text clients for Julián.
+  Email outbox: note subject "Send email" by user 2, body "template: <id>" (+ optional "text: <follow-up text>") →
+  processEmailOutbox emails that FUB template from his Gmail (MailApp, adds EMAIL_FOOTER), logs "Email sent", then queues
+  the text. Use it for one-off emails (FUB action plans skip people who already replied).
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`

@@ -1607,7 +1607,37 @@ function testOpenHouseText() {
 // behalf), is texted to that contact through BlueBubbles within ~5 minutes, then logged as "Text sent".
 // Bubbles can be split with " || ". Skips Text Opt-Out and notes older than 24 hours. Each note is sent once.
 // ============================================================
+// EMAIL OUTBOX: a note with the subject "Send email" by user 2 emails a FUB template to that contact from Julián's
+// Gmail (with the signature footer), because FUB's API can't send email and action plans skip people who replied.
+// Note body lines:  template: 187   (required)   ·   text: <a text to send right after, through the text outbox>
+function processEmailOutbox() {
+  const props = PropertiesService.getScriptProperties();
+  const done = JSON.parse(props.getProperty('EMAIL_OUTBOX_DONE') || '[]');
+  const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+    .filter(n => /^send email$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
+      Date.now() - new Date(n.created) < 36 * 36e5);
+  notes.reverse().forEach(n => {
+    done.push(n.id); props.setProperty('EMAIL_OUTBOX_DONE', JSON.stringify(done.slice(-200)));
+    const body = String(n.body || ''), field = k => ((body.match(new RegExp('^\\s*' + k + '\\s*:\\s*(.+)$', 'im')) || [])[1] || '').trim();
+    try {
+      const t = fubFetch('templates/' + Number(field('template')), null, 'get');
+      if (!t.body) throw new Error('template not found');
+      const p = fubFetch('people/' + n.personId + '?fields=id,firstName,lastName,emails,tags', null, 'get');
+      const to = (p.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0];
+      if (!to) throw new Error('no good email address');
+      const fill = x => String(x).replace(/%contact_first_name%/g, p.firstName || '').replace(/%contact_name%/g, [p.firstName, p.lastName].join(' ').trim());
+      const html = fill(t.body) + (t.body.indexOf('jc-footer') < 0 ? EMAIL_FOOTER : '');
+      MailApp.sendEmail({to: to.value, subject: fill(t.subject), htmlBody: html, name: 'Julián Crider'});
+      fubFetch('notes', {personId: p.id, subject: 'Email sent', body: 'To ' + to.value + ': "' + fill(t.subject) + '" (template ' + t.id + ', from Gmail)'});
+      if (field('text')) fubFetch('notes', {personId: p.id, subject: 'Send text', body: field('text')});
+    } catch (err) {
+      fubFetch('notes', {personId: n.personId, subject: 'Email NOT sent', body: err.message + '\n\n' + body});
+    }
+  });
+}
+
 function processFubOutbox() {
+  try { processEmailOutbox(); } catch (e) { console.log('Email outbox: ' + e.message); }
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   if (hour < 9 || hour >= 21) return;  // quiet hours: texts wait until 9am
   const props = PropertiesService.getScriptProperties();
