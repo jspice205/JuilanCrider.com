@@ -1362,6 +1362,10 @@ function bbSendParts(phone, msg) {
 
 /** Sends an audio file from Google Drive (found by name) into the conversation with this number. */
 function bbSendAudio(phone, service, driveName) {
+  if (/^https?:\/\//.test(driveName)) {  // a file hosted on the website (e.g. the contact card)
+    const blob = UrlFetchApp.fetch(driveName).getBlob().setName(/\.vcf$/i.test(driveName) ? 'Julián Crider.vcf' : driveName.split('/').pop());
+    return bbPostAttachment(phone, service, blob);
+  }
   const props = PropertiesService.getScriptProperties(), cacheKey = 'AUDIO_' + driveName;
   let file;
   try { file = props.getProperty(cacheKey) && DriveApp.getFileById(props.getProperty(cacheKey)); if (file && file.isTrashed()) file = null; } catch (e) {}
@@ -1372,10 +1376,15 @@ function bbSendAudio(phone, service, driveName) {
   }
   const blob = file.getBlob(), name = /\.[a-z0-9]{2,4}$/i.test(file.getName()) ? file.getName()
     : file.getName() + (/vcard|vcf/i.test(blob.getContentType()) ? '.vcf' : '.m4a');
+  return bbPostAttachment(phone, service, blob.setName(name));
+}
+
+function bbPostAttachment(phone, service, blob) {
+  const name = blob.getName();
   const p = PropertiesService.getScriptProperties(), url = p.getProperty('BB_URL'), pw = p.getProperty('BB_PASSWORD');
   const res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/v1/message/attachment?password=' + encodeURIComponent(pw), {
     method: 'post', muteHttpExceptions: true, payload: {chatGuid: (service || 'iMessage') + ';-;' + bbE164(phone),
-      tempGuid: 'jc-' + Utilities.getUuid(), name: name, method: 'apple-script', attachment: blob.setName(name)}});
+      tempGuid: 'jc-' + Utilities.getUuid(), name: name, method: 'apple-script', attachment: blob}});
   if (res.getResponseCode() >= 300) throw new Error('Voice note: ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 300));
 }
 
@@ -1439,7 +1448,7 @@ const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
 
 /** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
 const OPEN_HOUSE_VOICE = 'Quick hello';  // Google Drive voice note (the file name is what people see, so keep it casual)
-const CONTACT_CARD = 'Julian Crider Contact Card';     // Google Drive .vcf sent after it, so they can save Julián
+const CONTACT_CARD = 'https://juliancrider.com/emails/julian-crider.vcf';  // HD contact card hosted on the site
 // Each text can be several bubbles separated by " || ". [voice] = the voice note, [contact card] = the contact card.
 // The first bubble has to be a text (Messages can't start a new conversation with a file on this Mac).
 const OPEN_HOUSE_TEXTS = {
@@ -1546,11 +1555,13 @@ function testOpenHouseText() {
 // Bubbles can be split with " || ". Skips Text Opt-Out and notes older than 24 hours. Each note is sent once.
 // ============================================================
 function processFubOutbox() {
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
+  if (hour < 9 || hour >= 20) return;  // quiet hours: texts wait until 9am
   const props = PropertiesService.getScriptProperties();
   const done = JSON.parse(props.getProperty('OUTBOX_DONE') || '[]');
   const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
     .filter(n => /^send text$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
-      Date.now() - new Date(n.created) < 864e5);
+      Date.now() - new Date(n.created) < 36 * 36e5);
   notes.reverse().forEach(n => {
     done.push(n.id); props.setProperty('OUTBOX_DONE', JSON.stringify(done.slice(-200)));  // mark first: never double-send
     try {
