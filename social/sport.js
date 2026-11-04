@@ -32,6 +32,12 @@ const SETS = {
              ['Temporary buydown', 'The credit lowers your rate for the first year or two (like a 2-1). Your payment steps up later.'],
              ['Permanent buydown', 'Paying “points” up front lowers your rate for the life of the loan. Best if you’ll keep the loan for years.'],
              ['Which one fits you?', 'It depends on your budget and timeline. Have your lender run both side by side before you write the offer.']]},
+  twomillion: {bg: 'southwest.jpg', tag: 'Relocation · Luxury', cover: ['What $2M', 'Buys Here'], sub: 'Las Vegas vs. coastal California',
+    slides: [['Guard-gated living', 'Many luxury communities here have a staffed gate, private streets and security around the clock.'],
+             ['Room to breathe', 'Bigger lots, casitas, RV garages and space for a car collection show up often at this level.'],
+             ['Views from home', 'Strip lights, Red Rock and mountain views are common in hillside areas like MacDonald Highlands and The Ridges.'],
+             ['Resort-style backyards', 'Pools, outdoor kitchens and covered patios built for living outside most of the year.'],
+             ['Newer construction', 'Much of the luxury inventory is newer: open layouts, smart-home systems and energy-efficient design.']]},
 };
 
 // Color palettes. Pick with PALETTE=<name>. Default "quiet" (black/white, red only on the tag and button; Julián's pick Oct 31).
