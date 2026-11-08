@@ -1566,7 +1566,16 @@ function showTab(name){
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
   window.scrollTo(0,0);
 }
-document.querySelectorAll('.tab').forEach(t => t.onclick = () => { if (navigator.vibrate) navigator.vibrate(8); showTab(t.dataset.tab); });
+// Light tap feel when switching tabs: Android uses the Vibration API; iPhone Safari (iOS 18+) has no vibrate, but
+// toggling a hidden <input switch> plays the system haptic, so we click one off-screen.
+const haptic = (() => {
+  if (navigator.vibrate) return () => navigator.vibrate(8);
+  const l = document.createElement('label'), i = document.createElement('input');
+  i.type = 'checkbox'; i.setAttribute('switch', ''); l.appendChild(i);
+  l.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none'; l.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(l); return () => l.click();
+})();
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => { try { haptic(); } catch (e) {} showTab(t.dataset.tab); });
 // Desktop side menu: collapse to icons (remembered on this device).
 (function(){
   const btn = $('navToggle'); if (!btn) return;
