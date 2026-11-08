@@ -221,7 +221,7 @@ img{max-width:100%;display:block}
 :focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:6px}
 
 /* App frame */
-.app{max-width:500px;margin:0 auto;min-height:100%;background:var(--bg);position:relative;padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+.app{max-width:500px;margin:0 auto;min-height:100%;background:var(--bg);position:relative;padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
 @media (min-width:600px){.app{box-shadow:0 0 0 1px var(--hair)}}
 /* iPad portrait and small tablets: use the full screen width like desktop (keeps the bottom tab bar) */
 @media (min-width:768px) and (max-width:1023px){body{background:var(--bg)}.app{max-width:none;box-shadow:none}.vid video{aspect-ratio:21/9}.sheet{max-width:640px}}
@@ -382,11 +382,11 @@ img{max-width:100%;display:block}
 .legal p{margin-bottom:6px}
 
 /* Tab bar */
-.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(12px + env(safe-area-inset-bottom,0px));width:calc(100% - 24px);max-width:476px;z-index:30;display:flex;background:color-mix(in srgb,var(--bg) 62%,transparent);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border:1px solid color-mix(in srgb,var(--hair) 70%,transparent);border-radius:26px;box-shadow:0 8px 30px rgba(0,0,0,.18);padding:8px 4px}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 0;color:var(--muted);font-size:11px;font-weight:600;position:relative}
-.tab svg{width:26px;height:26px}
-.tab.on{color:var(--ink)}
-.tab.on::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--red);position:absolute;bottom:-3px}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:color-mix(in srgb,var(--bg) 72%,transparent);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:1px solid color-mix(in srgb,var(--hair) 80%,transparent);padding:6px 0 calc(6px + env(safe-area-inset-bottom,0px))}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:4px 0;color:var(--muted);font-size:10.5px;font-weight:500;position:relative}
+.tab svg{width:24px;height:24px}
+.tab.on{color:var(--ink);font-weight:700}
+.tab.on svg{stroke-width:2.4}
 .tabtoggle{display:none}
 
 /* Sheet */
@@ -618,7 +618,9 @@ img{max-width:100%;display:block}
   body{background:var(--bg)}
   .app{max-width:none;margin:0 0 0 240px;padding-bottom:40px;box-shadow:none;min-height:100vh}
   .top{padding:14px 32px}
-  .tabs{left:12px;top:76px;bottom:12px;transform:none;width:216px;max-width:none;flex-direction:column;justify-content:flex-start;gap:4px;padding:14px 10px;border-radius:22px}
+  .tabs{left:12px;right:auto;top:76px;bottom:12px;transform:none;width:216px;max-width:none;flex-direction:column;justify-content:flex-start;gap:4px;padding:14px 10px;border-radius:22px;border:1px solid color-mix(in srgb,var(--hair) 70%,transparent);box-shadow:0 8px 30px rgba(0,0,0,.18)}
+  .tab.on svg{stroke-width:1.8}
+  .tab.on::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--red)}
   .tab{flex:0 0 auto;flex-direction:row;gap:14px;font-size:15px;padding:12px 14px;border-radius:12px}
   .tab:hover{background:var(--surface)}
   .tab.on{background:var(--surface)}
