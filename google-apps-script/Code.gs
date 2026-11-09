@@ -1448,7 +1448,11 @@ function bbWebhook(e) {
   }
   if (ev.type === 'new-message' && data.isFromMe) {  // Julián (or Shawna) texted: cancel any reply Shawna was holding
     const to = bbE164((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '');
-    if (to) assistantCancel(to);
+    if (to) {
+      assistantCancel(to);
+      const sentByShawna = Number(props.getProperty('AI_SENDING_' + to) || 0) > Date.now() - 90 * 1000;
+      if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
+    }
     return json({status: 'ok'});
   }
   if (ev.type !== 'new-message' || !data.handle || !data.text) return json({status: 'ok'});
@@ -1530,7 +1534,8 @@ function assistantReply(person, from, text) {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
-  const ok = reply && !out.escalate && !sensitive && n < 3 && tags.indexOf('Text OK') >= 0;
+  const muted = Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now();  // Julián is talking with them himself
+  const ok = reply && !out.escalate && !sensitive && n < 3 && tags.indexOf('Text OK') >= 0 && !muted;
   if (mode === 'backup' && ok && hour >= 8 && hour < 21) {  // hold it; send only if Julián hasn't replied in time
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
@@ -1545,6 +1550,7 @@ function assistantReply(person, from, text) {
     return false;
   }
   const intro = props.getProperty('AI_INTRO_' + person.id) ? '' : assistantIntro() + ' ';
+  props.setProperty('AI_SENDING_' + from, String(Date.now()));
   bbSendParts(from, intro + reply);
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
   fubFetch('notes', {personId: person.id, subject: 'Text sent', body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
@@ -1603,11 +1609,16 @@ function processAssistantQueue() {
     delete q[phone]; props.setProperty('AI_PENDING', JSON.stringify(q));  // remove first: never double-send
     try {
       const intro = props.getProperty('AI_INTRO_' + it.personId) ? '' : assistantIntro() + ' ';
+      if (Number(props.getProperty('AI_MUTE_' + phone) || 0) > Date.now()) return;  // he jumped in meanwhile
+      props.setProperty('AI_SENDING_' + phone, String(Date.now()));
       bbSendParts(phone, intro + it.reply);
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
       fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + ', you hadn\'t replied yet)' + (it.next ? '\nNext step: ' + it.next : '')});
-      try { notifyJulian('I answered a text for you', '"' + it.reply.slice(0, 160) + '"' + (it.next ? ' Next step: ' + it.next : ''), 'https://app.followupboss.com/2/people/view/' + it.personId); } catch (e) {}
+      try {
+        const who = (fubFetch('people/' + it.personId + '?fields=firstName', null, 'get').firstName) || 'them';
+        notifyJulian('You received a text from ' + who, "I'm speaking with " + who + ' now: "' + it.reply.slice(0, 140) + '" If you want to jump in, just reply to ' + who + " yourself and I'll stay out of that conversation for 30 minutes.");
+      } catch (e) {}
     } catch (err) {
       fubFetch('notes', {personId: it.personId, subject: name + ' draft', body: 'Could not send (' + err.message + '). Suggested reply:\n' + it.reply});
       createCallTask(it.personId, 'They texted and ' + name + ' couldn\'t reply. Answer today.', 'Text');
@@ -1688,6 +1699,7 @@ function bossCommand(text) {
   if (pend && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
     props.deleteProperty('BOSS_PENDING');
     if (Date.now() - pend.at > 30 * 6e4) return say(name + ': that one expired. Ask me again.');
+    props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
     fubFetch('notes', {personId: pend.personId, subject: 'Text sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
     return say(name + ': sent to ' + pend.who + '. ✅');
