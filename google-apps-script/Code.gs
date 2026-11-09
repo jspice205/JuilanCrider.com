@@ -1719,7 +1719,9 @@ function bossCommand(text) {
   if (a.action === 'claude') {
     const sh = getSS().getSheetByName(REQUESTS_TAB.name) || ensureTab(getSS(), REQUESTS_TAB);
     sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm a'), cell(a.message || text), 'new']);
-    return say(name + ': saved for Claude ✅ "' + (a.message || text).slice(0, 120) + '". Open the Claude app and say "check my requests" to have it done.');
+    // Also a FUB note on Julián's own test contact, where Claude's hourly check picks it up (and texts him back there).
+    fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: a.message || text});
+    return say(name + ': got it ✅ "' + (a.message || text).slice(0, 120) + '". Claude checks every hour and will text you when it\'s done.');
   }
   return say(name + ': ' + (a.reply || 'Got it.'));
 }
