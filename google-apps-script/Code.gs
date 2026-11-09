@@ -1467,6 +1467,15 @@ function bbWebhook(e) {
     fubFetch('people/' + person.id, {tags: tags}, 'put');
     return json({status: 'ok'});
   }
+  // "JULIAN": they want him, not Shawna. Tell Julián on his personal phone, answer them, skip Shawna.
+  if (/^\s*juli[aá]n\s*[.!?]*\s*$/i.test(text)) {
+    assistantCancel(from);
+    try { bbSend(from, "Got it. I'm letting Julián know right now. He'll text you back or give you a call shortly."); } catch (e) {}
+    notifyJulian((person.firstName || 'A contact') + ' asked for you', 'They texted JULIAN. Check your messages and reply or call.', 'https://app.followupboss.com/2/people/view/' + person.id);
+    createCallTask(person.id, 'They asked for you directly (texted JULIAN). Reply or call now.', 'Text');
+    return json({status: 'ok'});
+  }
+  try { notifyJulian([person.firstName, person.lastName].join(' ').trim() + ' texted you', '"' + text.slice(0, 140) + '" Check your messages.', 'https://app.followupboss.com/2/people/view/' + person.id); } catch (e) {}
   // Shawna (AI assistant) drafts or sends a reply. Never blocks the webhook if Groq is down.
   let handled = false;
   try { handled = assistantReply(person, from, text); } catch (err) { console.log('Assistant: ' + err.message); }
@@ -1494,6 +1503,12 @@ const ASSISTANT = {
   model: 'llama-3.3-70b-versatile',
   escalate: /\b(offer|counter|contract|escrow|earnest|commission|lawyer|attorney|sue|complain|discriminat|inspection report|appraisal)\b/i,
 };
+/** First text Shawna sends anyone (ASSISTANT_INTRO overrides it; {name} = her name). */
+function assistantIntro() {
+  const t = PropertiesService.getScriptProperties().getProperty('ASSISTANT_INTRO') ||
+    "Hi, it's {name}, Julián's AI assistant. Julián's away right now, but I can answer your questions. If you'd like to talk with Julián directly, just text JULIAN and he'll text you back or give you a call.";
+  return t.replace(/\{name\}/g, assistantName());
+}
 function assistantName() { return PropertiesService.getScriptProperties().getProperty('ASSISTANT_NAME') || 'Shawna'; }
 
 function assistantReply(person, from, text) {
@@ -1529,7 +1544,7 @@ function assistantReply(person, from, text) {
       (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});
     return false;
   }
-  const intro = props.getProperty('AI_INTRO_' + person.id) ? '' : "Hi, it's " + name + ", Julián's AI assistant. ";
+  const intro = props.getProperty('AI_INTRO_' + person.id) ? '' : assistantIntro() + ' ';
   bbSendParts(from, intro + reply);
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
   fubFetch('notes', {personId: person.id, subject: 'Text sent', body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
@@ -1587,7 +1602,7 @@ function processAssistantQueue() {
     const it = q[phone]; if (it.due > Date.now()) return;
     delete q[phone]; props.setProperty('AI_PENDING', JSON.stringify(q));  // remove first: never double-send
     try {
-      const intro = props.getProperty('AI_INTRO_' + it.personId) ? '' : "Hi, it's " + name + ", Julián's AI assistant. ";
+      const intro = props.getProperty('AI_INTRO_' + it.personId) ? '' : assistantIntro() + ' ';
       bbSendParts(phone, intro + it.reply);
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
@@ -1612,7 +1627,7 @@ function notifyJulian(title, msg, url) {
   const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
   const to = props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO');
   let sent = false;
-  if (to) { try { bbSend(to, assistantName() + ': ' + title + '. ' + msg + (url ? ' ' + url : '')); sent = true; } catch (e) { console.log('Alert text: ' + e.message); } }
+  if (to) { try { bbSend(to, title + '. ' + msg + (url ? ' ' + url : '')); sent = true; } catch (e) { console.log('Alert text: ' + e.message); } }
   if (topic) {
     UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, muteHttpExceptions: true,
       headers: Object.assign({Title: title.replace(/[^\x20-\x7E]/g, ''), Priority: 'high', Tags: 'email'}, url ? {Click: url} : {})});
@@ -1667,7 +1682,7 @@ const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['
 function bossCommand(text) {
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
-  const say = msg => bbSend(boss, msg);
+  const say = msg => bbSend(boss, String(msg).replace(new RegExp('^' + name + ':\\s*'), ''));
   // A pending "send this text?" waiting for YES / NO
   const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   if (pend && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
@@ -1682,11 +1697,12 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|note|task|emails|calendar|claude|chat", "who":"contact's name if any", "message":"the text to send / note / task", "reply":"your short answer to Julián (for chat)"}
+{"action":"text|note|task|contact|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "message":"the text to send / note / task", "reply":"your short answer to Julián (for chat)"}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - note: save a note on a contact. task: remind him to do something about a contact.
 - emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
-- claude: anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
+- contact: add a new person to Follow Up Boss (name, phone, email).
+- claude: anything you can't do with the actions above, and anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
 - chat: anything else; answer in 1-3 short sentences. Never invent facts about clients or listings.`;
   let a; try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
   catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
@@ -1694,9 +1710,27 @@ function bossCommand(text) {
     const ppl = (fubFetch('people?limit=5&fields=id,name,firstName,tags,phones&q=' + encodeURIComponent(who || ''), null, 'get').people || []);
     return ppl.length === 1 ? ppl[0] : (ppl.find(p => (p.name || '').toLowerCase() === String(who).toLowerCase()) || (ppl.length ? {many: ppl} : null));
   };
+  const addContact = () => {
+    const parts = String(a.who || '').trim().split(/\s+/);
+    const r = fubFetch('events', {source: 'Julián (via ' + name + ')', system: 'juliancrider.com', type: 'General Inquiry',
+      message: 'Added by text from Julián' + (a.message ? ': ' + a.message : ''), person: {firstName: parts[0] || 'Unknown', lastName: parts.slice(1).join(' '),
+      phones: a.phone ? [{value: a.phone}] : [], emails: a.email ? [{value: a.email}] : [], tags: ['Added by ' + name]}});
+    const id = r.personId || (r.person && r.person.id);
+    return id ? Object.assign({id: id, name: a.who, tags: ['Added by ' + name]}, a.phone ? {phones: [{value: a.phone}]} : {}) : null;
+  };
+  if (a.action === 'contact') {
+    const p = addContact();
+    if (!p) fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: 'Add contact: ' + text});
+    return say(p ? 'added ' + a.who + ' to Follow Up Boss. ✅' : 'I couldn\'t add ' + (a.who || 'them') + ', so I passed it to Claude.');
+  }
   if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
-    const p = findOne(a.who);
-    if (!p) return say(name + ': I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
+    let p = findOne(a.who), isNew = false;
+    if (!p) { p = addContact(); isNew = true; }
+    if (!p) {
+      fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: text});
+      return say('I couldn\'t find or add "' + (a.who || '?') + '", so I passed it to Claude.');
+    }
+    if (isNew && a.action !== 'text') say('(' + a.who + ' wasn\'t in Follow Up Boss, so I added them.)');
     if (p.many) return say(name + ': which one? ' + p.many.map(x => x.name).join(', '));
     if (a.action === 'note') { fubFetch('notes', {personId: p.id, subject: 'Note from Julián', body: a.message}); return say(name + ': note saved on ' + p.name + '.'); }
     if (a.action === 'task') { createCallTask(p.id, a.message, 'Follow Up'); return say(name + ': task added for ' + p.name + ' (due today).'); }
