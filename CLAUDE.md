@@ -89,6 +89,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   status Received, plus one nudge after EMAIL_NUDGE_MIN (60) with no Sent reply; 7am-10pm. notifyJulian also texts his
   personal phone (ALERT_TEXT_TO, else TEST_TEXT_TO) from the business number, and tells him when Shawna answered for him. FUB hides email bodies,
   so answering emails would need a script inside the bcolv Google account.
+- Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
+  (assistantKnowledge); humanize() strips dashes from everything she writes. Boss actions also: schedule (Google
+  Calendar event + FUB note, adds new people), lookup (FUB summary), hot (Tier A list).
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
   number are commands: text a contact (always "Reply YES" first, BOSS_PENDING, 30 min), note, task, who emailed,
   today's calendar, add a contact (people not in FUB are created first, tag "Added by Shawna"), or bigger work /
