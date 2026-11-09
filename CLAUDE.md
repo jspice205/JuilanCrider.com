@@ -83,7 +83,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Voice rules (Julián): human + Chris Voss, OK to say no / "this isn't for everyone"; "here's what I can do for you",
   "when we work together", "I'll confirm that for you", "I was thinking of you", "the next steps are".
   Email alerts: `checkClientEmails` (5-min tick) pushes "X emailed you" via ntfy (NTFY_TOPIC) for FUB emails with
-  status Received, plus one nudge after EMAIL_NUDGE_MIN (60) with no Sent reply; 7am-10pm. FUB hides email bodies,
+  status Received, plus one nudge after EMAIL_NUDGE_MIN (60) with no Sent reply; 7am-10pm. notifyJulian also texts his
+  personal phone (ALERT_TEXT_TO, else TEST_TEXT_TO) from the business number, and tells him when Shawna answered for him. FUB hides email bodies,
   so answering emails would need a script inside the bcolv Google account.
 - Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
   for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
