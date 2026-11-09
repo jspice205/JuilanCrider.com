@@ -78,6 +78,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (default Shawna; future users name their own), ASSISTANT_MODE draft (default: FUB note "Shawna draft" + task) / auto
   (sends 8am-9pm, max 3/person/day, only Text OK, discloses "Julián's AI assistant" on first text; escalates offers,
   contracts, commission, legal, complaints, Has Agent) / off. Needs GROQ_API_KEY; `testAssistant` prints a sample.
+- Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
+  for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
+  (?vapi=VAPI_KEY; `setupVoice` prints the URL) → FUB person by phone (or new, source "Phone call", tag Phone Lead) +
+  note (summary, transcript, recording) + call-back task. No texts to callers (a call isn't text consent). Greeting
+  must say the call may be recorded (Nevada all-party consent, NRS 200.620). His own calls: iPhone native recording
+  (both sides hear a notice; also ask verbally) → paste summary to Claude to log; FUB Calling add-on (~$39/mo, admin) later.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`
