@@ -76,7 +76,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - AI assistant "Shawna" (`assistantReply` in Code.gs, called from bbWebhook): Groq (OpenAI-compatible API, model in
   GROQ_MODEL; on 404 groqPickModel lists his account's models and saves the best, since llama-3.3-70b-versatile was retired Nov 2026) drafts replies to inbound texts from FUB contacts. ASSISTANT_NAME
   (default Shawna; future users name their own), ASSISTANT_MODE draft (default: FUB note "Shawna draft" + task) / auto
-  (sends 8am-9pm, max 3/person/day, only Text OK, discloses "Julián's AI assistant" on first text; escalates offers,
+  (sends 8am-9pm, max 3/person/day, only Text OK; first text = assistantIntro(): "Hi, it's Shawna, Julián's AI
+  assistant. Julián's away… text JULIAN to reach him" (ASSISTANT_INTRO overrides); a client texting JULIAN → Julián alerted +
+  task, Shawna stays out; every inbound client text alerts his personal phone (no "Shawna:" prefix); escalates offers,
   contracts, commission, legal, complaints, Has Agent) / backup (Julián's choice Nov 9: reply held in AI_PENDING,
   sent by processAssistantQueue (1-min trigger) only if he hasn't texted that person within ASSISTANT_DELAY_MIN,
   default 2; his outgoing texts (BlueBubbles isFromMe) cancel it) / off. Needs GROQ_API_KEY; `testAssistant`.
@@ -88,7 +90,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   so answering emails would need a script inside the bcolv Google account.
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
   number are commands: text a contact (always "Reply YES" first, BOSS_PENDING, 30 min), note, task, who emailed,
-  today's calendar, or bigger work → "Requests for Claude" sheet tab + FUB note subject "Claude request" on contact
+  today's calendar, add a contact (people not in FUB are created first, tag "Added by Shawna"), or bigger work /
+  anything she can't do → "Requests for Claude" sheet tab + FUB note subject "Claude request" on contact
   2221 (REQUESTS_PERSON_ID; Julián's test contact, phone = his personal phone). An hourly scheduled task (9am-8pm PT)
   wakes this Claude session: GET notes?personId=2221, do each "Claude request", PUT the note subject to
   "Claude request - done", and text him the result with a "Send text" note on 2221. Chat answers otherwise.
