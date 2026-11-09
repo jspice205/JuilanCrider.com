@@ -77,7 +77,14 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   GROQ_MODEL; on 404 groqPickModel lists his account's models and saves the best, since llama-3.3-70b-versatile was retired Nov 2026) drafts replies to inbound texts from FUB contacts. ASSISTANT_NAME
   (default Shawna; future users name their own), ASSISTANT_MODE draft (default: FUB note "Shawna draft" + task) / auto
   (sends 8am-9pm, max 3/person/day, only Text OK, discloses "Julián's AI assistant" on first text; escalates offers,
-  contracts, commission, legal, complaints, Has Agent) / off. Needs GROQ_API_KEY; `testAssistant` prints a sample.
+  contracts, commission, legal, complaints, Has Agent) / backup (Julián's choice Nov 9: reply held in AI_PENDING,
+  sent by processAssistantQueue (1-min trigger) only if he hasn't texted that person within ASSISTANT_DELAY_MIN,
+  default 2; his outgoing texts (BlueBubbles isFromMe) cancel it) / off. Needs GROQ_API_KEY; `testAssistant`.
+  Voice rules (Julián): human + Chris Voss, OK to say no / "this isn't for everyone"; "here's what I can do for you",
+  "when we work together", "I'll confirm that for you", "I was thinking of you", "the next steps are".
+  Email alerts: `checkClientEmails` (5-min tick) pushes "X emailed you" via ntfy (NTFY_TOPIC) for FUB emails with
+  status Received, plus one nudge after EMAIL_NUDGE_MIN (60) with no Sent reply; 7am-10pm. FUB hides email bodies,
+  so answering emails would need a script inside the bcolv Google account.
 - Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
   for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
   (?vapi=VAPI_KEY; `setupVoice` prints the URL) → FUB person by phone (or new, source "Phone call", tag Phone Lead) +

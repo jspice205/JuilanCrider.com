@@ -1446,7 +1446,12 @@ function bbWebhook(e) {
     if (/^https?:\/\//.test(url)) props.setProperty('BB_URL', url);
     return json({status: 'ok'});
   }
-  if (ev.type !== 'new-message' || data.isFromMe || !data.handle || !data.text) return json({status: 'ok'});
+  if (ev.type === 'new-message' && data.isFromMe) {  // Julián (or Shawna) texted: cancel any reply Shawna was holding
+    const to = bbE164((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '');
+    if (to) assistantCancel(to);
+    return json({status: 'ok'});
+  }
+  if (ev.type !== 'new-message' || !data.handle || !data.text) return json({status: 'ok'});
   const from = bbE164(data.handle.address);
   if (!from) return json({status: 'ok'});  // email handles etc.
   const found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
@@ -1507,7 +1512,15 @@ function assistantReply(person, from, text) {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
-  const auto = mode === 'auto' && reply && !out.escalate && !sensitive && hour >= 8 && hour < 21 && n < 3 && tags.indexOf('Text OK') >= 0;
+  const ok = reply && !out.escalate && !sensitive && n < 3 && tags.indexOf('Text OK') >= 0;
+  if (mode === 'backup' && ok && hour >= 8 && hour < 21) {  // hold it; send only if Julián hasn't replied in time
+    const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
+    const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
+    q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + delay * 6e4};
+    props.setProperty('AI_PENDING', JSON.stringify(q));
+    return true;
+  }
+  const auto = mode === 'auto' && ok && hour >= 8 && hour < 21;
   if (!auto) {
     fubFetch('notes', {personId: person.id, subject: name + ' draft', body: (reply ? 'Suggested reply:\n' + reply : 'No reply drafted.') +
       (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});
@@ -1523,6 +1536,8 @@ function assistantReply(person, from, text) {
 function assistantPrompt(name) {
   return `You are ${name}, the AI assistant for Julián J. Crider, a Realtor® with Boeckle & Co. in Las Vegas and Henderson, Nevada (NV S.0177760, phone 702-498-2571).
 You answer text messages from his contacts. Write like Julián: short (1-3 sentences), warm, plain, no corporate words, at most one emoji (👋🏾 or 🏡). Use Chris Voss style: a label ("Sounds like…", "It seems…"), a no-oriented question ("Would it be a bad idea if…?") or a calibrated what/how question. Ask at most one question.
+Sound human and trustworthy, like someone who will tell them the truth: it's fine to say no or "this one isn't for everyone" when a home or idea doesn't fit them.
+Word choices (always): instead of "sorry, I can't" say "here's what I can do for you"; instead of "if you decide to" say "when we work together"; instead of "I'm not sure" say "I'll confirm that for you"; never say "sorry to bother you", say "I was thinking of you" or "I thought of you"; instead of "what happens next" say "the next steps are". Don't apologize unless something actually went wrong.
 Goals: understand what they need, and when they're ready, offer a time to talk (juliancrider.com/?book) or a showing (juliancrider.com/?showing). Home value questions: juliancrider.com/?value.
 Rules: never invent facts, prices, availability, rates, or promises. Never give legal, tax or lending advice; suggest talking with Julián or their CPA/lender. Fair Housing: never comment on who lives in an area, schools' quality, safety/crime, religion, race, family status, disability or any protected class; point to public sources instead. If they mention an offer, contract, negotiation, commission, a complaint, anything legal or upset, or anything you're unsure about, set escalate true and write a short holding reply ("Got it, I'll have Julián reach out today.").
 Return JSON only: {"reply": "...", "escalate": true|false, "reason": "why Julián is needed (if escalate)", "next": "the next step for Julián, short"}`;
@@ -1553,6 +1568,81 @@ function groqPickModel(key) {
   for (const re of prefs) { const hit = ids.find(id => re.test(id)); if (hit) return hit; }
   if (!ids.length) throw new Error('No Groq chat models available on this account');
   return ids[0];
+}
+
+function assistantCancel(phone) {
+  const props = PropertiesService.getScriptProperties(), q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
+  if (q[phone]) { delete q[phone]; props.setProperty('AI_PENDING', JSON.stringify(q)); }
+}
+
+/** Every minute: sends the replies Shawna was holding (backup mode) once Julián hasn't answered within the delay. */
+function processAssistantQueue() {
+  const props = PropertiesService.getScriptProperties(), raw = props.getProperty('AI_PENDING');
+  if (!raw || raw === '{}') return;
+  const q = JSON.parse(raw), name = assistantName(), today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+  Object.keys(q).forEach(phone => {
+    const it = q[phone]; if (it.due > Date.now()) return;
+    delete q[phone]; props.setProperty('AI_PENDING', JSON.stringify(q));  // remove first: never double-send
+    try {
+      const intro = props.getProperty('AI_INTRO_' + it.personId) ? '' : "Hi, it's " + name + ", Julián's AI assistant. ";
+      bbSendParts(phone, intro + it.reply);
+      const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
+      props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
+      fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + ', you hadn\'t replied yet)' + (it.next ? '\nNext step: ' + it.next : '')});
+    } catch (err) {
+      fubFetch('notes', {personId: it.personId, subject: name + ' draft', body: 'Could not send (' + err.message + '). Suggested reply:\n' + it.reply});
+      createCallTask(it.personId, 'They texted and ' + name + ' couldn\'t reply. Answer today.', 'Text');
+    }
+  });
+}
+
+// ============================================================
+// EMAIL ALERTS: Follow Up Boss logs emails from contacts (status "Received"; it can't show us the text). Every 5
+// minutes we look at contacts with fresh activity; a new email from one of them sends Julián a phone push
+// notification (free ntfy app, topic in Script Property NTFY_TOPIC) and, if he still hasn't emailed back after
+// EMAIL_NUDGE_MIN (default 60) minutes, one reminder. Push only between 7am and 10pm PT; later ones wait for morning.
+// ============================================================
+function notifyJulian(title, msg, url) {
+  const topic = PropertiesService.getScriptProperties().getProperty('NTFY_TOPIC');
+  if (!topic) return false;
+  UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, muteHttpExceptions: true,
+    headers: Object.assign({Title: title.replace(/[^\x20-\x7E]/g, ''), Priority: 'high', Tags: 'email'}, url ? {Click: url} : {})});
+  return true;
+}
+
+function checkClientEmails() {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('NTFY_TOPIC')) return;
+  const me = Number(props.getProperty('FUB_ME') || 0) || (() => { const id = fubFetch('me', null, 'get').id; props.setProperty('FUB_ME', id); return id; })();
+  const since = Date.now() - 12 * 6e4, hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
+  const watch = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}');  // emailId -> {p, name, at, nudged}
+  const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,lastActivity,assignedUserId', null, 'get').people || [])
+    .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me));
+  people.forEach(p => {
+    const em = (fubFetch('emails?personId=' + p.id + '&limit=3&fields=id,status,date', null, 'get').emails || []);
+    const last = em[0];
+    if (last && last.status === 'Received' && !watch[last.id] && new Date(last.date).getTime() > Date.now() - 6 * 36e5)
+      watch[last.id] = {p: p.id, name: p.name, at: new Date(last.date).getTime(), told: 0, nudged: 0};
+  });
+  const nudgeMin = Number(props.getProperty('EMAIL_NUDGE_MIN') || 60);
+  Object.keys(watch).forEach(id => {
+    const w = watch[id], link = 'https://app.followupboss.com/2/people/view/' + w.p;
+    if (Date.now() - w.at > 2 * 864e5) { delete watch[id]; return; }
+    if (hour < 7 || hour >= 22) return;
+    if (!w.told) { notifyJulian(w.name + ' emailed you', 'New email from ' + w.name + '. Tap to open them in Follow Up Boss.', link); w.told = 1; return; }
+    if (!w.nudged && Date.now() - w.at > nudgeMin * 6e4) {
+      const replied = (fubFetch('emails?personId=' + w.p + '&limit=1&fields=id,status,date', null, 'get').emails || [])
+        .some(e => e.status === 'Sent' && new Date(e.date).getTime() > w.at);
+      if (!replied) notifyJulian('Still waiting: ' + w.name, w.name + ' emailed you ' + Math.round((Date.now() - w.at) / 6e4) + ' min ago and hasn\'t heard back yet.', link);
+      w.nudged = 1;
+    }
+  });
+  props.setProperty('EMAIL_WATCH', JSON.stringify(watch));
+}
+
+/** Sends a test push to Julián's phone (after adding NTFY_TOPIC and subscribing to it in the ntfy app). */
+function testNotify() {
+  console.log(notifyJulian('Shawna is connected', 'You will get a ping like this when a client emails you.') ? 'Sent. Check your phone.' : 'Add NTFY_TOPIC first.');
 }
 
 /** Run once after adding GROQ_API_KEY: asks Shawna a sample question and prints her answer (sends nothing). */
@@ -1630,6 +1720,7 @@ function ensureTextQueueTrigger() {
   const has = name => ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === name);
   if (!has('processTextQueue')) ScriptApp.newTrigger('processTextQueue').timeBased().everyMinutes(15).create();
   if (!has('remindUpcoming')) ScriptApp.newTrigger('remindUpcoming').timeBased().everyMinutes(5).create();
+  if (!has('processAssistantQueue')) ScriptApp.newTrigger('processAssistantQueue').timeBased().everyMinutes(1).create();
 }
 
 // ============================================================
@@ -1639,6 +1730,7 @@ function ensureTextQueueTrigger() {
 // ============================================================
 function remindUpcoming() {
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
+  try { checkClientEmails(); } catch (e) { console.log('Email alerts: ' + e.message); }
   const now = Date.now(), props = PropertiesService.getScriptProperties();
   const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 9 * 6e4), new Date(now + 21 * 6e4));
   events.forEach(ev => {
