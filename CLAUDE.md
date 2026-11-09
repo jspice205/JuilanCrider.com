@@ -69,7 +69,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (processFubOutbox, from remindUpcoming; 9am-9pm PT (TCPA: never after 9pm) only, notes up to 36h old), then logged "Text sent"/"Text NOT sent". Use this to text clients for Julián.
   Email outbox: note subject "Send email" by user 2, body "template: <id>" (+ optional "text: <follow-up text>") →
   processEmailOutbox emails that FUB template from his Gmail (MailApp, adds EMAIL_FOOTER), logs "Email sent", then queues
-  the text. Use it for one-off emails (FUB action plans skip people who already replied).
+  the text. OFF since Nov 8 (needs Script Property EMAIL_OUTBOX=on): it sent from his personal Gmail.
+  RULES (Julián, Nov 8): client emails always go from julianc@bcolv.com, never julian.crider@gmail.com. Never tell
+  Julián something was sent until it's verified (FUB GET emails?personId=… shows status Sent, or a "Text sent" note);
+  an action plan reading "Completed" does NOT mean the email went out.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
   MCP server). Tools: hot_list, search_people, get_person, update_person, add_note, log_call,
   create_task, list/start action plans, pipelines and deals, email templates, and `fub_api`
