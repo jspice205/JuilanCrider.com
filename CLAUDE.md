@@ -74,7 +74,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Julián something was sent until it's verified (FUB GET emails?personId=… shows status Sent, or a "Text sent" note);
   an action plan reading "Completed" does NOT mean the email went out.
 - AI assistant "Shawna" (`assistantReply` in Code.gs, called from bbWebhook): Groq (OpenAI-compatible API, model in
-  GROQ_MODEL, default llama-3.3-70b-versatile) drafts replies to inbound texts from FUB contacts. ASSISTANT_NAME
+  GROQ_MODEL; on 404 groqPickModel lists his account's models and saves the best, since llama-3.3-70b-versatile was retired Nov 2026) drafts replies to inbound texts from FUB contacts. ASSISTANT_NAME
   (default Shawna; future users name their own), ASSISTANT_MODE draft (default: FUB note "Shawna draft" + task) / auto
   (sends 8am-9pm, max 3/person/day, only Text OK, discloses "Julián's AI assistant" on first text; escalates offers,
   contracts, commission, legal, complaints, Has Agent) / off. Needs GROQ_API_KEY; `testAssistant` prints a sample.
