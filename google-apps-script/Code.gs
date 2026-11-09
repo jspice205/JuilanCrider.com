@@ -1637,7 +1637,11 @@ function processEmailOutbox() {
 }
 
 function processFubOutbox() {
-  try { processEmailOutbox(); } catch (e) { console.log('Email outbox: ' + e.message); }
+  // Off unless Script Property EMAIL_OUTBOX = on: client emails must come from julianc@bcolv.com, not the script
+  // owner's personal Gmail (Julián, Nov 8). Turn on only once it sends from bcolv.
+  if (PropertiesService.getScriptProperties().getProperty('EMAIL_OUTBOX') === 'on') {
+    try { processEmailOutbox(); } catch (e) { console.log('Email outbox: ' + e.message); }
+  }
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   if (hour < 9 || hour >= 21) return;  // quiet hours: texts wait until 9am
   const props = PropertiesService.getScriptProperties();
