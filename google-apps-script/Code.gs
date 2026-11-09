@@ -1529,51 +1529,30 @@ Return JSON only: {"reply": "...", "escalate": true|false, "reason": "why Juliá
 }
 
 function groqChat(key, model, messages) {
-  const res = UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {method: 'post', contentType: 'application/json',
+  const send = m => UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {method: 'post', contentType: 'application/json',
     muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
-    payload: JSON.stringify({model: model, messages: messages, temperature: 0.4, max_tokens: 300, response_format: {type: 'json_object'}})});
+    payload: JSON.stringify({model: m, messages: messages, temperature: 0.4, max_tokens: 400, response_format: {type: 'json_object'}})});
+  let res = send(model);
+  if (res.getResponseCode() === 404 || /model_not_found|decommissioned/.test(res.getContentText())) {
+    model = groqPickModel(key);  // Groq retires models now and then: pick the best one this account has and remember it
+    PropertiesService.getScriptProperties().setProperty('GROQ_MODEL', model);
+    res = send(model);
+  }
   if (res.getResponseCode() >= 300) throw new Error('Groq ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return JSON.parse(res.getContentText()).choices[0].message.content;
 }
 
-// ============================================================
-// SHAWNA ON THE PHONE (Vapi). Missed calls forward to a Vapi number where Shawna answers (Groq model). When a call
-// ends, Vapi posts an "end-of-call-report" to this web app (?vapi=VAPI_KEY). We find the caller in Follow Up Boss by
-// phone (or create them, source "Phone call"), add a note with the summary, transcript and recording link, and create
-// one "call them back" task (they reached out, so this fits the inbound-only rule). No texts: a call isn't text consent.
-// Setup: run setupVoice once; it prints the Server URL to paste into the Vapi assistant.
-// ============================================================
-function vapiWebhook(e) {
-  const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('VAPI_KEY') || e.parameter.vapi !== props.getProperty('VAPI_KEY')) return json({status: 'ignored'});
-  const m = (JSON.parse((e.postData && e.postData.contents) || '{}').message) || {};
-  if (m.type !== 'end-of-call-report') return json({status: 'ok'});
-  const call = m.call || {}, num = bbE164(((call.customer || {}).number) || '');
-  const summary = (m.analysis && m.analysis.summary) || m.summary || '';
-  const transcript = String(m.transcript || (m.artifact && m.artifact.transcript) || '').slice(0, 6000);
-  const rec = m.recordingUrl || (m.artifact && m.artifact.recordingUrl) || '';
-  const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
-  let person = null;
-  if (num) person = (fubFetch('people?limit=1&fields=id,firstName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
-  if (!person) {
-    const r = fubFetch('events', {source: 'Phone call', system: 'juliancrider.com', type: 'Inquiry',
-      message: 'Called and talked with ' + assistantName() + ': ' + summary, person: {phones: num ? [{value: num}] : [], tags: ['Phone Lead']}});
-    person = (r.personId && {id: r.personId}) || r.person || (num && (fubFetch('people?limit=1&fields=id,firstName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0]);
-  }
-  if (!person) return json({status: 'no person'});
-  fubFetch('notes', {personId: person.id, subject: 'Call with ' + assistantName() + (mins ? ' (' + mins + ')' : ''),
-    body: (summary || 'No summary.') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
-  createCallTask(person.id, assistantName() + ' took their call: ' + summary.slice(0, 140) + ' Call them back.', 'Call');
-  return json({status: 'ok'});
-}
-
-/** Run once: makes the secret key and prints the Server URL for the Vapi assistant. */
-function setupVoice() {
-  const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('VAPI_KEY')) props.setProperty('VAPI_KEY', Utilities.getUuid().replace(/-/g, ''));
-  console.log('In Vapi > Assistants > ' + assistantName() + ' > Advanced > Server URL, paste:');
-  console.log(TEXTING.webApp + '?vapi=' + props.getProperty('VAPI_KEY'));
-  console.log('Under Server Messages, keep only "end-of-call-report".');
+/** Lists the chat models on this Groq account and returns the best fit (big general models first). */
+function groqPickModel(key) {
+  const res = UrlFetchApp.fetch('https://api.groq.com/openai/v1/models', {muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key}});
+  if (res.getResponseCode() >= 300) throw new Error('Groq models ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  const ids = (JSON.parse(res.getContentText()).data || []).filter(m => m.active !== false).map(m => m.id)
+    .filter(id => !/whisper|tts|guard|embed|playai|orpheus|compound|prompt/i.test(id));
+  console.log('Groq models on this account: ' + ids.join(', '));
+  const prefs = [/gpt-oss-120b/, /llama.*70b/, /llama-4.*maverick/, /kimi/, /qwen.*3.*32b/, /llama-4.*scout/, /gpt-oss/, /llama/];
+  for (const re of prefs) { const hit = ids.find(id => re.test(id)); if (hit) return hit; }
+  if (!ids.length) throw new Error('No Groq chat models available on this account');
+  return ids[0];
 }
 
 /** Run once after adding GROQ_API_KEY: asks Shawna a sample question and prints her answer (sends nothing). */
@@ -1582,6 +1561,7 @@ function testAssistant() {
   const out = groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
     {role: 'system', content: assistantPrompt(assistantName())},
     {role: 'user', content: 'Contact: Test Person\nStage: Lead\nTags: Text OK, open house\nRecent history: Came to an open house Sunday.\n\nThey just texted: "Hi! Is the house on Sunday still available? We might want to see a couple more this weekend."\n\nReply as JSON only.'}]);
+  console.log('Model: ' + (props.getProperty('GROQ_MODEL') || ASSISTANT.model));
   console.log(assistantName() + ' says: ' + out);
 }
 
