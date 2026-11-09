@@ -1454,6 +1454,9 @@ function bbWebhook(e) {
   if (ev.type !== 'new-message' || !data.handle || !data.text) return json({status: 'ok'});
   const from = bbE164(data.handle.address);
   if (!from) return json({status: 'ok'});  // email handles etc.
+  // Julián texting his own business number from his personal phone = talking to Shawna (his assistant).
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  if (boss && from === boss) { try { bossCommand(String(data.text).slice(0, 1500)); } catch (err) { bbSend(boss, assistantName() + ': something went wrong (' + err.message + ').'); } return json({status: 'ok'}); }
   const found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
   if (!found.length) return json({status: 'ok'});  // not a Follow Up Boss contact: personal text, leave it alone
   const person = found[0], text = String(data.text).slice(0, 1000);
@@ -1651,6 +1654,74 @@ function checkClientEmails() {
 /** Sends a test push to Julián's phone (after adding NTFY_TOPIC and subscribing to it in the ntfy app). */
 function testNotify() {
   console.log(notifyJulian('I am connected', 'You will get a message like this when a client emails you or I answer a text for you.') ? 'Sent. Check your phone.' : 'Add ALERT_TEXT_TO or NTFY_TOPIC first.');
+}
+
+// ============================================================
+// TALK TO SHAWNA: Julián texts his business number from his personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) and Shawna
+// acts as his assistant. She understands plain English (Groq) and can: text a contact (always asks "Reply YES" first),
+// add a note, create a task, list who emailed him, read today's calendar, or save a bigger request for Claude
+// ("Requests for Claude" sheet tab; Julián opens the Claude app to have it built). Anything else: a short answer.
+// ============================================================
+const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['When', 'Request', 'Status']};
+
+function bossCommand(text) {
+  const props = PropertiesService.getScriptProperties(), name = assistantName();
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
+  const say = msg => bbSend(boss, msg);
+  // A pending "send this text?" waiting for YES / NO
+  const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
+  if (pend && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
+    props.deleteProperty('BOSS_PENDING');
+    if (Date.now() - pend.at > 30 * 6e4) return say(name + ': that one expired. Ask me again.');
+    bbSendParts(pend.phone, pend.message);
+    fubFetch('notes', {personId: pend.personId, subject: 'Text sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+    return say(name + ': sent to ' + pend.who + '. ✅');
+  }
+  if (pend && /^\s*(no|n|cancel|stop|don.?t)\b/i.test(text)) { props.deleteProperty('BOSS_PENDING'); return say(name + ': canceled. Nothing was sent.'); }
+
+  const key = props.getProperty('GROQ_API_KEY');
+  if (!key) return say(name + ': add GROQ_API_KEY first.');
+  const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
+{"action":"text|note|task|emails|calendar|claude|chat", "who":"contact's name if any", "message":"the text to send / note / task", "reply":"your short answer to Julián (for chat)"}
+- text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
+- note: save a note on a contact. task: remind him to do something about a contact.
+- emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
+- claude: anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
+- chat: anything else; answer in 1-3 short sentences. Never invent facts about clients or listings.`;
+  let a; try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
+  catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
+  const findOne = who => {
+    const ppl = (fubFetch('people?limit=5&fields=id,name,firstName,tags,phones&q=' + encodeURIComponent(who || ''), null, 'get').people || []);
+    return ppl.length === 1 ? ppl[0] : (ppl.find(p => (p.name || '').toLowerCase() === String(who).toLowerCase()) || (ppl.length ? {many: ppl} : null));
+  };
+  if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
+    const p = findOne(a.who);
+    if (!p) return say(name + ': I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
+    if (p.many) return say(name + ': which one? ' + p.many.map(x => x.name).join(', '));
+    if (a.action === 'note') { fubFetch('notes', {personId: p.id, subject: 'Note from Julián', body: a.message}); return say(name + ': note saved on ' + p.name + '.'); }
+    if (a.action === 'task') { createCallTask(p.id, a.message, 'Follow Up'); return say(name + ': task added for ' + p.name + ' (due today).'); }
+    const tags = p.tags || [];
+    if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
+    const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+    if (!phone) return say(name + ': ' + p.name + ' has no mobile number in Follow Up Boss.');
+    props.setProperty('BOSS_PENDING', JSON.stringify({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now()}));
+    return say(name + ': send this to ' + p.name + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\nReply YES to send or NO to cancel.');
+  }
+  if (a.action === 'emails') {
+    const w = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}'), list = Object.keys(w).map(k => w[k]).sort((x, y) => y.at - x.at).slice(0, 6);
+    return say(name + ': ' + (list.length ? 'recent emails from clients:\n' + list.map(x => '• ' + x.name + ' (' + Utilities.formatDate(new Date(x.at), 'America/Los_Angeles', 'EEE h:mm a') + ')').join('\n') : 'no new client emails in the last 2 days.'));
+  }
+  if (a.action === 'calendar') {
+    const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
+    const evs = CalendarApp.getDefaultCalendar().getEvents(now, end);
+    return say(name + ': ' + (evs.length ? 'the rest of today:\n' + evs.map(e => '• ' + Utilities.formatDate(e.getStartTime(), 'America/Los_Angeles', 'h:mm a') + ' ' + e.getTitle()).join('\n') : 'nothing else on your calendar today.'));
+  }
+  if (a.action === 'claude') {
+    const sh = getSS().getSheetByName(REQUESTS_TAB.name) || ensureTab(getSS(), REQUESTS_TAB);
+    sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm a'), cell(a.message || text), 'new']);
+    return say(name + ': saved for Claude ✅ "' + (a.message || text).slice(0, 120) + '". Open the Claude app and say "check my requests" to have it done.');
+  }
+  return say(name + ': ' + (a.reply || 'Got it.'));
 }
 
 /** Run once after adding GROQ_API_KEY: asks Shawna a sample question and prints her answer (sends nothing). */

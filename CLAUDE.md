@@ -86,6 +86,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   status Received, plus one nudge after EMAIL_NUDGE_MIN (60) with no Sent reply; 7am-10pm. notifyJulian also texts his
   personal phone (ALERT_TEXT_TO, else TEST_TEXT_TO) from the business number, and tells him when Shawna answered for him. FUB hides email bodies,
   so answering emails would need a script inside the bcolv Google account.
+- Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
+  number are commands: text a contact (always "Reply YES" first, BOSS_PENDING, 30 min), note, task, who emailed,
+  today's calendar, or bigger work → "Requests for Claude" sheet tab (he says "check my requests" in the Claude app;
+  read the tab via Drive, do the work, mark Status done). Chat answers otherwise.
 - Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
   for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
   (?vapi=VAPI_KEY; `setupVoice` prints the URL) → FUB person by phone (or new, source "Phone call", tag Phone Lead) +
