@@ -1507,6 +1507,28 @@ const ASSISTANT = {
   model: 'llama-3.3-70b-versatile',
   escalate: /\b(offer|counter|contract|escrow|earnest|commission|lawyer|attorney|sue|complain|discriminat|inspection report|appraisal)\b/i,
 };
+// What Shawna knows about Julián's business. Julián adds more by typing one fact per row in the "Shawna Knowledge" tab.
+const SHAWNA_FACTS = `About Julián: Julián J. Crider, Realtor® (NV license S.0177760), The DeBenedetto Team at Boeckle & Co. (broker Landon Boeckle, B.1001882), 4775 W Teco Ave #220, Las Vegas, NV 89118, office 725-465-7646. Cell/text 702-498-2571. Email julianc@bcolv.com. Background: started as a listing agent at one of the largest brokerages in the country, then moved into development (land, construction, getting housing built in the valley), so he looks at a home's value five years out, build quality, and whether it's the right move for the money. Promise: straight talk even when it costs him the deal, does what he says, answers the phone.
+Focus: luxury homes and relocation in Las Vegas and Henderson, especially out-of-state buyers (California, the West Coast, Chicago, Seattle and beyond). Areas: Summerlin, Henderson, MacDonald Highlands, The Ridges, Red Rock Country Club, The Summit, Southern Highlands, Lake Las Vegas, Desert Shores, Skye Canyon and the Northwest, new-construction communities. Golf communities are a specialty (he plays).
+How he works: free 30-minute game-plan call (Zoom/Google Meet for out-of-town clients, or phone); previews homes before clients tour; live FaceTime showings for out-of-state buyers; remote offers and closings; comp reports like an appraiser; seller net sheets; buyer agreements signed online. Buyers: get pre-approved with a local lender (he can recommend one), then a home search, showings, offer, escrow, close.
+Links: website juliancrider.com · book a call juliancrider.com/?book · request a showing juliancrider.com/?showing · home value juliancrider.com/?value · relocation guide juliancrider.com/?relocate · open-house sign-in juliancrider.com/?signin · Instagram @juliancriderestates (instagram.com/juliancriderestates).
+Never quote list prices, rates or market stats from memory; say "I'll confirm that for you" and pass it to Julián.`;
+
+function assistantKnowledge() {
+  let extra = '';
+  try {
+    const ss = getSS();
+    const sh = ss.getSheetByName('Shawna Knowledge') || ensureTab(ss, {name: 'Shawna Knowledge', color: '#6B4FBB', headers: ['One fact per row (Shawna reads these)']});
+    if (sh.getLastRow() > 1) extra = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(r => String(r[0]).trim()).filter(Boolean).join('\n');
+  } catch (e) {}
+  return SHAWNA_FACTS + (extra ? '\nMore facts from Julián:\n' + extra : '');
+}
+
+/** Removes the dashes that make texts read like AI (keeps phone numbers and hyphenated words). */
+function humanize(t) {
+  return String(t || '').replace(/\s*[—–]\s*/g, ', ').replace(/\s+-\s+/g, ', ').replace(/,\s*,/g, ',').trim();
+}
+
 /** First text Shawna sends anyone (ASSISTANT_INTRO overrides it; {name} = her name). */
 function assistantIntro() {
   const t = PropertiesService.getScriptProperties().getProperty('ASSISTANT_INTRO') ||
@@ -1529,7 +1551,7 @@ function assistantReply(person, from, text) {
     {role: 'user', content: 'Contact: ' + [p.firstName, p.lastName].join(' ') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
       '\nRecent history (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
-  const reply = String(out.reply || '').trim();
+  const reply = humanize(out.reply);
   const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
@@ -1559,7 +1581,9 @@ function assistantReply(person, from, text) {
 
 function assistantPrompt(name) {
   return `You are ${name}, the AI assistant for Julián J. Crider, a Realtor® with Boeckle & Co. in Las Vegas and Henderson, Nevada (NV S.0177760, phone 702-498-2571).
-You answer text messages from his contacts. Write like Julián: short (1-3 sentences), warm, plain, no corporate words, at most one emoji (👋🏾 or 🏡). Use Chris Voss style: a label ("Sounds like…", "It seems…"), a no-oriented question ("Would it be a bad idea if…?") or a calibrated what/how question. Ask at most one question.
+You are also a top luxury real estate advisor in your own right: confident, polished, warm, and genuinely helpful.
+${assistantKnowledge()}
+You answer text messages from his contacts. Never use dashes of any kind (no "—", "–" or " - "); use commas or periods. Write like Julián: short (1-3 sentences), warm, plain, no corporate words, at most one emoji (👋🏾 or 🏡). Use Chris Voss style: a label ("Sounds like…", "It seems…"), a no-oriented question ("Would it be a bad idea if…?") or a calibrated what/how question. Ask at most one question.
 Sound human and trustworthy, like someone who will tell them the truth: it's fine to say no or "this one isn't for everyone" when a home or idea doesn't fit them.
 Word choices (always): instead of "sorry, I can't" say "here's what I can do for you"; instead of "if you decide to" say "when we work together"; instead of "I'm not sure" say "I'll confirm that for you"; never say "sorry to bother you", say "I was thinking of you" or "I thought of you"; instead of "what happens next" say "the next steps are". Don't apologize unless something actually went wrong.
 Goals: understand what they need, and when they're ready, offer a time to talk (juliancrider.com/?book) or a showing (juliancrider.com/?showing). Home value questions: juliancrider.com/?value.
@@ -1693,7 +1717,7 @@ const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['
 function bossCommand(text) {
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
-  const say = msg => bbSend(boss, String(msg).replace(new RegExp('^' + name + ':\\s*'), ''));
+  const say = msg => bbSend(boss, humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')));
   // A pending "send this text?" waiting for YES / NO
   const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   if (pend && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
@@ -1709,11 +1733,17 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|note|task|contact|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "message":"the text to send / note / task", "reply":"your short answer to Julián (for chat)"}
+{"action":"text|note|task|contact|schedule|lookup|hot|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "message":"the text to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "reply":"your short answer to Julián (for chat)"}
+Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
+${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - note: save a note on a contact. task: remind him to do something about a contact.
 - emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
 - contact: add a new person to Follow Up Boss (name, phone, email).
+- schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
+- hot: list his hottest leads right now.
+- Never use dashes in anything you write.
 - claude: anything you can't do with the actions above, and anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
 - chat: anything else; answer in 1-3 short sentences. Never invent facts about clients or listings.`;
   let a; try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
@@ -1752,6 +1782,33 @@ function bossCommand(text) {
     if (!phone) return say(name + ': ' + p.name + ' has no mobile number in Follow Up Boss.');
     props.setProperty('BOSS_PENDING', JSON.stringify({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now()}));
     return say(name + ': send this to ' + p.name + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\nReply YES to send or NO to cancel.');
+  }
+  if (a.action === 'schedule') {
+    const m = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    if (!m) return say('what day and time should I put it on your calendar?');
+    const start = Utilities.parseDate(m[1] + ' ' + m[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm');
+    const end = new Date(start.getTime() + Number(a.minutes || 30) * 6e4);
+    let p = a.who ? findOne(a.who) : null;
+    if (p && p.many) p = null;
+    if (a.who && !p) p = addContact();
+    const title = (a.message || 'Appointment') + (a.who ? ': ' + a.who : '');
+    const phone = a.phone || (p && p.phones && p.phones[0] && p.phones[0].value) || '';
+    CalendarApp.getDefaultCalendar().createEvent(title, start, end, {description: (phone ? 'Phone: ' + phone + '\n' : '') + 'Added by ' + name + ' from Julián\'s text.'});
+    if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
+    return say('on your calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
+  }
+  if (a.action === 'lookup') {
+    const p = findOne(a.who);
+    if (!p) return say('I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
+    if (p.many) return say('which one? ' + p.many.map(x => x.name).join(', '));
+    const full = fubFetch('people/' + p.id + '?fields=id,name,stage,tags,source,phones,emails,lastActivity', null, 'get');
+    const notes = (fubFetch('notes?personId=' + p.id + '&limit=3', null, 'get').notes || []).map(n => '• ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').slice(0, 120)).join('\n');
+    return say(full.name + ' (' + (full.stage || 'Lead') + (full.source ? ', ' + full.source : '') + ')\n' + [((full.phones || [])[0] || {}).value, ((full.emails || [])[0] || {}).value].filter(Boolean).join(' · ') +
+      '\nTags: ' + (full.tags || []).slice(0, 8).join(', ') + (notes ? '\nLatest:\n' + notes : ''));
+  }
+  if (a.action === 'hot') {
+    const ppl = fubFetch('people?limit=8&sort=-lastActivity&tags=' + encodeURIComponent('Tier A') + '&fields=id,name,lastActivity', null, 'get').people || [];
+    return say(ppl.length ? 'your hottest leads:\n' + ppl.map(x => '• ' + x.name).join('\n') : 'no Tier A leads right now.');
   }
   if (a.action === 'emails') {
     const w = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}'), list = Object.keys(w).map(k => w[k]).sort((x, y) => y.at - x.at).slice(0, 6);
