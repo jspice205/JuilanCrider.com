@@ -1458,13 +1458,90 @@ function bbWebhook(e) {
     fubFetch('people/' + person.id, {tags: tags}, 'put');
     return json({status: 'ok'});
   }
+  // Shawna (AI assistant) drafts or sends a reply. Never blocks the webhook if Groq is down.
+  let handled = false;
+  try { handled = assistantReply(person, from, text); } catch (err) { console.log('Assistant: ' + err.message); }
   // One "answer today" task per person per day (inbound-only rule: tasks only when they reach out).
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), key = 'BB_TASK_' + person.id;
   if (props.getProperty(key) !== today) {
-    createCallTask(person.id, 'They texted back: "' + text.slice(0, 120) + '" Answer today.', 'Text');
+    if (!handled) createCallTask(person.id, 'They texted back: "' + text.slice(0, 120) + '" Answer today.', 'Text');
     props.setProperty(key, today);  // also tells the text queue they replied (skip the next scheduled text)
   }
   return json({status: 'ok'});
+}
+
+// ============================================================
+// AI ASSISTANT ("Shawna" by default; ASSISTANT_NAME in Script Properties, so any agent can name their own).
+// When a Follow Up Boss contact texts in, Groq writes a short reply in Julián's voice (Chris Voss style).
+//   ASSISTANT_MODE = off   → nothing (default if no GROQ_API_KEY)
+//                  = draft → (default) reply saved as a FUB note "Shawna draft" + in the "answer today" task;
+//                            Julián sends it himself (or copies it into a "Send text" note).
+//                  = auto  → Shawna texts the reply herself, 8am-9pm PT, max 3 per person per day, first message
+//                            says she's Julián's AI assistant. Anything sensitive is escalated to Julián instead.
+// Script Properties: GROQ_API_KEY (console.groq.com → API Keys), optional GROQ_MODEL, ASSISTANT_NAME, ASSISTANT_MODE.
+// Returns true when the reply was sent automatically (so no task is needed).
+// ============================================================
+const ASSISTANT = {
+  model: 'llama-3.3-70b-versatile',
+  escalate: /\b(offer|counter|contract|escrow|earnest|commission|lawyer|attorney|sue|complain|discriminat|inspection report|appraisal)\b/i,
+};
+function assistantName() { return PropertiesService.getScriptProperties().getProperty('ASSISTANT_NAME') || 'Shawna'; }
+
+function assistantReply(person, from, text) {
+  const props = PropertiesService.getScriptProperties();
+  const key = props.getProperty('GROQ_API_KEY'), mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
+  if (!key || mode === 'off') return false;
+  const name = assistantName();
+  const p = fubFetch('people/' + person.id + '?fields=id,firstName,lastName,tags,stage,price', null, 'get');
+  const tags = p.tags || [];
+  const notes = (fubFetch('notes?personId=' + person.id + '&limit=8', null, 'get').notes || []).reverse()
+    .map(n => (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').slice(0, 400)).join('\n');
+  const r = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+    {role: 'system', content: assistantPrompt(name)},
+    {role: 'user', content: 'Contact: ' + [p.firstName, p.lastName].join(' ') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
+      '\nRecent history (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
+  let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
+  const reply = String(out.reply || '').trim();
+  const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0;
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
+  const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
+  const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
+  const auto = mode === 'auto' && reply && !out.escalate && !sensitive && hour >= 8 && hour < 21 && n < 3 && tags.indexOf('Text OK') >= 0;
+  if (!auto) {
+    fubFetch('notes', {personId: person.id, subject: name + ' draft', body: (reply ? 'Suggested reply:\n' + reply : 'No reply drafted.') +
+      (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});
+    return false;
+  }
+  const intro = props.getProperty('AI_INTRO_' + person.id) ? '' : "Hi, it's " + name + ", Julián's AI assistant. ";
+  bbSendParts(from, intro + reply);
+  props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
+  fubFetch('notes', {personId: person.id, subject: 'Text sent', body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
+  return true;
+}
+
+function assistantPrompt(name) {
+  return `You are ${name}, the AI assistant for Julián J. Crider, a Realtor® with Boeckle & Co. in Las Vegas and Henderson, Nevada (NV S.0177760, phone 702-498-2571).
+You answer text messages from his contacts. Write like Julián: short (1-3 sentences), warm, plain, no corporate words, at most one emoji (👋🏾 or 🏡). Use Chris Voss style: a label ("Sounds like…", "It seems…"), a no-oriented question ("Would it be a bad idea if…?") or a calibrated what/how question. Ask at most one question.
+Goals: understand what they need, and when they're ready, offer a time to talk (juliancrider.com/?book) or a showing (juliancrider.com/?showing). Home value questions: juliancrider.com/?value.
+Rules: never invent facts, prices, availability, rates, or promises. Never give legal, tax or lending advice; suggest talking with Julián or their CPA/lender. Fair Housing: never comment on who lives in an area, schools' quality, safety/crime, religion, race, family status, disability or any protected class; point to public sources instead. If they mention an offer, contract, negotiation, commission, a complaint, anything legal or upset, or anything you're unsure about, set escalate true and write a short holding reply ("Got it, I'll have Julián reach out today.").
+Return JSON only: {"reply": "...", "escalate": true|false, "reason": "why Julián is needed (if escalate)", "next": "the next step for Julián, short"}`;
+}
+
+function groqChat(key, model, messages) {
+  const res = UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {method: 'post', contentType: 'application/json',
+    muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
+    payload: JSON.stringify({model: model, messages: messages, temperature: 0.4, max_tokens: 300, response_format: {type: 'json_object'}})});
+  if (res.getResponseCode() >= 300) throw new Error('Groq ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  return JSON.parse(res.getContentText()).choices[0].message.content;
+}
+
+/** Run once after adding GROQ_API_KEY: asks Shawna a sample question and prints her answer (sends nothing). */
+function testAssistant() {
+  const props = PropertiesService.getScriptProperties();
+  const out = groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+    {role: 'system', content: assistantPrompt(assistantName())},
+    {role: 'user', content: 'Contact: Test Person\nStage: Lead\nTags: Text OK, open house\nRecent history: Came to an open house Sunday.\n\nThey just texted: "Hi! Is the house on Sunday still available? We might want to see a couple more this weekend."\n\nReply as JSON only.'}]);
+  console.log(assistantName() + ' says: ' + out);
 }
 
 /** Run once after adding BB_URL and BB_PASSWORD: checks the Mac and prints the webhook URL for BlueBubbles. */
