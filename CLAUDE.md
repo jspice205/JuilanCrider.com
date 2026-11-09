@@ -88,8 +88,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   so answering emails would need a script inside the bcolv Google account.
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
   number are commands: text a contact (always "Reply YES" first, BOSS_PENDING, 30 min), note, task, who emailed,
-  today's calendar, or bigger work → "Requests for Claude" sheet tab (he says "check my requests" in the Claude app;
-  read the tab via Drive, do the work, mark Status done). Chat answers otherwise.
+  today's calendar, or bigger work → "Requests for Claude" sheet tab + FUB note subject "Claude request" on contact
+  2221 (REQUESTS_PERSON_ID; Julián's test contact, phone = his personal phone). An hourly scheduled task (9am-8pm PT)
+  wakes this Claude session: GET notes?personId=2221, do each "Claude request", PUT the note subject to
+  "Claude request - done", and text him the result with a "Send text" note on 2221. Chat answers otherwise.
 - Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
   for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
   (?vapi=VAPI_KEY; `setupVoice` prints the URL) → FUB person by phone (or new, source "Phone call", tag Phone Lead) +
