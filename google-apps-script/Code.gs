@@ -1589,6 +1589,7 @@ function processAssistantQueue() {
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
       fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + ', you hadn\'t replied yet)' + (it.next ? '\nNext step: ' + it.next : '')});
+      try { notifyJulian('I answered a text for you', '"' + it.reply.slice(0, 160) + '"' + (it.next ? ' Next step: ' + it.next : ''), 'https://app.followupboss.com/2/people/view/' + it.personId); } catch (e) {}
     } catch (err) {
       fubFetch('notes', {personId: it.personId, subject: name + ' draft', body: 'Could not send (' + err.message + '). Suggested reply:\n' + it.reply});
       createCallTask(it.personId, 'They texted and ' + name + ' couldn\'t reply. Answer today.', 'Text');
@@ -1603,16 +1604,23 @@ function processAssistantQueue() {
 // EMAIL_NUDGE_MIN (default 60) minutes, one reminder. Push only between 7am and 10pm PT; later ones wait for morning.
 // ============================================================
 function notifyJulian(title, msg, url) {
-  const topic = PropertiesService.getScriptProperties().getProperty('NTFY_TOPIC');
-  if (!topic) return false;
-  UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, muteHttpExceptions: true,
-    headers: Object.assign({Title: title.replace(/[^\x20-\x7E]/g, ''), Priority: 'high', Tags: 'email'}, url ? {Click: url} : {})});
-  return true;
+  // Two ways to reach Julián: a text from his business number to his personal phone (ALERT_TEXT_TO, falls back to
+  // TEST_TEXT_TO; a different phone, so it actually alerts him) and/or a push through the free ntfy app (NTFY_TOPIC).
+  const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
+  const to = props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO');
+  let sent = false;
+  if (to) { try { bbSend(to, assistantName() + ': ' + title + '. ' + msg + (url ? ' ' + url : '')); sent = true; } catch (e) { console.log('Alert text: ' + e.message); } }
+  if (topic) {
+    UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, muteHttpExceptions: true,
+      headers: Object.assign({Title: title.replace(/[^\x20-\x7E]/g, ''), Priority: 'high', Tags: 'email'}, url ? {Click: url} : {})});
+    sent = true;
+  }
+  return sent;
 }
 
 function checkClientEmails() {
   const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('NTFY_TOPIC')) return;
+  if (!props.getProperty('NTFY_TOPIC') && !props.getProperty('ALERT_TEXT_TO') && !props.getProperty('TEST_TEXT_TO')) return;
   const me = Number(props.getProperty('FUB_ME') || 0) || (() => { const id = fubFetch('me', null, 'get').id; props.setProperty('FUB_ME', id); return id; })();
   const since = Date.now() - 12 * 6e4, hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const watch = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}');  // emailId -> {p, name, at, nudged}
@@ -1642,7 +1650,7 @@ function checkClientEmails() {
 
 /** Sends a test push to Julián's phone (after adding NTFY_TOPIC and subscribing to it in the ntfy app). */
 function testNotify() {
-  console.log(notifyJulian('Shawna is connected', 'You will get a ping like this when a client emails you.') ? 'Sent. Check your phone.' : 'Add NTFY_TOPIC first.');
+  console.log(notifyJulian('I am connected', 'You will get a message like this when a client emails you or I answer a text for you.') ? 'Sent. Check your phone.' : 'Add ALERT_TEXT_TO or NTFY_TOPIC first.');
 }
 
 /** Run once after adding GROQ_API_KEY: asks Shawna a sample question and prints her answer (sends nothing). */
