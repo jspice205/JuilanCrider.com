@@ -81,7 +81,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   task, Shawna stays out; every inbound client text alerts his personal phone (no "Shawna:" prefix); escalates offers,
   contracts, commission, legal, complaints, Has Agent) / backup (Julián's choice Nov 9: reply held in AI_PENDING,
   sent by processAssistantQueue (1-min trigger) only if he hasn't texted that person within ASSISTANT_DELAY_MIN,
-  default 2; his outgoing texts (BlueBubbles isFromMe) cancel it) / off. Needs GROQ_API_KEY; `testAssistant`.
+  default 2; his outgoing texts (BlueBubbles isFromMe) cancel it and mute Shawna for that person for ASSISTANT_MUTE_MIN,
+  default 30 (AI_MUTE_<phone>; her own sends are marked AI_SENDING_<phone> so they don't count)) / off. Needs GROQ_API_KEY; `testAssistant`.
   Voice rules (Julián): human + Chris Voss, OK to say no / "this isn't for everyone"; "here's what I can do for you",
   "when we work together", "I'll confirm that for you", "I was thinking of you", "the next steps are".
   Email alerts: `checkClientEmails` (5-min tick) pushes "X emailed you" via ntfy (NTFY_TOPIC) for FUB emails with
