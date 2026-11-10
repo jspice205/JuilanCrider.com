@@ -79,7 +79,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (default Shawna; future users name their own), ASSISTANT_MODE draft (default: FUB note "Shawna draft" + task) / auto
   (sends 8am-9pm, max 3/person/day, only Text OK; first text = assistantIntro(): "Hi, it's Shawna, Julián's AI
   assistant. Julián's away… text JULIAN to reach him" (ASSISTANT_INTRO overrides); a client texting JULIAN → Julián alerted +
-  task, Shawna stays out; every inbound client text alerts his personal phone (no "Shawna:" prefix); escalates offers,
+  task, Shawna stays out; client-text alerts only when TEXT_ALERTS=on (off by default since Nov 9; "who texted me?" → TEXT_LOG; texts to him carry no
+  FUB links, which open a Zillow Pro sign-in); escalates offers,
   contracts, commission, legal, complaints, Has Agent) / backup (Julián's choice Nov 9: reply held in AI_PENDING,
   sent by processAssistantQueue (1-min trigger) only if he hasn't texted that person within ASSISTANT_DELAY_MIN,
   default 2; his outgoing texts (BlueBubbles isFromMe) cancel it and mute Shawna for that person for ASSISTANT_MUTE_MIN,
