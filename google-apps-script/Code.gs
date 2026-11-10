@@ -148,7 +148,9 @@ function doPost(e) {
   }
 }
 
+const CODE_VERSION = '2026-11-10-files';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
+  if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
@@ -1722,10 +1724,11 @@ function bbSendParts(phone, msg) {
   const files = {'[voice]': OPEN_HOUSE_VOICE, '[welcome voice]': 'Welcome hello', '[contact card]': CONTACT_CARD};
   let first = null;
   String(msg).split(/\s*\|\|\s*/).filter(Boolean).forEach(part => {
-    if (files[part.toLowerCase()]) {
+    const fileTok = part.match(/^\[file:\s*(.+?)\s*\]$/i);  // [file: Drive file name or id], e.g. a CMA PDF
+    if (files[part.toLowerCase()] || fileTok) {
       if (!first) throw new Error('The first bubble has to be text');
-      try { bbSendAudio(phone, first.service, files[part.toLowerCase()]); Utilities.sleep(1500); }
-      catch (err) { console.log(part + ' not sent: ' + err.message); }
+      try { bbSendAudio(phone, first.service, fileTok ? fileTok[1] : files[part.toLowerCase()]); Utilities.sleep(1500); }
+      catch (err) { if (fileTok) throw err; console.log(part + ' not sent: ' + err.message); }
     } else {
       const r = bbSend(phone, part); first = first || r; Utilities.sleep(1500);
     }
@@ -1743,9 +1746,12 @@ function bbSendAudio(phone, service, driveName) {
   let file;
   try { file = props.getProperty(cacheKey) && DriveApp.getFileById(props.getProperty(cacheKey)); if (file && file.isTrashed()) file = null; } catch (e) {}
   if (!file) {
-    const it = DriveApp.searchFiles('title contains "' + driveName.replace(/"/g, '') + '" and trashed = false');
-    if (!it.hasNext()) throw new Error('No Google Drive file named "' + driveName + '"');
-    file = it.next(); props.setProperty(cacheKey, file.getId());
+    if (/^[\w-]{25,}$/.test(driveName)) { try { file = DriveApp.getFileById(driveName); } catch (e) {} }  // a Drive file id
+    if (!file) {
+      const it = DriveApp.searchFiles('title contains "' + driveName.replace(/"/g, '') + '" and trashed = false');
+      if (!it.hasNext()) throw new Error('No Google Drive file named "' + driveName + '"');
+      file = it.next(); props.setProperty(cacheKey, file.getId());
+    }
   }
   const blob = file.getBlob(), name = /\.[a-z0-9]{2,4}$/i.test(file.getName()) ? file.getName()
     : file.getName() + (/vcard|vcf/i.test(blob.getContentType()) ? '.vcf' : '.m4a');
@@ -2485,13 +2491,13 @@ function testBusinessCalendar() {
 }
 
 /** Sends an email FROM julianc@bcolv.com through the small "Shawna Mailer" script in that account. */
-function sendFromBcolv(to, subject, text) {
+function sendFromBcolv(to, subject, text, attachments) {
   const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
   if (!url) return {ok: false, error: 'bcolv mailer not set up'};
   const html = String(text).split(/\n{2,}/).map(par => '<p style="margin:0 0 12px">' + par.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('') +
     '<p style="margin:0">Julián</p>' + EMAIL_FOOTER;
   const res = UrlFetchApp.fetch(url, {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({key: props.getProperty('BCOLV_MAILER_KEY'), to: to, subject: subject, text: text + '\n\nJulián', html: '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + html + '</div>'})});
+    payload: JSON.stringify({key: props.getProperty('BCOLV_MAILER_KEY'), to: to, subject: subject, text: text + '\n\nJulián', html: '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + html + '</div>', attachments: attachments || undefined})});
   try { return JSON.parse(res.getContentText()); } catch (e) { return {ok: false, error: 'mailer answered ' + res.getResponseCode()}; }
 }
 
@@ -2744,6 +2750,49 @@ function processEmailOutbox() {
   });
 }
 
+/** EMAIL OUTBOX (bcolv): a FUB note with subject "Send bcolv email" by Julián's account (user 2, e.g. Claude) is
+ *  emailed to that contact FROM julianc@bcolv.com through the Shawna Mailer. Body: first line "Subject: …", optional
+ *  line "File: <Google Drive file id>" (attached, e.g. a CMA PDF), then the email text. Attachments need Shawna Mailer
+ *  v2; until Julián re-pastes it, the note waits (up to 36h) instead of sending without the file. */
+function processBcolvEmailOutbox() {
+  const props = PropertiesService.getScriptProperties();
+  const done = JSON.parse(props.getProperty('BCOLV_OUTBOX_DONE') || '[]');
+  const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+    .filter(n => /^send bcolv email$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
+      Date.now() - new Date(n.created) < 36 * 36e5);
+  notes.reverse().forEach(n => {
+    const fresh = fubFetch('notes/' + n.id, null, 'get');
+    if (!/^send bcolv email$/i.test(String(fresh.subject || '').trim())) return;
+    const lines = String(fresh.body || '').replace(/\r/g, '').split('\n');
+    let subject = 'Following up', fileId = '';
+    while (lines.length && /^(subject|file):/i.test(lines[0])) {
+      const l = lines.shift();
+      if (/^subject:/i.test(l)) subject = l.replace(/^subject:\s*/i, ''); else fileId = l.replace(/^file:\s*/i, '').trim();
+    }
+    const text = lines.join('\n').trim();
+    let attachments;
+    if (fileId) {
+      const v = bcolvCall({action: 'version'});
+      if (!v || v.version !== 2) { console.log('bcolv email waiting: Shawna Mailer needs the v2 update for attachments'); return; }
+      const f = DriveApp.getFileById(fileId), b = f.getBlob();
+      attachments = [{name: f.getName(), mimeType: b.getContentType(), base64: Utilities.base64Encode(b.getBytes())}];
+    }
+    done.push(n.id); props.setProperty('BCOLV_OUTBOX_DONE', JSON.stringify(done.slice(-200)));  // mark first: never double-send
+    try {
+      const p = fubFetch('people/' + n.personId + '?fields=id,firstName,emails', null, 'get');
+      const to = (p.emails || []).map(e => e.value).filter(validEmail)[0];
+      if (!to) throw new Error('no valid email');
+      const r = sendFromBcolv(to, subject, text, attachments);
+      if (!r || !r.ok) throw new Error((r && r.error) || 'mailer did not answer');
+      if (attachments && r.attachments !== attachments.length) throw new Error('sent, but the attachment did not go');
+      fubFetch('notes/' + n.id, {subject: 'Send bcolv email - sent'}, 'put');
+      fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + subject, body: 'From julianc@bcolv.com to ' + to + (attachments ? ' with ' + attachments[0].name : '') + ':\n\n' + text});
+    } catch (err) {
+      fubFetch('notes', {personId: n.personId, subject: 'Email NOT sent', body: err.message + '\n\n' + text});
+    }
+  });
+}
+
 function processFubOutbox() {
   // Off unless Script Property EMAIL_OUTBOX = on: client emails must come from julianc@bcolv.com, not the script
   // owner's personal Gmail (Julián, Nov 8). Turn on only once it sends from bcolv.
@@ -2751,7 +2800,8 @@ function processFubOutbox() {
     try { processEmailOutbox(); } catch (e) { console.log('Email outbox: ' + e.message); }
   }
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
-  if (hour < 9 || hour >= 21) return;  // quiet hours: texts wait until 9am
+  if (hour < 9 || hour >= 21) return;  // quiet hours: texts and emails wait until 9am
+  try { processBcolvEmailOutbox(); } catch (e) { console.log('bcolv email outbox: ' + e.message); }
   const props = PropertiesService.getScriptProperties();
   const done = JSON.parse(props.getProperty('OUTBOX_DONE') || '[]');
   const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])

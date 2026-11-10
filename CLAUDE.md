@@ -77,6 +77,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Email outbox: note subject "Send email" by user 2, body "template: <id>" (+ optional "text: <follow-up text>") →
   processEmailOutbox emails that FUB template from his Gmail (MailApp, adds EMAIL_FOOTER), logs "Email sent", then queues
   the text. OFF since Nov 8 (needs Script Property EMAIL_OUTBOX=on): it sent from his personal Gmail.
+  Files by text: a bubble "[file: <Drive file id or name>]" sends that Drive file (e.g. a CMA PDF) as an attachment.
+  bcolv email outbox: note subject "Send bcolv email" by user 2, body "Subject: …" / optional "File: <Drive id>" / text →
+  processBcolvEmailOutbox emails FROM julianc@bcolv.com (attachments need Shawna Mailer v2; the note waits until then),
+  logs "Email sent: …" and renames the note "Send bcolv email - sent". Web app GET ?action=version shows CODE_VERSION
+  (check it before relying on new code). CMAs: reports/cma-template.html + render-cma.js; client data stays local.
   RULES (Julián, Nov 8): client emails always go from julianc@bcolv.com, never julian.crider@gmail.com. Never tell
   Julián something was sent until it's verified (FUB GET emails?personId=… shows status Sent, or a "Text sent" note);
   an action plan reading "Completed" does NOT mean the email went out.

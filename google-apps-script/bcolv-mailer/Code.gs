@@ -33,8 +33,11 @@ function doPost(e) {
       .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), end: e.getEndTime().getTime(), description: e.getDescription()}));
     return out({ok: true, events: evs});
   }
+  if (d.action === 'version') return out({ok: true, version: 2});  // v2: attachments
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.to || ''))) return out({ok: false, error: 'bad address'});
+  // Attachments (v2): [{name, mimeType, base64}], e.g. a CMA PDF.
+  const files = (d.attachments || []).slice(0, 5).map(a => Utilities.newBlob(Utilities.base64Decode(a.base64), a.mimeType || 'application/pdf', a.name || 'attachment.pdf'));
   GmailApp.sendEmail(d.to, String(d.subject || '').slice(0, 200), String(d.text || ''),
-    {htmlBody: d.html || undefined, name: d.name || 'Julián Crider'});
-  return out({ok: true, from: Session.getEffectiveUser().getEmail()});
+    {htmlBody: d.html || undefined, name: d.name || 'Julián Crider', attachments: files.length ? files : undefined});
+  return out({ok: true, from: Session.getEffectiveUser().getEmail(), attachments: files.length});
 }
