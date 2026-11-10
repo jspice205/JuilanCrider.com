@@ -1762,8 +1762,33 @@ ${assistantKnowledge()}
     const r = fubFetch('events', {source: 'Julián (via ' + name + ')', system: 'juliancrider.com', type: 'General Inquiry',
       message: 'Added by text from Julián' + (a.message ? ': ' + a.message : ''), person: {firstName: parts[0] || 'Unknown', lastName: parts.slice(1).join(' '),
       phones: a.phone ? [{value: a.phone}] : [], emails: a.email ? [{value: a.email}] : [], tags: ['Added by ' + name]}});
-    const id = r.personId || (r.person && r.person.id);
+    let id = r.personId || (r.person && r.person.id) || r.id;
+    if (!id) {  // some event responses don't include the person: find them by the phone or email we just sent
+      const digits = String(a.phone || '').replace(/\D/g, '').slice(-10);
+      const found = (digits.length === 10 && fubFetch('people?limit=1&fields=id&phone=' + digits, null, 'get').people) ||
+        (a.email && fubFetch('people?limit=1&fields=id&email=' + encodeURIComponent(a.email), null, 'get').people) || [];
+      id = found.length && found[0].id;
+    }
     return id ? Object.assign({id: id, name: a.who, tags: ['Added by ' + name]}, a.phone ? {phones: [{value: a.phone}]} : {}) : null;
+  };
+  // Who is this about? A phone number Julián gives wins (search by it); then the name; if nobody matches, add them.
+  // Returns {p, isNew}. A person found by name who has no phone gets the number he gave.
+  const resolvePerson = () => {
+    const digits = String(a.phone || '').replace(/\D/g, '').slice(-10);
+    if (digits.length === 10) {
+      const byPhone = (fubFetch('people?limit=1&fields=id,name,firstName,tags,phones&phone=' + digits, null, 'get').people || [])[0];
+      if (byPhone) return {p: byPhone, isNew: false};
+      const named = a.who ? findOne(a.who) : null;
+      if (named && !named.many && !(named.phones || []).length) {
+        fubFetch('people/' + named.id, {phones: [{value: digits, type: 'mobile'}]}, 'put');
+        named.phones = [{value: digits}];
+        return {p: named, isNew: false};
+      }
+      return {p: addContact(), isNew: true};  // new lead, or a different person with the same name
+    }
+    const named = a.who ? findOne(a.who) : null;
+    if (named) return {p: named, isNew: false};
+    return {p: a.who ? addContact() : null, isNew: true};
   };
   if (a.action === 'contact') {
     const p = addContact();
@@ -1771,8 +1796,7 @@ ${assistantKnowledge()}
     return say(p ? 'added ' + a.who + ' to Follow Up Boss. ✅' : 'I couldn\'t add ' + (a.who || 'them') + ', so I passed it to Claude.');
   }
   if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
-    let p = findOne(a.who), isNew = false;
-    if (!p) { p = addContact(); isNew = true; }
+    let {p, isNew} = resolvePerson();
     if (!p) {
       fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: text});
       return say('I couldn\'t find or add "' + (a.who || '?') + '", so I passed it to Claude.');
@@ -1784,7 +1808,7 @@ ${assistantKnowledge()}
     const tags = p.tags || [];
     if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
     const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
-    if (!phone) return say(name + ': ' + p.name + ' has no mobile number in Follow Up Boss.');
+    if (!phone) return say(p.name + ' has no mobile number yet. Send me their number and I\'ll text them.');
     props.setProperty('BOSS_PENDING', JSON.stringify({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now()}));
     return say(name + ': send this to ' + p.name + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\nReply YES to send or NO to cancel.');
   }
@@ -1793,9 +1817,8 @@ ${assistantKnowledge()}
     if (!m) return say('what day and time should I put it on your calendar?');
     const start = Utilities.parseDate(m[1] + ' ' + m[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm');
     const end = new Date(start.getTime() + Number(a.minutes || 30) * 6e4);
-    let p = a.who ? findOne(a.who) : null;
+    let p = (a.who || a.phone) ? resolvePerson().p : null;
     if (p && p.many) p = null;
-    if (a.who && !p) p = addContact();
     const title = (a.message || 'Appointment') + (a.who ? ': ' + a.who : '');
     const phone = a.phone || (p && p.phones && p.phones[0] && p.phones[0].value) || '';
     CalendarApp.getDefaultCalendar().createEvent(title, start, end, {description: (phone ? 'Phone: ' + phone + '\n' : '') + 'Added by ' + name + ' from Julián\'s text.'});
