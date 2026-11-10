@@ -190,6 +190,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   anniversary; Closed → Past Client after day 30. Tag "past client" (older clients) → quarterly only, first 30-60 days out,
   JC drips paused, funnel skips them. Emails via sendFromBcolv (bcolv), texts via Text Queue (Text OK only). "Past Clients"
   sheet tab; max 15/day; skip tags Pause / No Past Client Loop / Deceased / Has Agent. `previewPastClientLoop`.
+- Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
+  POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
+  task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`
+  prints URL + JSON body. Free-plan fallback: ManyChat replies with juliancrider.com/?signin.
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
