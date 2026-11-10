@@ -572,6 +572,12 @@ function sendToFub(tabName, d) {
     try { const id = personId(); if (id) queueOpenHouseTexts(id, d, kind); }
     catch (err) { console.error('Open house texts: ' + err); }
   }
+  // Website forms: a welcome text from Julián's number (the forms carry the text-consent line). Bookings and showing
+  // requests skip it because they get a booking confirmation text instead.
+  if (tabName !== 'Sign-Ins' && d.phone && person.tags.indexOf('Has Agent') < 0 && !/consultation|showing|book/i.test(String(d.type || ''))) {
+    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, 'website'); }
+    catch (err) { console.error('Website welcome text: ' + err); }
+  }
   // A task only when they reached out from the website (showing request, consultation). Open house sign-ins get
   // the automated plans instead; Julián engages once they reply.
   if (person.tags.indexOf('Hot') >= 0 && tabName !== 'Sign-Ins') {
@@ -2347,10 +2353,23 @@ const OPEN_HOUSE_TEXTS = {
   guest: [
     {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks again for coming by. Just curious, was it what you expected or not quite? || [contact card] || juliancrider.com/?relocate || [voice]"},
     {step: 'oh-24h', hours: 24, text: "Hey {first}, Julián again. If that one wasn't quite the one, what would the next home need to have that it didn't? 🏡"},
-    {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"}],
+    {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see this weekend? You can pick what you'd like to see here: juliancrider.com/?showing"},
+    // 90-day follow-up (Julián approved Nov 10; modeled on Joey's 36-touch arc, rewritten in his voice). Stops once they reply.
+    {step: 'oh-d6', hours: 6 * 24, text: "Hey {first}, Julián here. Sounds like you're still figuring out what the right fit looks like. Would it be a bad idea if I sent you a couple that feel like the one you toured? 🏡"},
+    {step: 'oh-d10', hours: 10 * 24, text: "Quick one. Seems like the market noise can be a lot right now. Would you be against me sending you a short snapshot of what's actually selling near that house?"},
+    {step: 'oh-d17', hours: 17 * 24, text: "Is it ridiculous to ask what would have made that house a yes for you? It helps me skip the ones that would waste your time."},
+    {step: 'oh-d35', hours: 35 * 24, text: "Seems like timing is the big question for most people I talk to. Would it be off base to say you're more in the someday camp than the next few months camp?"},
+    {step: 'oh-d45', hours: 45 * 24, text: "A lot of people I meet at open houses ask where to even start with neighborhoods here. Would you be against me sending you my guide? It's the stuff I wish someone told me 📩"},
+    {step: 'oh-d60', hours: 60 * 24, text: "Have you given up on finding the right place, or just hit pause?"},
+    {step: 'oh-d75', hours: 75 * 24, text: "No house talk today. Just hoping things are good on your end, {first} ☀️"},
+    {step: 'oh-d90', hours: 90 * 24, text: "Have you decided to stay put for now? Totally fine if so and I'll stop checking in. If not, here's my calendar: juliancrider.com/?book"}],
   neighbor: [
     {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [contact card] || juliancrider.com/?relocate || [voice]"},
     {step: 'oh-72h', hours: 72, text: "Hey {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
+  // Website forms (home value, guides, account, questions) that didn't already book a time: a welcome text.
+  website: [
+    {step: 'web-welcome', hours: 0.05, text: "Hey {first}, it's Julián Crider with The DeBenedetto Team 👋🏾 Thanks for reaching out through my site. As a developer and luxury advisor, I help people buy and sell across Las Vegas and Henderson, and I'm glad you found me. Just curious, what has you looking right now? || [contact card]"},
+    {step: 'web-2d', hours: 48, text: "Hey {first}, Julián again. What would make the next few months feel like a win for you on the real estate side? 🏡"}],
   // Signed up online through the funnel (no open house given): quick hello within minutes, no open-house voice note.
   online: [
     {step: 'oh-2h', hours: 0.05, text: "Hey {first}, it's Julián Crider with The DeBenedetto Team 👋🏾 Welcome, and thanks for signing up. As a developer and luxury advisor, I help people buy and sell homes across Las Vegas and Henderson, and you can trust me to make this an experience you actually enjoy. Just curious, what has you looking right now? || [contact card] || [welcome voice] || juliancrider.com/?relocate"},
