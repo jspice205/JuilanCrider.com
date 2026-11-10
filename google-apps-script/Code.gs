@@ -1161,6 +1161,9 @@ function runPastClientLoop(people) {
     } catch (e) { console.log('Past client ' + p.id + ' plan pause: ' + e.message); }
     // Older clients: the first quarterly check-in lands 30-60 days out, spread so they don't all go the same day.
     const start = older ? new Date(today.getTime() + (30 + (p.id % 30)) * 864e5) : '';
+    if (closedOn && !p.customClosingAnniversary) {  // fills FUB's Closing Anniversary field so it shows on their profile
+      try { fubFetch('people/' + p.id, {customClosingAnniversary: Utilities.formatDate(closedOn, 'America/Los_Angeles', 'yyyy-MM-dd')}, 'put'); } catch (e) {}
+    }
     sheet.appendRow([p.id, p.name || [p.firstName, p.lastName].join(' '), closedOn || start, as, '', '', older ? 'first check-in ' + Utilities.formatDate(start, 'America/Los_Angeles', 'M/d') : 'active']);
     rows[p.id] = {row: sheet.getLastRow(), closed: closedOn || start, as: as, done: []};
     try { fubFetch('notes', {personId: p.id, subject: 'Closed client loop', body: older ? 'Joined the past-client loop (quarterly check-ins, referral asks). Their regular email drip is paused.' : 'Joined the closed-client loop: day 3, week 1, review ask, referral ask, quarterly check-ins, home anniversary.'}); } catch (e) {}
@@ -1175,13 +1178,16 @@ function runPastClientLoop(people) {
     if (isNaN(age) || age < 0) return;
     let due = null;
     if (r.as === 'closed') due = PAST_CLIENTS.steps.filter(s => age >= s.day && age < s.day + 30 && r.done.indexOf(s.step) < 0 && (!s.needsReview || review))[0] || null;
-    const years = Math.floor(age / 365.25);
-    if (!due && r.as === 'closed' && years >= 1 && r.done.indexOf('pc-a' + years) < 0 && age - Math.round(years * 365.25) < 14) {
+    // Anniversary: FUB's "Closing Anniversary" field if filled in (works for older clients too), else the closing date.
+    const annDate = p.customClosingAnniversary ? new Date(p.customClosingAnniversary) : r.as === 'closed' ? closedOn : null;
+    const annAge = annDate && !isNaN(annDate) ? Math.floor((today - annDate) / 864e5) : -1;
+    const years = annAge > 0 ? Math.floor(annAge / 365.25) : 0;
+    if (!due && years >= 1 && r.done.indexOf('pc-a' + years) < 0 && annAge - Math.round(years * 365.25) < 14) {
       const A = PAST_CLIENTS.anniversary, ord = ['', '1-year', '2-year', '3-year', '4-year', '5-year'][years] || years + '-year';
       due = {step: 'pc-a' + years, subject: A.subject, text: A.text, email: A.email, extra: {years: ord, yearsWord: years === 1 ? 'a year' : years + ' years'}};
     }
     const q = r.as === 'closed' ? Math.floor((age - 90) / 90) : Math.floor(age / 90);  // older clients: closed = first check-in date
-    if (!due && (r.as === 'closed' ? age >= 90 : age >= 0) && r.done.indexOf('pc-q' + q) < 0 && !(r.as === 'closed' && age % 365 > 350)) {
+    if (!due && (r.as === 'closed' ? age >= 90 : age >= 0) && r.done.indexOf('pc-q' + q) < 0 && !(annAge > 0 && annAge % 365 > 350)) {
       const Q = PAST_CLIENTS.quarterly[q % PAST_CLIENTS.quarterly.length];
       due = {step: 'pc-q' + q, subject: Q.subject, text: Q.text, email: Q.email};
     }

@@ -187,7 +187,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Diligence/Loan/Appraisal → Pending; CLOSED (25/26) → Closed (never backwards). Signed buyer agreement → deal card in
   Buyers › HOT BUYERS (`dealForAgreement`). Loop from closing date: day 3 text (email if no Text OK), day 7 email, day 30
   review ask (waits for Script Property REVIEW_LINK), day 60 referral ask, quarterly check-ins (4 rotating), yearly
-  anniversary; Closed → Past Client after day 30. Tag "past client" (older clients) → quarterly only, first 30-60 days out,
+  anniversary (FUB field customClosingAnniversary if set, also for older clients; filled in at closing); Closed → Past Client after day 30. Tag "past client" (older clients) → quarterly only, first 30-60 days out,
   JC drips paused, funnel skips them. Emails via sendFromBcolv (bcolv), texts via Text Queue (Text OK only). "Past Clients"
   sheet tab; max 15/day; skip tags Pause / No Past Client Loop / Deceased / Has Agent. `previewPastClientLoop`.
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
