@@ -896,6 +896,7 @@ function scoreFubDatabase() {
     console.log('Ran out of time; continuing automatically in about a minute.');
   } else {
     try { runFunnel(people); } catch (err) { console.error('Funnel: ' + err); }
+    try { runPastClientLoop(people); } catch (err) { console.error('Closed client loop: ' + err); }
   }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
@@ -955,6 +956,7 @@ function runFunnel(people) {
     if (!(p.emails || []).some(e => validEmail(e.value) && !/invalid|bounce|bad/i.test(e.status || ''))) return false;
     if (isBounced(p)) return false;
     if (/trash|unresponsive|do not|past client|sphere/i.test(stage) || paused(p)) return false;
+    if (tags.some(t => /^past client$/i.test(t))) return false;  // the closed-client loop handles them
     // Brand-new people just got the welcome email; start their drip after 2 days so they don't get two at once.
     if (p.created && (Date.now() - new Date(p.created)) / 864e5 < 2) return false;
     return !tags.some(t => /^(Has Agent|Partner|Do Not Contact)$|^Test\b/i.test(t));
@@ -1049,6 +1051,188 @@ function runFunnel(people) {
   props.setProperty('FUNNEL_DAY', today); props.setProperty('FUNNEL_COUNT', String(used));
   console.log(`Funnel: started ${started} people tonight (${used}/${FUNNEL.perNight} for today).`);
   return started;
+}
+
+// ============================================================
+// CLOSED CLIENT LOOP (Nov 10). Where referrals and repeat business come from. Runs every morning right after the
+// funnel. You only move the deal card in Follow Up Boss; everything else follows on its own:
+//   Deal stage → contact stage: Hot Buyers / Listing Prep / Active Listings → Active Client; Offer, Due Diligence,
+//   Loan/Appraisal → Pending (both pause the email drips); CLOSED → Closed + this loop. Never moves anyone backwards.
+//   Signed buyer agreement on the site → a deal card in Buyers › HOT BUYERS for you.
+// The loop (from the closing date; texts only to Text OK, emails from julianc@bcolv.com via the Shawna Mailer):
+//   day 3 text (or email): how are the first nights · day 7 email: first week + vendor list · day 30: review ask
+//   (waits until the Script Property REVIEW_LINK is set) · day 60: referral ask · every 90 days: home value check-in
+//   (4 rotating notes) · every closing anniversary: happy home anniversary + a soft referral P.S.
+// After day 30 the contact moves from Closed to Past Client. Contacts already tagged "past client" (your older
+// clients) join at the quarterly check-ins, the first one 30-60 days out, and their old drip is paused.
+// Skipped: Trash, Deceased, Has Agent, tags "Pause" / "No Past Client Loop". The "Past Clients" tab shows everyone,
+// their closing date and every touch sent. Max PAST_CLIENTS.perDay touches a day.
+// ============================================================
+const PAST_CLIENTS = {
+  live: true, perDay: 15,
+  dealStages: {active: [19, 20, 22], pending: [21, 28, 23, 36, 24, 29], closed: [25, 26]},
+  agreementStage: 19,  // Buyers › HOT BUYERS
+  steps: [
+    {step: 'pc-3d', day: 3, text: "Hey {first}, Julián here 🔑 How are the first few nights in the new place? Anything not working the way it should?",
+      subject: 'How are the first few nights?', email: "Hi {first},\n\nHow are the first few nights in the new place? If anything isn't working the way it should, tell me and I'll get the right person out there."},
+    {step: 'pc-1w', day: 7, subject: 'Your first week',
+      email: "Hi {first},\n\nOne week in. How's it feeling?\n\nA few things people usually need in the first month: a handyman, HVAC service, a pool or landscape company, someone for blinds. I keep a short list of people I'd send my own family to. Just reply with what you need and I'll send names.\n\nAnd if anything about the house surprised you, I want to hear it."},
+    {step: 'pc-30d', day: 30, needsReview: true, subject: 'Would it be a bad idea to ask a favor?',
+      text: "Hey {first}, Julián here. Would it be a bad idea to ask you a small favor? If I did a good job for you, a quick review would mean a lot: {review} 🙏🏾",
+      email: "Hi {first},\n\nWould it be a bad idea to ask you a small favor?\n\nMost of my business comes from people like you telling someone else. If I did a good job for you, a short review would mean a lot, even two sentences:\n\n{review}\n\nAnd if I didn't, I'd rather hear that from you directly."},
+    {step: 'pc-60d', day: 60, subject: "Who's the next person?",
+      text: "Hey {first}, Julián here 👋🏾 Quick one. Who's the one person you know who keeps talking about moving? Would you be against passing my number along? I'll take good care of them.",
+      email: "Hi {first},\n\nQuick one. Who's the one person you know who keeps talking about moving, either here to Vegas or within the valley?\n\nWould you be against passing my name along? I'll take care of them the way I took care of you, and I'll keep you posted."}],
+  quarterly: [
+    {subject: 'What your home is worth right now', text: "Hey {first}, Julián here 🏡 Would it be crazy if I ran a fresh number on what your home is worth today? Takes me 10 minutes, no visit needed.",
+      email: "Hi {first},\n\nIt's been a few months, so I wanted to check in. Would it be crazy if I ran a fresh number on what your home is worth today? It takes me about 10 minutes, no visit needed, and it's good to know for insurance, refinancing or just peace of mind.\n\nJust reply \"yes\" or use juliancrider.com/?value"},
+    {subject: 'Season check for the house', text: "Hey {first}, Julián here. No real estate talk, just checking in. How's the house treating you? ☀️",
+      email: "Hi {first},\n\nNo real estate talk today, just checking in. How's the house treating you?\n\nIf you need a good HVAC, pool or roof person before the season turns, reply and I'll send who I trust."},
+    {subject: "What's selling near you", text: "Hey {first}, Julián here. Homes near you have been moving. Would you be against me sending a quick snapshot of what sold nearby?",
+      email: "Hi {first},\n\nHomes near you have been moving. Would you be against me sending you a quick snapshot of what sold nearby and for how much? Just reply and I'll put it together."},
+    {subject: 'Quick favor', text: "Hey {first}, hope all is good 👋🏾 If anyone you know is thinking about a move, would it be a bad idea to pass along my number? I'll take great care of them.",
+      email: "Hi {first},\n\nHope all is good with you. If anyone you know is thinking about buying or selling, would it be a bad idea to pass along my name? I'll take great care of them, the same way I tried to take care of you."}],
+  anniversary: {subject: 'Happy home anniversary 🏡',
+    text: "Happy {years} home anniversary, {first}! 🎉🏡 Hard to believe it's been {yearsWord} already. Hope the house has been good to you. Julián",
+    email: "Hi {first},\n\nHappy {years} home anniversary! Hard to believe it's been {yearsWord} since you got the keys.\n\nI hope the house has been good to you. If you'd ever like to know what it's worth today, just reply and I'll run the number.\n\nP.S. If someone you know is thinking about a move, I'd be grateful for the introduction."}
+};
+const PAST_CLIENTS_TAB = {name: 'Past Clients', color: '#C9A227', headers: ['Person ID', 'Name', 'Closed on', 'Joined as', 'Touches sent', 'Last touch', 'Status']};
+
+function pcFill(t, p, extra) {
+  const first = p.firstName || String(p.name || '').split(/\s+/)[0] || 'there';
+  let s = String(t || '').replace(/\{first\}/g, first);
+  Object.keys(extra || {}).forEach(k => s = s.split('{' + k + '}').join(extra[k]));
+  return s;
+}
+
+/** Moves contact stages to follow their deal cards, and returns {personId: closeDate} for deals in CLOSED. */
+function syncDealStages(peopleById) {
+  const order = ['active client', 'pending', 'closed', 'past client'], closed = {};
+  const deals = [];
+  for (let offset = 0; offset < 2000; offset += 100) {
+    const page = fubFetch('deals?limit=100&offset=' + offset, null, 'get').deals || [];
+    deals.push(...page); if (page.length < 100) break;
+  }
+  deals.forEach(d => {
+    const sid = Number(d.stageId), S = PAST_CLIENTS.dealStages;
+    const want = S.closed.indexOf(sid) >= 0 ? 'Closed' : S.pending.indexOf(sid) >= 0 ? 'Pending' : S.active.indexOf(sid) >= 0 ? 'Active Client' : '';
+    if (!want) return;
+    (d.people || []).forEach(x => {
+      const p = peopleById[x.id]; if (!p) return;
+      if (want === 'Closed') closed[p.id] = d.projectedCloseDate || d.closeDate || d.enteredStageAt || d.updatedAt || new Date().toISOString();
+      const cur = order.indexOf(String(p.stage || '').toLowerCase());
+      if (cur >= order.indexOf(want.toLowerCase())) return;  // never move anyone backwards
+      try {
+        fubFetch('people/' + p.id, {stage: want}, 'put');
+        fubFetch('notes', {personId: p.id, subject: 'Stage: ' + want, body: `Moved to ${want} because the deal "${d.name}" is in ${d.stageName || 'stage ' + sid}.`});
+        p.stage = want; Utilities.sleep(120);
+      } catch (e) { console.log('Deal stage sync ' + p.id + ': ' + e.message); }
+    });
+  });
+  return closed;
+}
+
+function runPastClientLoop(people) {
+  if (!PAST_CLIENTS.live) return 0;
+  const props = PropertiesService.getScriptProperties();
+  const byId = {}; people.forEach(p => byId[p.id] = p);
+  let closedDeals = {};
+  try { closedDeals = syncDealStages(byId); } catch (e) { console.log('Deal sync: ' + e.message); }
+  const sheet = ensureTab(getSS(), PAST_CLIENTS_TAB), last = sheet.getLastRow(), rows = {};
+  (last > 1 ? sheet.getRange(2, 1, last - 1, PAST_CLIENTS_TAB.headers.length).getValues() : [])
+    .forEach((r, i) => rows[r[0]] = {row: i + 2, closed: r[2], as: r[3], done: String(r[4] || '').split(',').filter(Boolean)});
+  const tagHas = (p, t) => (p.tags || []).some(x => String(x).toLowerCase() === t.toLowerCase());
+  const skip = p => /trash/i.test(String(p.stage || '')) || ['Deceased', 'Has Agent', 'Pause', 'No Past Client Loop'].some(t => tagHas(p, t)) || (p.tags || []).some(t => /^Test\b/i.test(t));
+  const planIds = Object.keys(FUNNEL.plans).map(k => FUNNEL.plans[k]).concat(FUNNEL.legacyAfterIntroPlan, FUNNEL.reintroPlan, FUNNEL.neighborPlan);
+  const today = new Date(), day = Utilities.formatDate(today, 'America/Los_Angeles', 'yyyy-MM-dd');
+  // Join: deal closed, stage Closed / Past Client, or tagged "past client".
+  people.forEach(p => {
+    if (rows[p.id] || skip(p)) return;
+    const viaDeal = closedDeals[p.id], viaStage = /^closed$/i.test(String(p.stage || ''));
+    const older = !viaDeal && !viaStage && (/past client/i.test(String(p.stage || '')) || tagHas(p, 'past client'));
+    if (!viaDeal && !viaStage && !older) return;
+    const closedOn = viaDeal ? new Date(viaDeal) : older ? '' : today;
+    const as = older ? 'past client' : 'closed';
+    try {  // their regular drip stops; this loop takes over
+      (fubFetch('actionPlansPeople?personId=' + p.id, null, 'get').actionPlansPeople || [])
+        .filter(a => planIds.indexOf(a.actionPlanId) >= 0 && a.status === 'Running')
+        .forEach(a => fubFetch('actionPlansPeople/' + a.id, {status: 'Paused'}, 'put'));
+    } catch (e) { console.log('Past client ' + p.id + ' plan pause: ' + e.message); }
+    // Older clients: the first quarterly check-in lands 30-60 days out, spread so they don't all go the same day.
+    const start = older ? new Date(today.getTime() + (30 + (p.id % 30)) * 864e5) : '';
+    sheet.appendRow([p.id, p.name || [p.firstName, p.lastName].join(' '), closedOn || start, as, '', '', older ? 'first check-in ' + Utilities.formatDate(start, 'America/Los_Angeles', 'M/d') : 'active']);
+    rows[p.id] = {row: sheet.getLastRow(), closed: closedOn || start, as: as, done: []};
+    try { fubFetch('notes', {personId: p.id, subject: 'Closed client loop', body: older ? 'Joined the past-client loop (quarterly check-ins, referral asks). Their regular email drip is paused.' : 'Joined the closed-client loop: day 3, week 1, review ask, referral ask, quarterly check-ins, home anniversary.'}); } catch (e) {}
+  });
+  // Send what's due.
+  let sent = Number(props.getProperty('PC_DAY') === day ? props.getProperty('PC_COUNT') : 0) || 0;
+  const review = props.getProperty('REVIEW_LINK') || '';
+  Object.keys(rows).forEach(id => {
+    const r = rows[id], p = byId[id];
+    if (!p || skip(p) || sent >= PAST_CLIENTS.perDay || !(r.closed instanceof Date || r.closed)) return;
+    const closedOn = new Date(r.closed), age = Math.floor((today - closedOn) / 864e5);
+    if (isNaN(age) || age < 0) return;
+    let due = null;
+    if (r.as === 'closed') due = PAST_CLIENTS.steps.filter(s => age >= s.day && age < s.day + 30 && r.done.indexOf(s.step) < 0 && (!s.needsReview || review))[0] || null;
+    const years = Math.floor(age / 365.25);
+    if (!due && r.as === 'closed' && years >= 1 && r.done.indexOf('pc-a' + years) < 0 && age - Math.round(years * 365.25) < 14) {
+      const A = PAST_CLIENTS.anniversary, ord = ['', '1-year', '2-year', '3-year', '4-year', '5-year'][years] || years + '-year';
+      due = {step: 'pc-a' + years, subject: A.subject, text: A.text, email: A.email, extra: {years: ord, yearsWord: years === 1 ? 'a year' : years + ' years'}};
+    }
+    const q = r.as === 'closed' ? Math.floor((age - 90) / 90) : Math.floor(age / 90);  // older clients: closed = first check-in date
+    if (!due && (r.as === 'closed' ? age >= 90 : age >= 0) && r.done.indexOf('pc-q' + q) < 0 && !(r.as === 'closed' && age % 365 > 350)) {
+      const Q = PAST_CLIENTS.quarterly[q % PAST_CLIENTS.quarterly.length];
+      due = {step: 'pc-q' + q, subject: Q.subject, text: Q.text, email: Q.email};
+    }
+    if (!due) return;
+    const extra = Object.assign({review: review}, due.extra || {});
+    const results = [];
+    const email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
+    const textOk = tagHas(p, 'Text OK') && !tagHas(p, 'Text Opt-Out') && due.text;
+    if (textOk) {
+      ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(), p.id, p.name || p.firstName || '', due.step, 'pending', 0, '', pcFill(due.text, p, extra)]);
+      results.push('text queued');
+    }
+    if (due.email && email && !(tagHas(p, 'Bounced') && !tagHas(p, 'Opened Email')) && (!textOk || due.step !== 'pc-3d')) {
+      const res = sendFromBcolv(email, pcFill(due.subject, p, extra), pcFill(due.email, p, extra));
+      if (res && res.ok) {
+        results.push('email sent');
+        try { fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + pcFill(due.subject, p, extra), body: 'Closed client loop (' + due.step + '), from julianc@bcolv.com:\n\n' + pcFill(due.email, p, extra)}); } catch (e) {}
+      } else results.push('email NOT sent: ' + ((res && res.error) || 'no answer'));
+    }
+    if (!results.length) results.push('nothing to send (no Text OK, no good email)');
+    r.done.push(due.step); sent++;
+    sheet.getRange(r.row, 5, 1, 3).setValues([[r.done.join(','), today, due.step + ': ' + results.join(', ')]]);
+    // Closed → Past Client once the first month of touches is done.
+    if (r.as === 'closed' && age >= 30 && /^closed$/i.test(String(p.stage || ''))) {
+      try { fubFetch('people/' + p.id, {stage: 'Past Client'}, 'put'); p.stage = 'Past Client'; } catch (e) {}
+    }
+    Utilities.sleep(200);
+  });
+  props.setProperty('PC_DAY', day); props.setProperty('PC_COUNT', String(sent));
+  try { ensureTextQueueTrigger(); } catch (e) {}
+  console.log('Closed client loop: ' + sent + ' touches today.');
+  return sent;
+}
+
+/** Signed buyer agreement → a deal card in Buyers › HOT BUYERS (once per person and property). */
+function dealForAgreement(email, buyer, property) {
+  if (!validEmail(email)) return;
+  const p = (fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people || [])[0];
+  if (!p) return;
+  const name = (buyer || p.name || 'Buyer') + ' · ' + String(property || 'home search').split(',')[0];
+  const existing = (fubFetch('deals?personId=' + p.id + '&limit=50', null, 'get').deals || []).filter(d => d.name === name);
+  if (existing.length) return;
+  fubFetch('deals', {name: name, stageId: PAST_CLIENTS.agreementStage, peopleIds: [p.id], userIds: [fubFetch('me', null, 'get').id]});
+  fubFetch('notes', {personId: p.id, subject: 'Deal created', body: 'Buyer agreement signed, so a deal card was added in Buyers › HOT BUYERS: ' + name + '. Move the card as it progresses; the contact stage and follow-up follow it.'});
+}
+
+/** Preview: logs who would join the loop and what each would get next, without sending anything. */
+function previewPastClientLoop() {
+  const me = fubFetch('me', null, 'get').id;
+  const people = fubAllPeople().filter(p => !p.assignedUserId || p.assignedUserId === me);
+  const list = people.filter(p => /closed|past client/i.test(String(p.stage || '')) || (p.tags || []).some(t => /^past client$/i.test(t)));
+  console.log(list.length + ' would be in the loop:\n' + list.map(p => p.id + ' ' + p.name + ' (' + p.stage + ')').join('\n'));
 }
 
 function weeklyFubDigest() {
@@ -1321,6 +1505,7 @@ ${dutiesHtml(a.data, s, dual, initials)}
     htmlBody: `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#1c1c1e"><p>Hi ${e(String(a.data.buyer).split(/\s+/)[0])},</p><p>Thanks for signing. Your copy of the one-home buyer agreement for <b>${e(a.data.property)}</b> is attached. I'll see you at the showing.</p><p>Julián J. Crider<br><span style="color:#6e6e73">702-498-2571 · juliancrider.com</span></p></div>`});
   try { tagInFub(a.data.email, ['Agreement signed'], `Signed single-property buyer agreement for ${a.data.property} on ${when}. PDF: ${file.getUrl()}`); }
   catch (err) { console.error('FUB tag failed', err); }
+  try { dealForAgreement(a.data.email, a.data.buyer, a.data.property); } catch (err) { console.error('Deal card failed', err); }
   return json({ok: true});
 }
 
@@ -2446,7 +2631,7 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^oh-2h/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       const res = bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
