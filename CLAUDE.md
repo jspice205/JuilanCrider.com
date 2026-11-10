@@ -103,7 +103,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   cached 6h; personal people are left alone) or SHAWNA_NEW_NUMBERS=off. Tag `No Shawna` opts a contact out. Up to
   ASSISTANT_MAX_PER_DAY (12) replies per person per day.
 - ASSISTANT_PERSONA = julian (default, Nov 9): Shawna's client replies are written AS Julián, first person, no intro; if a
-  client sincerely asks if it's AI she says yes (never denies). shawna = replies as his assistant with the intro. Prompt has
+  client sincerely asks if it's AI she says yes (never denies). shawna = replies as his assistant with the intro. California
+  numbers (CA_AREA_CODES) always get the shawna version + intro (CA bot disclosure law, Julián's choice Nov 9). Prompt has
   human/Chris Voss texting examples, catch up first, 1-2 emojis; temperature 0.7.
 - Shawna remembers: BOSS_HISTORY (last 16 messages with Julián, 3 days) is sent to Groq with each command; "remember …" adds
   a row to the Shawna Knowledge tab. Calls: no summary from Vapi → Groq writes one; Julián's own test calls get no task.
