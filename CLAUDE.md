@@ -94,7 +94,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Calendar event + FUB note, adds new people), lookup (FUB summary), hot (Tier A list).
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
   number are commands: text a contact (always "Reply YES" first, BOSS_PENDING, 30 min), note, task, who emailed,
-  today's calendar, add a contact (people not in FUB are created first, tag "Added by Shawna"), or bigger work /
+  today's calendar, add a contact (resolvePerson: a phone he gives is looked up first, then the name; nobody found → created right away
+  via FUB events, tag "Added by Shawna", and the text/note/task/appointment still happens), or bigger work /
   anything she can't do → "Requests for Claude" sheet tab + FUB note subject "Claude request" on contact
   2221 (REQUESTS_PERSON_ID; Julián's test contact, phone = his personal phone). An hourly scheduled task (9am-8pm PT)
   wakes this Claude session: GET notes?personId=2221, do each "Claude request", PUT the note subject to
