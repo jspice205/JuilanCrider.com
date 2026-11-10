@@ -100,6 +100,7 @@ function doPost(e) {
   try {
     if (e.parameter && e.parameter.bb) return bbWebhook(e);  // BlueBubbles (texting Mac) events
     if (e.parameter && e.parameter.vapi) return vapiWebhook(e);  // Shawna phone calls (Vapi end-of-call reports)
+    if (e.parameter && e.parameter.ig) return instagramWebhook(e);  // ManyChat (Instagram DM automation) leads
     const data = JSON.parse(e.postData.contents);
     if (data.action === 'signAgreement') return signAgreement(data);
     if (data.action === 'book') return json(bookSlot(data));
@@ -546,9 +547,9 @@ function sendToFub(tabName, d) {
                     (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
       id = found.length && found[0].id;
     }
-    if (!id && a.who) {  // name only: the event created them, so pick the newest person with that exact name
-      const same = (fubFetch('people?limit=5&sort=-created&fields=id,name&q=' + encodeURIComponent(a.who), null, 'get').people || [])
-        .filter(x => (x.name || '').toLowerCase() === String(a.who).toLowerCase());
+    if (!id && d.name) {  // name only: the event created them, so pick the newest person with that exact name
+      const same = (fubFetch('people?limit=5&sort=-created&fields=id,name&q=' + encodeURIComponent(d.name), null, 'get').people || [])
+        .filter(x => (x.name || '').toLowerCase() === String(d.name).toLowerCase());
       id = same.length && same[0].id;
     }
     return id;
@@ -1233,6 +1234,58 @@ function previewPastClientLoop() {
   const people = fubAllPeople().filter(p => !p.assignedUserId || p.assignedUserId === me);
   const list = people.filter(p => /closed|past client/i.test(String(p.stage || '')) || (p.tags || []).some(t => /^past client$/i.test(t)));
   console.log(list.length + ' would be in the loop:\n' + list.map(p => p.id + ' ' + p.name + ' (' + p.stage + ')').join('\n'));
+}
+
+
+// ============================================================
+// INSTAGRAM DMs (ManyChat). Your ManyChat flow asks for their email (and optionally phone), then an "External Request"
+// action (ManyChat Pro) POSTs JSON to this web app at ?ig=IG_KEY. Run setupInstagram once: it makes the key and prints
+// the URL and the body to paste into ManyChat. Each DM lead → Follow Up Boss (source "Instagram", tag "Instagram DM",
+// a note with what they said) → a short welcome email from julianc@bcolv.com with your booking link → the nightly
+// funnel picks them up after 2 days like any website lead. Texts only if the flow sends "text_ok": "yes" (they agreed).
+// A DM is someone reaching out, so they also get one "answer their DM" task (inbound-only rule).
+// ============================================================
+function instagramWebhook(e) {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('IG_KEY') || e.parameter.ig !== props.getProperty('IG_KEY')) return json({status: 'ignored'});
+  const b = JSON.parse((e.postData && e.postData.contents) || '{}');
+  const clean = v => { v = String(v == null ? '' : v).trim(); return /^\{\{.*\}\}$/.test(v) || /^(null|undefined)$/i.test(v) ? '' : v; };
+  const name = clean(b.name) || [clean(b.first_name), clean(b.last_name)].filter(Boolean).join(' ');
+  const email = clean(b.email), phone = clean(b.phone).replace(/[^\d+]/g, ''), ig = clean(b.ig_username).replace(/^@/, '');
+  const said = clean(b.message || b.last_input), interest = clean(b.interest);
+  if (!validEmail(email) && phone.replace(/\D/g, '').length < 10) return json({status: 'need email or phone'});
+  const textOk = /^(yes|true|1)$/i.test(clean(b.text_ok));
+  const parts = name.split(/\s+/), first = parts[0] || 'there';
+  const tags = ['Instagram DM'].concat(textOk ? ['Text OK'] : []);
+  const person = {firstName: parts[0] || ig || 'Instagram', lastName: parts.slice(1).join(' '), tags: tags};
+  if (validEmail(email)) person.emails = [{value: email}];
+  if (phone) person.phones = [{value: phone}];
+  const msg = ['Instagram DM' + (ig ? ' from @' + ig : ''), interest && 'Interested in: ' + interest, said && 'They said: ' + said,
+    textOk ? 'Agreed to texts in the DM flow.' : ''].filter(Boolean).join('\n');
+  const res = fubFetch('events', {source: 'Instagram', system: 'juliancrider.com', type: 'General Inquiry', message: msg, person: person});
+  let id = res.personId || (res.person && res.person.id);
+  if (!id && validEmail(email)) id = ((fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people || [])[0] || {}).id;
+  if (!id && phone) id = ((fubFetch('people?limit=1&phone=' + phone.replace(/\D/g, '').slice(-10), null, 'get').people || [])[0] || {}).id;
+  if (id) {
+    try { fubFetch('notes', {personId: id, subject: 'Instagram DM', body: msg}); } catch (err) {}
+    try { createCallTask(id, 'Instagram DM: answer them in Instagram' + (ig ? ' (@' + ig + ')' : ''), 'Follow Up'); } catch (err) {}
+    if (validEmail(email) && !props.getProperty('IG_WELCOME_' + id)) {
+      const r = sendFromBcolv(email, 'Thanks for the DM, ' + first, `Hi ${first},\n\nThanks for reaching out on Instagram. I'm Julián, a Realtor with The DeBenedetto Team here in Las Vegas and Henderson.\n\nIf it's easier to talk it through, you can grab a time on my calendar here: juliancrider.com/?book\n\nJust curious, what has you looking at Vegas right now?`);
+      if (r && r.ok) { props.setProperty('IG_WELCOME_' + id, '1'); try { fubFetch('notes', {personId: id, subject: 'Email sent: Thanks for the DM', body: 'Instagram welcome email from julianc@bcolv.com'}); } catch (err) {} }
+    }
+    if (textOk && phone) { try { queueOpenHouseTexts(id, {name: name}, 'website'); } catch (err) {} }
+  }
+  return json({status: 'ok', personId: id || null});
+}
+
+/** Run once: makes the Instagram key and prints what to paste into ManyChat's External Request. */
+function setupInstagram() {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('IG_KEY')) props.setProperty('IG_KEY', 'ig-' + Utilities.getUuid().slice(0, 8));
+  const url = ScriptApp.getService().getUrl() + '?ig=' + props.getProperty('IG_KEY');
+  console.log('ManyChat → External Request → POST to:\n' + url + '\n\nBody (JSON), using ManyChat\'s "Add Full Contact Data"/fields:\n' +
+    '{"name": "{{full_name}}", "email": "{{email}}", "phone": "{{phone}}", "ig_username": "{{ig_username}}", "message": "{{last_input_text}}", "interest": "{{interest}}"}\n\n' +
+    'Only add "text_ok": "yes" if your flow asked "Is it OK if I text you?" and they said yes.');
 }
 
 function weeklyFubDigest() {
