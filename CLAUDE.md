@@ -170,7 +170,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   in `FUNNEL.textLive`. Nothing is tagged for a stage until it's in `FUNNEL.live` — flip those in Code.gs when Julián
   says an automation is built (auto-update deploys it within the hour). Replies never stop it. Pause = stage Active Client/Pending/Under
   Contract/Closed or tag `Pause` → JC tag removed; when that clears they restart in Long-Term Nurture. Never starts
-  no/bad email, past clients/sphere/trash, Has Agent. In each FUB automation, turn OFF stop-on-reply. "Funnel" sheet tab tracks stage. Text templates: JC Hot Text 1–3
+  no/bad email, `Bounced` (unless they also have `Opened Email`; bounced people's JC plans are paused once, BOUNCE_CLEANED;
+  trackEmailOpens tags bounces), past clients/sphere/trash, Has Agent. In each FUB automation, turn OFF stop-on-reply. "Funnel" sheet tab tracks stage. Text templates: JC Hot Text 1–3
   (31–33), JC Warm Text 1–2 (34–35), JC Nurture Text 1–8 (36–43). `juliancrider.com/?book` opens Book a consultation
   directly (link for Instagram/text auto-replies); site has no sms: links (they open the booking flow).
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,

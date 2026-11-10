@@ -260,6 +260,10 @@ function trackEmailOpens() {
   for (const e of events) {
     const key = e.personId + '|' + e.campaignName + '|' + e.type, prev = old[key];
     let name = prev && prev[2];
+    if (e.updated > seen && e.type === 'bounce') {  // tag bounced addresses so the funnel stops emailing them
+      const p = person(e.personId);
+      if (p && (p.tags || []).indexOf('Bounced') < 0) { try { fubFetch('people/' + p.id, {tags: (p.tags || []).concat('Bounced')}, 'put'); p.tags = (p.tags || []).concat('Bounced'); } catch (err) {} }
+    }
     if (e.updated > seen && /open|click/.test(e.type)) {
       const p = person(e.personId);
       if (p && (!p.assignedUserId || p.assignedUserId === me)) {
@@ -884,9 +888,11 @@ function runFunnel(people) {
   let used = props.getProperty('FUNNEL_DAY') === today ? Number(props.getProperty('FUNNEL_COUNT')) || 0 : 0, started = 0;
 
   const paused = p => /active client|pending|under contract|closed/i.test(String(p.stage || '')) || has(p, 'Pause');
+  const isBounced = p => has(p, 'Bounced') && !has(p, 'Opened Email');
   const ok = p => {
     const tags = p.tags || [], stage = String(p.stage || '');
     if (!(p.emails || []).some(e => validEmail(e.value) && !/invalid|bounce|bad/i.test(e.status || ''))) return false;
+    if (isBounced(p)) return false;
     if (/trash|unresponsive|do not|past client|sphere/i.test(stage) || paused(p)) return false;
     // Brand-new people just got the welcome email; start their drip after 2 days so they don't get two at once.
     if (p.created && (Date.now() - new Date(p.created)) / 864e5 < 2) return false;
@@ -939,6 +945,12 @@ function runFunnel(people) {
     used++; started++; Utilities.sleep(120);
   };
   const has = (p, t) => (p.tags || []).indexOf(t) >= 0, stageOf = p => (rows[p.id] || {}).stage;
+  // Bounced emails hurt deliverability for everyone: stop their email drips once (they keep their phone, notes and tags).
+  const cleaned = JSON.parse(props.getProperty('BOUNCE_CLEANED') || '[]');
+  people.filter(isBounced).filter(p => cleaned.indexOf(p.id) < 0).slice(0, 60).forEach(p => {
+    try { stopPlans(p); cleaned.push(p.id); Utilities.sleep(100); } catch (e) { console.log('Bounce cleanup ' + p.id + ': ' + e.message); }
+  });
+  props.setProperty('BOUNCE_CLEANED', JSON.stringify(cleaned.slice(-1500)));
   // Pause anyone now in a deal or tagged "Pause" (doesn't count toward tonight's limit; nothing is sent).
   people.filter(p => stageOf(p) && stageOf(p) !== 'paused' && paused(p)).forEach(p => {
     const next = (p.tags || []).filter(t => allTags.indexOf(t) < 0);
