@@ -92,7 +92,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
   (assistantKnowledge); humanize() strips dashes from everything she writes. Boss actions also: schedule (personal = his gmail
   calendar or business = BUSINESS_CALENDAR_ID, default julianc@bcolv.com shared to his gmail; asks "personal or
-  business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list).
+  business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), callme
+  (vapiCall: Vapi POST /call to Julián only; VAPI_API_KEY, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID; no AI calls to clients without consent).
 - Julián's texts to Shawna go through runBossCommand: script lock, "Shawna Log" sheet tab (in/ok/error), failures retried
   by processAssistantQueue up to 3 times (BOSS_RETRY), then he's told. Check that tab first when something "didn't respond".
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
