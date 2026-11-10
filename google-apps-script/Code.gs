@@ -1730,7 +1730,7 @@ function bossCommand(text) {
   const say = msg => bbSend(boss, humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')));
   // A pending "send this text?" waiting for YES / NO
   const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
-  if (pend && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
+  if (pend && pend.kind !== 'schedule' && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
     props.deleteProperty('BOSS_PENDING');
     if (Date.now() - pend.at > 30 * 6e4) return say(name + ': that one expired. Ask me again.');
     if (pend.kind === 'email') {
@@ -1749,7 +1749,7 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|email|note|task|contact|schedule|lookup|hot|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "reply":"your short answer to Julián (for chat)"}
+{"action":"text|email|note|task|contact|schedule|lookup|hot|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
@@ -1763,8 +1763,13 @@ ${assistantKnowledge()}
 - Never use dashes in anything you write.
 - claude: anything you can't do with the actions above, and anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
 - chat: anything else; answer in 1-3 short sentences. Never invent facts about clients or listings.`;
-  let a; try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
-  catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
+  let a;
+  const calPick = pend && pend.kind === 'schedule' && pickCalendar(text);
+  if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
+  else {
+    try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
+    catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
+  }
   const findOne = who => {
     const q = String(who || '').trim(), get = term => fubFetch('people?limit=8&fields=id,name,firstName,lastName,tags,phones,created&q=' + encodeURIComponent(term), null, 'get').people || [];
     let ppl = q ? get(q) : [];
@@ -1851,13 +1856,20 @@ ${assistantKnowledge()}
     if (!m) return say('what day and time should I put it on your calendar?');
     const start = Utilities.parseDate(m[1] + ' ' + m[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm');
     const end = new Date(start.getTime() + Number(a.minutes || 30) * 6e4);
+    const which = pickCalendar(a.calendar || '');
+    if (!which) {
+      props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'schedule', a: a, at: Date.now()}));
+      return say('personal or business calendar for this one?');
+    }
+    const cal = whichCalendar(which);
+    if (!cal) return say('I can\'t reach your business calendar yet. Share the bcolv calendar with julian.crider@gmail.com (Make changes to events), then ask me again.');
     let p = (a.who || a.phone) ? resolvePerson().p : null;
     if (p && p.many) p = null;
     const title = (a.message || 'Appointment') + (a.who ? ': ' + a.who : '');
     const phone = a.phone || (p && p.phones && p.phones[0] && p.phones[0].value) || '';
-    CalendarApp.getDefaultCalendar().createEvent(title, start, end, {description: (phone ? 'Phone: ' + phone + '\n' : '') + 'Added by ' + name + ' from Julián\'s text.'});
+    cal.createEvent(title, start, end, {description: (phone ? 'Phone: ' + phone + '\n' : '') + 'Added by ' + name + ' from Julián\'s text.'});
     if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
-    return say('on your calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
+    return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
   }
   if (a.action === 'lookup') {
     const p = findOne(a.who);
@@ -1878,8 +1890,10 @@ ${assistantKnowledge()}
   }
   if (a.action === 'calendar') {
     const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
-    const evs = CalendarApp.getDefaultCalendar().getEvents(now, end);
-    return say(name + ': ' + (evs.length ? 'the rest of today:\n' + evs.map(e => '• ' + Utilities.formatDate(e.getStartTime(), 'America/Los_Angeles', 'h:mm a') + ' ' + e.getTitle()).join('\n') : 'nothing else on your calendar today.'));
+    const evs = [];
+    ['personal', 'business'].forEach(w => { const c = whichCalendar(w); if (c) c.getEvents(now, end).forEach(e => evs.push({e: e, w: w})); });
+    evs.sort((x, y) => x.e.getStartTime() - y.e.getStartTime());
+    return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(x.e.getStartTime(), 'America/Los_Angeles', 'h:mm a') + ' ' + x.e.getTitle() + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
   }
   if (a.action === 'claude') {
     const sh = getSS().getSheetByName(REQUESTS_TAB.name) || ensureTab(getSS(), REQUESTS_TAB);
@@ -1889,6 +1903,22 @@ ${assistantKnowledge()}
     return say(name + ': got it ✅ "' + (a.message || text).slice(0, 120) + '". Claude checks every hour and will text you when it\'s done.');
   }
   return say(name + ': ' + (a.reply || 'Got it.'));
+}
+
+/** "personal" / "business" from Julián's words (or null if he didn't say). */
+function pickCalendar(t) {
+  t = String(t || '').toLowerCase();
+  if (/business|work|bcolv|office|team/.test(t)) return 'business';
+  if (/personal|julian\.crider|gmail|my own|private/.test(t)) return 'personal';
+  return null;
+}
+
+/** Personal = this account's main calendar (julian.crider@gmail.com). Business = BUSINESS_CALENDAR_ID (default the
+ *  bcolv calendar, which must be shared with julian.crider@gmail.com with "Make changes to events"). */
+function whichCalendar(which) {
+  if (which !== 'business') return CalendarApp.getDefaultCalendar();
+  const id = PropertiesService.getScriptProperties().getProperty('BUSINESS_CALENDAR_ID') || 'julianc@bcolv.com';
+  try { return CalendarApp.getCalendarById(id) || (CalendarApp.subscribeToCalendar(id), CalendarApp.getCalendarById(id)); } catch (e) { return null; }
 }
 
 /** Finds a person in the contacts on Julián's phone (iCloud contacts synced to the texting Mac, via BlueBubbles). */
