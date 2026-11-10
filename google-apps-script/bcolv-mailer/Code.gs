@@ -30,7 +30,7 @@ function doPost(e) {
   }
   if (d.action === 'events') {
     const evs = CalendarApp.getDefaultCalendar().getEvents(new Date(d.from), new Date(d.to))
-      .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), description: e.getDescription()}));
+      .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), end: e.getEndTime().getTime(), description: e.getDescription()}));
     return out({ok: true, events: evs});
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.to || ''))) return out({ok: false, error: 'bad address'});

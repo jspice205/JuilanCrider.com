@@ -150,7 +150,7 @@ function doPost(e) {
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
-  if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots().map(d => d.toISOString())});
+  if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
 }
 
@@ -160,50 +160,105 @@ function doGet(e) {
 // ============================================================
 const BOOKING = {days: 10, minutes: 30, startHour: 9, endHour: 18, weekdays: [1, 2, 3, 4, 5, 6], noticeHours: 3, tz: 'America/Los_Angeles'};
 
-function bookingSlots() {
-  const now = new Date(), until = new Date(now.getTime() + (BOOKING.days + 1) * 864e5);
+// Meeting types (Julián's choices, Nov 2): phone and video Mon–Sat 9–6, 30 min (video can be 45); golf by private link only,
+// Mon/Tue/Fri tee times 8am–3pm and Thu 11am–4pm, 9 holes ≈ 2.5 h or 18 holes ≈ 5 h. No coffee, lunch or drinks.
+const MEETINGS = {
+  consult: {label: 'Consultation', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
+  phone: {label: 'Phone call', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
+  video: {label: 'Video call', minutes: 30, max: 45, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
+  showing: {label: 'Showing', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
+  golf: {label: 'Golf', minutes: 300, startsOnly: true, step: 60, days: 21, hours: {1: [8, 15], 2: [8, 15], 4: [11, 16], 5: [8, 15]}},
+};
+function meetingFor(q) {
+  const kind = MEETINGS[q.kind] ? q.kind : 'consult', m = Object.assign({kind: kind}, MEETINGS[kind]);
+  if (kind === 'video' && Number(q.minutes) === 45) m.minutes = 45;
+  if (kind === 'golf') m.minutes = String(q.holes) === '9' ? 150 : 300;
+  return m;
+}
+
+function bookingSlots(m) {
+  m = m || meetingFor({});
+  const now = new Date(), days = m.days || BOOKING.days, until = new Date(now.getTime() + (days + 1) * 864e5);
   const busy = CalendarApp.getDefaultCalendar().getEvents(now, until).filter(ev => !ev.isAllDayEvent())
     .map(ev => [ev.getStartTime().getTime(), ev.getEndTime().getTime()]);
-  const earliest = now.getTime() + BOOKING.noticeHours * 36e5, len = BOOKING.minutes * 6e4, slots = [];
-  for (let d = 0; d < BOOKING.days; d++) {
+  try {  // the bcolv (business) calendar counts as busy too
+    (bcolvCall({action: 'events', from: now.toISOString(), to: until.toISOString()}).events || [])
+      .forEach(e => busy.push([e.start, e.end || e.start + 30 * 6e4]));
+  } catch (e) {}
+  const earliest = now.getTime() + BOOKING.noticeHours * 36e5, len = m.minutes * 6e4, step = (m.step || 30), slots = [];
+  for (let d = 0; d < days; d++) {
     const day = new Date(now.getTime() + d * 864e5);
-    if (BOOKING.weekdays.indexOf(Number(Utilities.formatDate(day, BOOKING.tz, 'u')) % 7) < 0) continue;  // u: 1 = Monday … 7 = Sunday
+    const hrs = m.hours[Number(Utilities.formatDate(day, BOOKING.tz, 'u')) % 7];  // u: 1 = Monday … 7 = Sunday
+    if (!hrs) continue;
     const ymd = Utilities.formatDate(day, BOOKING.tz, 'yyyy-MM-dd');
-    for (let m = BOOKING.startHour * 60; m + BOOKING.minutes <= BOOKING.endHour * 60; m += BOOKING.minutes) {
-      const start = Utilities.parseDate(`${ymd} ${Math.floor(m / 60)}:${m % 60}`, BOOKING.tz, 'yyyy-MM-dd H:m'), t = start.getTime();
+    // Golf windows are tee-time windows (the round can run past them); everything else must fit inside the hours.
+    const lastStart = m.startsOnly ? hrs[1] * 60 : hrs[1] * 60 - m.minutes;
+    for (let mm = hrs[0] * 60; mm <= lastStart; mm += step) {
+      const start = Utilities.parseDate(`${ymd} ${Math.floor(mm / 60)}:${mm % 60}`, BOOKING.tz, 'yyyy-MM-dd H:m'), t = start.getTime();
       if (t >= earliest && !busy.some(b => b[0] < t + len && b[1] > t)) slots.push(start);
     }
   }
   return slots;
 }
 
+/** Creates the calendar event; video calls get a Google Meet link (Calendar API), with VIDEO_LINK as a fallback. */
+function createBookingEvent(title, start, end, description, location, email, video) {
+  if (video) {
+    try {
+      const res = UrlFetchApp.fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1&sendUpdates=' + (email ? 'all' : 'none'), {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + ScriptApp.getOAuthToken()},
+        payload: JSON.stringify({summary: title, description: description, start: {dateTime: start.toISOString()}, end: {dateTime: end.toISOString()},
+          attendees: email ? [{email: email}] : [], conferenceData: {createRequest: {requestId: Utilities.getUuid(), conferenceSolutionKey: {type: 'hangoutsMeet'}}}})});
+      const ev = JSON.parse(res.getContentText());
+      if (res.getResponseCode() < 300) return ev.hangoutLink || ((ev.conferenceData || {}).entryPoints || [{}])[0].uri || '';
+      console.log('Meet link: ' + res.getContentText().slice(0, 200));
+    } catch (e) { console.log('Meet link: ' + e.message); }
+  }
+  const link = video ? (PropertiesService.getScriptProperties().getProperty('VIDEO_LINK') || '') : '';
+  CalendarApp.getDefaultCalendar().createEvent(title, start, end, {description: description + (link ? '\nVideo: ' + link : ''),
+    location: location || link || '', guests: email, sendInvites: !!email});
+  return link;
+}
+
 function bookSlot(d) {
-  const slot = bookingSlots().filter(s => s.toISOString() === d.slot)[0];
+  const m = meetingFor(d);
+  const slot = bookingSlots(m).filter(s => s.toISOString() === d.slot)[0];
   if (!slot) return {status: 'taken', message: 'That time was just taken. Please pick another.'};
   if (!String(d.name || '').trim() || !String(d.phone || '').trim()) return {status: 'error', message: 'Name and phone are required.'};
-  const end = new Date(slot.getTime() + BOOKING.minutes * 6e4), email = validEmail(d.email) ? String(d.email).trim() : '';
+  const end = new Date(slot.getTime() + m.minutes * 6e4), email = validEmail(d.email) ? String(d.email).trim() : '';
   const label = Utilities.formatDate(slot, BOOKING.tz, "EEE, MMM d 'at' h:mm a");
-  const showing = d.kind === 'showing' && d.property;
-  CalendarApp.getDefaultCalendar().createEvent(showing ? `Showing: ${d.name}` : `Consultation: ${d.name} (${d.type || 'juliancrider.com'})`, slot, end, {
-    description: [`Booked on juliancrider.com`, `Phone: ${d.phone}`, email && `Email: ${email}`, d.notes].filter(Boolean).join('\n'),
-    location: showing ? String(d.property) : '', guests: email, sendInvites: !!email});
-  try {  // log it on their Follow Up Boss contact (the lead itself arrives through the normal website form)
+  const showing = m.kind === 'showing' && d.property, golf = m.kind === 'golf', video = m.kind === 'video';
+  const title = showing ? `Showing: ${d.name}` : golf ? `Golf: ${d.name} (${d.holes || 18} holes)` :
+    `${m.label}: ${d.name}${d.type ? ' (' + d.type + ')' : ''}`;
+  const desc = ['Booked on juliancrider.com', `Phone: ${d.phone}`, email && `Email: ${email}`,
+    golf && `Holes: ${d.holes || 18}`, golf && `Tee time booked: ${d.teeBooked || 'not yet'}`, golf && d.course && `Course: ${d.course}`, d.notes].filter(Boolean).join('\n');
+  const link = createBookingEvent(title, slot, end, desc, showing ? String(d.property) : golf ? (d.course || '') : '', email, video);
+  try {  // Follow Up Boss: find or add the person, then appointment + note + task
     const phone = String(d.phone).replace(/\D/g, '');
-    const found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
-                  (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
-    if (found.length) {
-      fubFetch('notes', {personId: found[0].id, subject: showing ? 'Booked a showing' : 'Booked a consultation',
-        body: `${label} (${BOOKING.minutes} min)${showing ? ' at ' + d.property : ''}, booked on juliancrider.com`});
-      createCallTask(found[0].id, showing ? `showing ${label} at ${d.property}` : `booked consultation ${label}`);
+    let found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
+                (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
+    if (!found.length) {
+      const parts = String(d.name).trim().split(/\s+/);
+      fubFetch('events', {source: 'juliancrider.com', system: 'juliancrider.com', type: 'General Inquiry', message: title + ' ' + label,
+        person: {firstName: parts[0], lastName: parts.slice(1).join(' '), phones: [{value: phone}], emails: email ? [{value: email}] : [], tags: ['Website Lead', golf ? 'Golf' : 'Booked']}});
+      found = (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
     }
-  } catch (err) { console.error('Booking note: ' + err); }
-  try {  // confirmation text from Julián's number (the 15-minute reminder comes from remindUpcoming)
+    if (found.length) {
+      const pid = found[0].id;
+      try { fubFetch('appointments', {title: title, description: desc, start: slot.toISOString(), end: end.toISOString(),
+        location: showing ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
+      fubFetch('notes', {personId: pid, subject: 'Booked: ' + m.label, body: `${label} (${m.minutes} min)${showing ? ' at ' + d.property : ''}${link ? '\nVideo: ' + link : ''}\n${desc}`});
+      if (!golf) createCallTask(pid, showing ? `showing ${label} at ${d.property}` : `${m.label.toLowerCase()} ${label}`);
+    }
+  } catch (err) { console.error('Booking FUB: ' + err); }
+  try {  // confirmation text (the 15-minute reminder comes from remindUpcoming)
     const first = String(d.name).trim().split(/\s+/)[0];
-    bbSend(d.phone, showing
-      ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
-      : `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. Looking forward to it! If anything changes, just text me here.`);
+    bbSend(d.phone, showing ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
+      : golf ? `Hey ${first}, it's Julián ⛳ We're on for ${d.holes || 18} holes ${label}${d.course ? ' at ' + d.course : ''}. Looking forward to it!`
+      : video ? `Hey ${first}, it's Julián 👋🏾 You're all set for our video call ${label}.${link ? " Here's the link: " + link : " I'll send the link shortly."}`
+      : `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. I'll call you then. If anything changes, just text me here.`);
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
-  return {status: 'success', label: label};
+  return {status: 'success', label: label, link: link};
 }
 
 // ============================================================
