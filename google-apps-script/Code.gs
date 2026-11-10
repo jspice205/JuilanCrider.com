@@ -1735,7 +1735,8 @@ const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['
 function bossCommand(text) {
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
-  const say = msg => bbSend(boss, humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')));
+  const say = msg => { const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t); return bbSend(boss, t); };
+  bossMemory('user', text);
   // A pending "send this text?" waiting for YES / NO
   const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   if (pend && pend.kind !== 'schedule' && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
@@ -1767,7 +1768,7 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
@@ -1779,6 +1780,7 @@ ${assistantKnowledge()}
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
 - hot: list his hottest leads right now.
+- remember: he tells you something to remember for good (a preference, a fact about his business or a client). Put the fact in "message", written as a full sentence.
 - callme: he wants you to phone him (e.g. "call me", "give me a call"). Put anything he wants to talk about in "message".
 - Never use dashes in anything you write.
 - claude: anything you can't do with the actions above, and anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
@@ -1787,7 +1789,10 @@ ${assistantKnowledge()}
   const calPick = pend && pend.kind === 'schedule' && pickCalendar(text);
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
   else {
-    try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
+    const history = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').slice(0, -1);  // earlier messages, not this one
+    const msgs = [{role: 'system', content: sys + '\nYour recent conversation with Julián is below; use it so he never has to repeat himself (e.g. "her", "that time", "same as before").'}]
+      .concat(history.map(h => ({role: h.r, content: h.r === 'assistant' ? JSON.stringify({action: 'chat', reply: h.t}) : h.t})), [{role: 'user', content: text}]);
+    try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, msgs)); }
     catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
   }
   const findOne = who => {
@@ -1917,6 +1922,11 @@ ${assistantKnowledge()}
     const ppl = fubFetch('people?limit=8&sort=-lastActivity&tags=' + encodeURIComponent('Tier A') + '&fields=id,name,lastActivity', null, 'get').people || [];
     return say(ppl.length ? 'your hottest leads:\n' + ppl.map(x => '• ' + x.name).join('\n') : 'no Tier A leads right now.');
   }
+  if (a.action === 'remember') {
+    const ss = getSS(), sh = ss.getSheetByName('Shawna Knowledge') || ensureTab(ss, {name: 'Shawna Knowledge', color: '#6B4FBB', headers: ['One fact per row (Shawna reads these)']});
+    sh.appendRow([cell(a.message || text)]);
+    return say('got it, I\'ll remember that. ✅');
+  }
   if (a.action === 'callme') {
     const r = vapiCall(boss, a.message || '');
     return say(r.ok ? 'calling you now 📞' : 'I couldn\'t start the call: ' + r.error);
@@ -1970,6 +1980,16 @@ function shawnaLog(kind, text, detail) {
     const ss = getSS(), sh = ss.getSheetByName('Shawna Log') || ensureTab(ss, {name: 'Shawna Log', color: '#6B4FBB', headers: ['When', 'What', 'Message', 'Detail']});
     sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm:ss a'), kind, cell(text.slice(0, 300)), cell(String(detail || '').slice(0, 300))]);
     if (sh.getLastRow() > 600) sh.deleteRows(2, 100);
+  } catch (e) {}
+}
+
+/** Shawna's short-term memory of her texts with Julián (last 16 messages, about the last day of back and forth). */
+function bossMemory(role, text) {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const h = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').filter(x => Date.now() - x.at < 3 * 864e5);
+    h.push({r: role, t: String(text).slice(0, 400), at: Date.now()});
+    props.setProperty('BOSS_HISTORY', JSON.stringify(h.slice(-16)));
   } catch (e) {}
 }
 
@@ -2080,10 +2100,18 @@ function vapiWebhook(e) {
   const m = (JSON.parse((e.postData && e.postData.contents) || '{}').message) || {};
   if (m.type !== 'end-of-call-report') return json({status: 'ok'});
   const call = m.call || {}, num = bbE164(((call.customer || {}).number) || '');
-  const summary = (m.analysis && m.analysis.summary) || m.summary || '';
+  let summary = (m.analysis && m.analysis.summary) || m.summary || '';
   const transcript = String(m.transcript || (m.artifact && m.artifact.transcript) || '').slice(0, 6000);
   const rec = m.recordingUrl || (m.artifact && m.artifact.recordingUrl) || '';
   const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
+  if (!summary && transcript && props.getProperty('GROQ_API_KEY')) {
+    try {
+      const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+        {role: 'system', content: 'Summarize this real estate phone call for the agent in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Return JSON {"summary": "..."}.'},
+        {role: 'user', content: transcript.slice(0, 5000)}]));
+      summary = humanize(r.summary || '');
+    } catch (e) {}
+  }
   let person = null;
   if (num) person = (fubFetch('people?limit=1&fields=id,firstName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
   if (!person) {
@@ -2094,6 +2122,8 @@ function vapiWebhook(e) {
   if (!person) return json({status: 'no person'});
   fubFetch('notes', {personId: person.id, subject: 'Call with ' + assistantName() + (mins ? ' (' + mins + ')' : ''),
     body: (summary || 'No summary.') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  if (num && num === boss) return json({status: 'ok'});  // Julián testing: note only, no call-back task
   createCallTask(person.id, assistantName() + ' took their call: ' + summary.slice(0, 140) + ' Call them back.', 'Call');
   return json({status: 'ok'});
 }
