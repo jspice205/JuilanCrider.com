@@ -487,6 +487,11 @@ function sendToFub(tabName, d) {
                     (phone && fubFetch('people?limit=1&phone=' + phone, null, 'get').people) || [];
       id = found.length && found[0].id;
     }
+    if (!id && a.who) {  // name only: the event created them, so pick the newest person with that exact name
+      const same = (fubFetch('people?limit=5&sort=-created&fields=id,name&q=' + encodeURIComponent(a.who), null, 'get').people || [])
+        .filter(x => (x.name || '').toLowerCase() === String(a.who).toLowerCase());
+      id = same.length && same[0].id;
+    }
     return id;
   };
   // Welcome email (FUB Action Plan "JC Welcome", template 183) right after an open-house sign-in or a website
@@ -1761,8 +1766,15 @@ ${assistantKnowledge()}
   let a; try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: text}])); }
   catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
   const findOne = who => {
-    const ppl = (fubFetch('people?limit=5&fields=id,name,firstName,tags,phones&q=' + encodeURIComponent(who || ''), null, 'get').people || []);
-    return ppl.length === 1 ? ppl[0] : (ppl.find(p => (p.name || '').toLowerCase() === String(who).toLowerCase()) || (ppl.length ? {many: ppl} : null));
+    const q = String(who || '').trim(), get = term => fubFetch('people?limit=8&fields=id,name,firstName,lastName,tags,phones,created&q=' + encodeURIComponent(term), null, 'get').people || [];
+    let ppl = q ? get(q) : [];
+    if (!ppl.length && q.split(/\s+/).length > 1) {  // "Lily Montenegro" → search the last name, keep first names that start the same
+      const parts = q.toLowerCase().split(/\s+/), first = parts[0].slice(0, 3);
+      ppl = get(parts[parts.length - 1]).filter(p => String(p.firstName || p.name || '').toLowerCase().indexOf(first) === 0);
+    }
+    const exact = ppl.filter(p => (p.name || '').toLowerCase() === q.toLowerCase());
+    if (exact.length) return exact.sort((x, y) => String(x.created).localeCompare(String(y.created)))[0];  // oldest = the real one
+    return ppl.length === 1 ? ppl[0] : (ppl.length ? {many: ppl} : null);
   };
   const addContact = () => {
     const parts = String(a.who || '').trim().split(/\s+/);
