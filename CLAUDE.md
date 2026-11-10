@@ -100,6 +100,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   2221 (REQUESTS_PERSON_ID; Julián's test contact, phone = his personal phone). An hourly scheduled task (9am-8pm PT)
   wakes this Claude session: GET notes?personId=2221, do each "Claude request", PUT the note subject to
   "Claude request - done", and text him the result with a "Send text" note on 2221. Chat answers otherwise.
+- Shawna email: `google-apps-script/bcolv-mailer/Code.gs` runs in Julián's julianc@bcolv.com Google account as a web app
+  (BCOLV_MAILER_URL + BCOLV_MAILER_KEY in the main script); `sendFromBcolv` emails FROM bcolv (FUB tracks it via the
+  connected inbox). bossCommand action "email" (Reply YES first). `testBcolvMailer`. Mac contacts: `macContact` searches
+  his iPhone contacts synced to the texting Mac (BlueBubbles GET contact) when a name isn't in FUB and no number given.
 - Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
   for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
   (?vapi=VAPI_KEY; `setupVoice` prints the URL) → FUB person by phone (or new, source "Phone call", tag Phone Lead) +

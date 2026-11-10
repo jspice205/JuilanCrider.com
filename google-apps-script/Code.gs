@@ -1728,6 +1728,12 @@ function bossCommand(text) {
   if (pend && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
     props.deleteProperty('BOSS_PENDING');
     if (Date.now() - pend.at > 30 * 6e4) return say(name + ': that one expired. Ask me again.');
+    if (pend.kind === 'email') {
+      const r = sendFromBcolv(pend.email, pend.subject, pend.message);
+      if (!r.ok) return say('the email did NOT go out: ' + (r.error || 'unknown error') + '.');
+      fubFetch('notes', {personId: pend.personId, subject: 'Email sent', body: 'To ' + pend.email + ' from ' + (r.from || 'bcolv') + ': "' + pend.subject + '"\n\n' + pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+      return say('emailed ' + pend.who + ' from ' + (r.from || 'your bcolv email') + '. ✅');
+    }
     props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
     fubFetch('notes', {personId: pend.personId, subject: 'Text sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
@@ -1738,10 +1744,11 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|note|task|contact|schedule|lookup|hot|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "message":"the text to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "reply":"your short answer to Julián (for chat)"}
+{"action":"text|email|note|task|contact|schedule|lookup|hot|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
+- email: he wants you to email someone (write a short, warm email in his voice, plain paragraphs, no signature; it's signed automatically).
 - note: save a note on a contact. task: remind him to do something about a contact.
 - emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
 - contact: add a new person to Follow Up Boss (name, phone, email).
@@ -1788,12 +1795,27 @@ ${assistantKnowledge()}
     }
     const named = a.who ? findOne(a.who) : null;
     if (named) return {p: named, isNew: false};
+    if (a.who && !a.phone && !a.email) {  // not in FUB: try the contacts on his phone (synced to the texting Mac)
+      const c = macContact(a.who);
+      if (c) { a.phone = c.phone; a.email = a.email || c.email; a.who = c.name || a.who; }
+    }
     return {p: a.who ? addContact() : null, isNew: true};
   };
   if (a.action === 'contact') {
     const p = addContact();
     if (!p) fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: 'Add contact: ' + text});
     return say(p ? 'added ' + a.who + ' to Follow Up Boss. ✅' : 'I couldn\'t add ' + (a.who || 'them') + ', so I passed it to Claude.');
+  }
+  if (a.action === 'email') {
+    if (!PropertiesService.getScriptProperties().getProperty('BCOLV_MAILER_URL')) return say('email isn\'t connected yet. Set up the bcolv mailer first (Claude has the steps).');
+    const {p} = resolvePerson();
+    if (!p || p.many) return say(p && p.many ? 'which one? ' + p.many.map(x => x.name).join(', ') : 'who should I email? Send me their name and email.');
+    let email = a.email;
+    if (!email) { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; }
+    if (!email) return say((p.name || a.who) + ' has no email yet. Send me their email and I\'ll write it.');
+    const subject = humanize(a.subject || 'Quick note from Julián'), body = humanize(a.message || '');
+    props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, at: Date.now()}));
+    return say('send this email to ' + (p.name || a.who) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
   }
   if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
     let {p, isNew} = resolvePerson();
@@ -1855,6 +1877,37 @@ ${assistantKnowledge()}
     return say(name + ': got it ✅ "' + (a.message || text).slice(0, 120) + '". Claude checks every hour and will text you when it\'s done.');
   }
   return say(name + ': ' + (a.reply || 'Got it.'));
+}
+
+/** Finds a person in the contacts on Julián's phone (iCloud contacts synced to the texting Mac, via BlueBubbles). */
+function macContact(who) {
+  try {
+    const want = String(who || '').toLowerCase().trim();
+    if (!want) return null;
+    const list = (bbApi('contact').data || []);
+    const nm = c => (c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ')).trim();
+    const hits = list.filter(c => nm(c).toLowerCase() === want).concat(list.filter(c => nm(c).toLowerCase().indexOf(want) >= 0));
+    const c = hits[0];
+    if (!c) return null;
+    const phone = ((c.phoneNumbers || [])[0] || {}).address || '', email = ((c.emails || [])[0] || {}).address || '';
+    return phone || email ? {name: nm(c), phone: phone, email: email} : null;
+  } catch (e) { console.log('Mac contacts: ' + e.message); return null; }
+}
+
+/** Sends an email FROM julianc@bcolv.com through the small "Shawna Mailer" script in that account. */
+function sendFromBcolv(to, subject, text) {
+  const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
+  if (!url) return {ok: false, error: 'bcolv mailer not set up'};
+  const html = String(text).split(/\n{2,}/).map(par => '<p style="margin:0 0 12px">' + par.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('') +
+    '<p style="margin:0">Julián</p>' + EMAIL_FOOTER;
+  const res = UrlFetchApp.fetch(url, {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({key: props.getProperty('BCOLV_MAILER_KEY'), to: to, subject: subject, text: text + '\n\nJulián', html: '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + html + '</div>'})});
+  try { return JSON.parse(res.getContentText()); } catch (e) { return {ok: false, error: 'mailer answered ' + res.getResponseCode()}; }
+}
+
+/** Run once after setting BCOLV_MAILER_URL/KEY: emails Julián's personal Gmail from bcolv as a test. */
+function testBcolvMailer() {
+  console.log(JSON.stringify(sendFromBcolv(NOTIFY_EMAIL, 'Shawna mailer test', 'If you can read this, Shawna can send email from your bcolv address.')));
 }
 
 /** Run once after adding GROQ_API_KEY: asks Shawna a sample question and prints her answer (sends nothing). */
