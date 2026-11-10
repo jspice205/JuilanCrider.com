@@ -1593,14 +1593,16 @@ function assistantReply(person, from, text) {
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
   const muted = Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now();  // Julián is talking with them himself
   const ok = reply && !out.escalate && !sensitive && n < Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12) && !muted;
-  if (mode === 'backup' && ok && hour >= 8 && hour < 21) {  // hold it; send only if Julián hasn't replied in time
+  // Replies to someone who texted first may go until 10pm (ASSISTANT_END_HOUR); texts Julián starts stay 9am-9pm (TCPA).
+  const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
+  if (mode === 'backup' && ok && hour >= 8 && hour < endHour) {  // hold it; send only if Julián hasn't replied in time
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
     q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + delay * 6e4};
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
-  const auto = mode === 'auto' && ok && hour >= 8 && hour < 21;
+  const auto = mode === 'auto' && ok && hour >= 8 && hour < endHour;
   if (!auto) {
     fubFetch('notes', {personId: person.id, subject: name + ' draft', body: (reply ? 'Suggested reply:\n' + reply : 'No reply drafted.') +
       (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});

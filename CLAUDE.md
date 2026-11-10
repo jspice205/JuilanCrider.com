@@ -77,7 +77,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - AI assistant "Shawna" (`assistantReply` in Code.gs, called from bbWebhook): Groq (OpenAI-compatible API, model in
   GROQ_MODEL; on 404 groqPickModel lists his account's models and saves the best, since llama-3.3-70b-versatile was retired Nov 2026) drafts replies to inbound texts from FUB contacts. ASSISTANT_NAME
   (default Shawna; future users name their own), ASSISTANT_MODE draft (default: FUB note "Shawna draft" + task) / auto
-  (sends 8am-9pm, max 3/person/day, only Text OK; first text = assistantIntro(): "Hi, it's Shawna, Julián's AI
+  (replies 8am-10pm (ASSISTANT_END_HOUR 22; they texted first), scheduled/outbox texts still 9am-9pm; first text = assistantIntro(): "Hi, it's Shawna, Julián's AI
   assistant. Julián's away… text JULIAN to reach him" (ASSISTANT_INTRO overrides); a client texting JULIAN → Julián alerted +
   task, Shawna stays out; client-text alerts only when TEXT_ALERTS=on (off by default since Nov 9; "who texted me?" → TEXT_LOG; texts to him carry no
   FUB links, which open a Zillow Pro sign-in); escalates offers,
