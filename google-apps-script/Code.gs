@@ -1756,7 +1756,7 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|email|note|task|contact|schedule|lookup|hot|emails|calendar|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"text|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
@@ -1767,6 +1767,7 @@ ${assistantKnowledge()}
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
 - hot: list his hottest leads right now.
+- callme: he wants you to phone him (e.g. "call me", "give me a call"). Put anything he wants to talk about in "message".
 - Never use dashes in anything you write.
 - claude: anything you can't do with the actions above, and anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
 - chat: anything else; answer in 1-3 short sentences. Never invent facts about clients or listings.`;
@@ -1891,6 +1892,10 @@ ${assistantKnowledge()}
     const ppl = fubFetch('people?limit=8&sort=-lastActivity&tags=' + encodeURIComponent('Tier A') + '&fields=id,name,lastActivity', null, 'get').people || [];
     return say(ppl.length ? 'your hottest leads:\n' + ppl.map(x => '• ' + x.name).join('\n') : 'no Tier A leads right now.');
   }
+  if (a.action === 'callme') {
+    const r = vapiCall(boss, a.message || '');
+    return say(r.ok ? 'calling you now 📞' : 'I couldn\'t start the call: ' + r.error);
+  }
   if (a.action === 'emails') {
     const w = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}'), list = Object.keys(w).map(k => w[k]).sort((x, y) => y.at - x.at).slice(0, 6);
     return say(name + ': ' + (list.length ? 'recent emails from clients:\n' + list.map(x => '• ' + x.name + ' (' + Utilities.formatDate(new Date(x.at), 'America/Los_Angeles', 'EEE h:mm a') + ')').join('\n') : 'no new client emails in the last 2 days.'));
@@ -1955,6 +1960,19 @@ function whichCalendar(which) {
   if (which !== 'business') return CalendarApp.getDefaultCalendar();
   const id = PropertiesService.getScriptProperties().getProperty('BUSINESS_CALENDAR_ID') || 'julianc@bcolv.com';
   try { return CalendarApp.getCalendarById(id) || (CalendarApp.subscribeToCalendar(id), CalendarApp.getCalendarById(id)); } catch (e) { return null; }
+}
+
+/** Shawna phones a number through Vapi (VAPI_API_KEY = Vapi private key, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID).
+ *  Only used for Julián himself for now: AI calls to clients need their prior consent (FCC). */
+function vapiCall(number, topic) {
+  const p = PropertiesService.getScriptProperties(), key = p.getProperty('VAPI_API_KEY');
+  if (!key || !p.getProperty('VAPI_ASSISTANT_ID') || !p.getProperty('VAPI_PHONE_NUMBER_ID')) return {ok: false, error: 'add VAPI_API_KEY, VAPI_ASSISTANT_ID and VAPI_PHONE_NUMBER_ID in Script Properties'};
+  const body = {assistantId: p.getProperty('VAPI_ASSISTANT_ID'), phoneNumberId: p.getProperty('VAPI_PHONE_NUMBER_ID'), customer: {number: number, name: 'Julian'},
+    assistantOverrides: {firstMessage: 'Hey Julian, it\'s Shawna. ' + (topic ? 'You wanted to talk about ' + topic + '. ' : '') + 'What can I do for you?'}};
+  const res = UrlFetchApp.fetch('https://api.vapi.ai/call', {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: {Authorization: 'Bearer ' + key}, payload: JSON.stringify(body)});
+  if (res.getResponseCode() >= 300) return {ok: false, error: 'Vapi ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 160)};
+  return {ok: true};
 }
 
 /** Finds a person in the contacts on Julián's phone (iCloud contacts synced to the texting Mac, via BlueBubbles). */
