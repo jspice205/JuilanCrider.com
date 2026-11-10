@@ -2099,7 +2099,7 @@ const OPEN_HOUSE_TEXTS = {
     {step: 'oh-72h', hours: 72, text: "Hey {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
   // Signed up online through the funnel (no open house given): quick hello within minutes, no open-house voice note.
   online: [
-    {step: 'oh-2h', hours: 0.05, text: "Hey {first}, it's Julián Crider with The DeBenedetto Team 👋🏾 Welcome, and thanks for signing up. I help people buy and sell homes across Las Vegas and Henderson, so think of me as your go-to for anything real estate. Just curious, what has you looking right now? || [contact card] || [welcome voice] || juliancrider.com/?relocate"},
+    {step: 'oh-2h', hours: 0.05, text: "Hey {first}, it's Julián Crider with The DeBenedetto Team 👋🏾 Welcome, and thanks for signing up. As a developer and luxury advisor, I help people buy and sell homes across Las Vegas and Henderson, and you can trust me to make this an experience you actually enjoy. Just curious, what has you looking right now? || [contact card] || [welcome voice] || juliancrider.com/?relocate"},
     {step: 'oh-24h', hours: 24, text: "Hey {first}, Julián again. Whether it's an open house this weekend or a private tour, what would your next home need to have that your current one doesn't? 🏡"},
     {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   agent: [
