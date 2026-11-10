@@ -1465,7 +1465,7 @@ function bbWebhook(e) {
   if (!from) return json({status: 'ok'});  // email handles etc.
   // Julián texting his own business number from his personal phone = talking to Shawna (his assistant).
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
-  if (boss && from === boss) { try { bossCommand(String(data.text).slice(0, 1500)); } catch (err) { bbSend(boss, assistantName() + ': something went wrong (' + err.message + ').'); } return json({status: 'ok'}); }
+  if (boss && from === boss) { runBossCommand(String(data.text).slice(0, 1500), 0); return json({status: 'ok'}); }
   const found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
   if (!found.length) return json({status: 'ok'});  // not a Follow Up Boss contact: personal text, leave it alone
   const person = found[0], text = String(data.text).slice(0, 1000);
@@ -1635,7 +1635,14 @@ function assistantCancel(phone) {
 
 /** Every minute: sends the replies Shawna was holding (backup mode) once Julián hasn't answered within the delay. */
 function processAssistantQueue() {
-  const props = PropertiesService.getScriptProperties(), raw = props.getProperty('AI_PENDING');
+  const props = PropertiesService.getScriptProperties();
+  const retry = JSON.parse(props.getProperty('BOSS_RETRY') || '[]');
+  if (retry.length) {
+    const due = retry.filter(r => r.at <= Date.now()), later = retry.filter(r => r.at > Date.now());
+    props.setProperty('BOSS_RETRY', JSON.stringify(later));
+    due.forEach(r => runBossCommand(r.text, r.tries));
+  }
+  const raw = props.getProperty('AI_PENDING');
   if (!raw || raw === '{}') return;
   const q = JSON.parse(raw), name = assistantName(), today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
   Object.keys(q).forEach(phone => {
@@ -1903,6 +1910,35 @@ ${assistantKnowledge()}
     return say(name + ': got it ✅ "' + (a.message || text).slice(0, 120) + '". Claude checks every hour and will text you when it\'s done.');
   }
   return say(name + ': ' + (a.reply || 'Got it.'));
+}
+
+/** Runs one of Julián's texts to Shawna with a log and a safety net: if it fails (Mac busy, Groq hiccup), it's queued
+ *  and retried by processAssistantQueue a minute later (up to 3 tries), and he's told if it still fails. */
+function runBossCommand(text, tries) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (e) {}  // one of his messages at a time, so they don't trip over each other
+  try {
+    shawnaLog('in', text, tries ? 'retry ' + tries : '');
+    bossCommand(text);
+    shawnaLog('ok', text, '');
+  } catch (err) {
+    shawnaLog('error', text, err.message);
+    const props = PropertiesService.getScriptProperties(), q = JSON.parse(props.getProperty('BOSS_RETRY') || '[]');
+    if (tries < 3) { q.push({text: text, tries: tries + 1, at: Date.now() + 60000}); props.setProperty('BOSS_RETRY', JSON.stringify(q)); }
+    else {
+      try { bbSend(bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO')), 'I couldn\'t finish "' + text.slice(0, 60) + '" (' + err.message.slice(0, 120) + '). Try again in a minute?'); }
+      catch (e) { fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: 'Shawna failed 3 times on: ' + text + '\nError: ' + err.message}); }
+    }
+  } finally { try { lock.releaseLock(); } catch (e) {} }
+}
+
+/** "Shawna Log" tab: every message Julián sends her, and what happened (so problems can be traced). Keeps 500 rows. */
+function shawnaLog(kind, text, detail) {
+  try {
+    const ss = getSS(), sh = ss.getSheetByName('Shawna Log') || ensureTab(ss, {name: 'Shawna Log', color: '#6B4FBB', headers: ['When', 'What', 'Message', 'Detail']});
+    sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm:ss a'), kind, cell(text.slice(0, 300)), cell(String(detail || '').slice(0, 300))]);
+    if (sh.getLastRow() > 600) sh.deleteRows(2, 100);
+  } catch (e) {}
 }
 
 /** "personal" / "business" from Julián's words (or null if he didn't say). */
