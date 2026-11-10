@@ -23,6 +23,6 @@ function doPost(e) {
   if (!d.key || d.key !== PropertiesService.getScriptProperties().getProperty('MAILER_KEY')) return out({ok: false, error: 'denied'});
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.to || ''))) return out({ok: false, error: 'bad address'});
   GmailApp.sendEmail(d.to, String(d.subject || '').slice(0, 200), String(d.text || ''),
-    {htmlBody: d.html || undefined, name: d.name || 'Julián Crider', replyTo: Session.getActiveUser().getEmail()});
+    {htmlBody: d.html || undefined, name: d.name || 'Julián Crider'});
   return out({ok: true, from: Session.getEffectiveUser().getEmail()});
 }
