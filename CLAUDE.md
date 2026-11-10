@@ -93,6 +93,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (assistantKnowledge); humanize() strips dashes from everything she writes. Boss actions also: schedule (personal = his gmail
   calendar or business = BUSINESS_CALENDAR_ID, default julianc@bcolv.com shared to his gmail; asks "personal or
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list).
+- Julián's texts to Shawna go through runBossCommand: script lock, "Shawna Log" sheet tab (in/ok/error), failures retried
+  by processAssistantQueue up to 3 times (BOSS_RETRY), then he's told. Check that tab first when something "didn't respond".
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
   number are commands: text a contact (always "Reply YES" first, BOSS_PENDING, 30 min), note, task, who emailed,
   today's calendar, add a contact (resolvePerson: a phone he gives is looked up first, then the name; nobody found → created right away
