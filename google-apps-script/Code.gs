@@ -1371,7 +1371,8 @@ function bbApi(path, body) {
 
 /** Sends one iMessage (falls back to a green SMS for non-iPhones, if Text Message Forwarding is on). */
 function bbSend(phone, text) {
-  const to = bbE164(phone);
+  // iPhone users sometimes text from their Apple ID email instead of their number: reply to that address too.
+  const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
   if (!to) throw new Error('Not a US mobile number: ' + phone);
   // Existing conversation: send into it. New number: on this Mac's macOS (10.14) Messages can't address an unknown
   // "buddy", so start a new chat with the message instead. iMessage first, then green SMS (needs Text Message Forwarding).
@@ -1465,7 +1466,8 @@ function bbWebhook(e) {
     return json({status: 'ok'});
   }
   if (ev.type === 'new-message' && data.isFromMe) {  // Julián (or Shawna) texted: cancel any reply Shawna was holding
-    const to = bbE164((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '');
+    const raw = String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim();
+    const to = bbE164(raw) || (/@/.test(raw) ? raw.toLowerCase() : '');
     if (to) {
       assistantCancel(to);
       const sentByShawna = Number(props.getProperty('AI_SENDING_' + to) || 0) > Date.now() - 90 * 1000;
@@ -1474,12 +1476,19 @@ function bbWebhook(e) {
     return json({status: 'ok'});
   }
   if (ev.type !== 'new-message' || !data.handle || !data.text) return json({status: 'ok'});
-  const from = bbE164(data.handle.address);
-  if (!from) return json({status: 'ok'});  // email handles etc.
+  const handle = String(data.handle.address || '').trim();
+  const isEmailHandle = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(handle);
+  const from = bbE164(handle) || (isEmailHandle ? handle.toLowerCase() : '');
+  if (!from) return json({status: 'ok'});
   // Julián texting his own business number from his personal phone = talking to Shawna (his assistant).
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (boss && from === boss) { runBossCommand(String(data.text).slice(0, 1500), 0); return json({status: 'ok'}); }
-  let found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
+  let found = (isEmailHandle
+    ? fubFetch('people?limit=1&fields=id,firstName,lastName,tags&email=' + encodeURIComponent(from), null, 'get').people
+    : fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people) || [];
+  if (!found.length && isEmailHandle) return json({status: 'ok'});  // unknown Apple ID email: leave it alone
+  // Toll-free numbers (800, 833, 844, 855, 866, 877, 888) are businesses and verification codes, never leads.
+  if (!found.length && /^\+18(00|33|44|55|66|77|88)/.test(from)) return json({status: 'ok'});
   if (!found.length) {
     // Someone new texted the business number. People saved in his iPhone contacts are personal (friends, family):
     // leave them alone. Anyone else is a new lead: add them to FUB so Shawna can answer (they texted first).
