@@ -97,6 +97,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
   ElevenLabs TTS, ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID = her Vapi voice; Reply YES first; text bubble then MP3; testVoiceMemo), callme
   (vapiCall: Vapi POST /call to Julián only; VAPI_API_KEY, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID; no AI calls to clients without consent).
+- Shawna remembers: BOSS_HISTORY (last 16 messages with Julián, 3 days) is sent to Groq with each command; "remember …" adds
+  a row to the Shawna Knowledge tab. Calls: no summary from Vapi → Groq writes one; Julián's own test calls get no task.
 - Julián's texts to Shawna go through runBossCommand: script lock, "Shawna Log" sheet tab (in/ok/error), failures retried
   by processAssistantQueue up to 3 times (BOSS_RETRY), then he's told. Check that tab first when something "didn't respond".
 - Talk to Shawna (`bossCommand`): texts from Julián's personal phone (ALERT_TEXT_TO / TEST_TEXT_TO) to the business
