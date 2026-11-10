@@ -1570,7 +1570,7 @@ function assistantReply(person, from, text) {
   const notes = (fubFetch('notes?personId=' + person.id + '&limit=8', null, 'get').notes || []).reverse()
     .map(n => (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').slice(0, 400)).join('\n');
   const r = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-    {role: 'system', content: assistantPrompt(name)},
+    {role: 'system', content: assistantPrompt(name, assistantPersona(from))},
     {role: 'user', content: 'Contact: ' + [p.firstName, p.lastName].join(' ') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
       '\nRecent history (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
@@ -1594,7 +1594,7 @@ function assistantReply(person, from, text) {
       (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});
     return false;
   }
-  const intro = (props.getProperty('AI_INTRO_' + person.id) || assistantPersona() === 'julian') ? '' : assistantIntro() + ' ';
+  const intro = (props.getProperty('AI_INTRO_' + person.id) || assistantPersona(from) === 'julian') ? '' : assistantIntro() + ' ';
   props.setProperty('AI_SENDING_' + from, String(Date.now()));
   bbSendParts(from, intro + reply);
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
@@ -1603,10 +1603,21 @@ function assistantReply(person, from, text) {
 }
 
 // ASSISTANT_PERSONA = julian (default, Julián's choice Nov 9: replies are written as Julián himself, no intro) or shawna.
-function assistantPersona() { return (PropertiesService.getScriptProperties().getProperty('ASSISTANT_PERSONA') || 'julian').toLowerCase(); }
+function assistantPersona(phone) {
+  // California law (B&P 17941) bars using a bot to hide that it's AI in sales conversations: California numbers always
+  // get the open "Shawna, Julián's AI assistant" version, with the intro on the first text.
+  if (phone && isCaliforniaNumber(phone)) return 'shawna';
+  return (PropertiesService.getScriptProperties().getProperty('ASSISTANT_PERSONA') || 'julian').toLowerCase();
+}
 
-function assistantPrompt(name) {
-  const asJulian = assistantPersona() === 'julian';
+const CA_AREA_CODES = '209 213 279 310 323 341 350 369 408 415 424 442 510 530 559 562 619 626 628 650 657 661 669 707 714 747 760 805 818 820 831 840 858 909 916 925 949 951'.split(' ');
+function isCaliforniaNumber(phone) {
+  const d = String(phone).replace(/\D/g, '').slice(-10);
+  return d.length === 10 && CA_AREA_CODES.indexOf(d.slice(0, 3)) >= 0;
+}
+
+function assistantPrompt(name, persona) {
+  const asJulian = (persona || assistantPersona()) === 'julian';
   const who = asJulian
     ? `You ARE Julián J. Crider texting his own clients from his phone. Write in first person as Julián ("I", "me"). Never mention an assistant or AI on your own. If someone sincerely asks whether they're talking to a person, an AI or a bot, be honest: "Ha, good question. You're texting with ${name}, my AI assistant. I read every conversation and I'm happy to jump on a call anytime." Never deny being AI.`
     : `You are ${name}, Julián J. Crider's AI assistant, texting his clients. Be open that you're his assistant.`;
@@ -1684,7 +1695,7 @@ function processAssistantQueue() {
     const it = q[phone]; if (it.due > Date.now()) return;
     delete q[phone]; props.setProperty('AI_PENDING', JSON.stringify(q));  // remove first: never double-send
     try {
-      const intro = (props.getProperty('AI_INTRO_' + it.personId) || assistantPersona() === 'julian') ? '' : assistantIntro() + ' ';
+      const intro = (props.getProperty('AI_INTRO_' + it.personId) || assistantPersona(phone) === 'julian') ? '' : assistantIntro() + ' ';
       if (Number(props.getProperty('AI_MUTE_' + phone) || 0) > Date.now()) return;  // he jumped in meanwhile
       props.setProperty('AI_SENDING_' + phone, String(Date.now()));
       bbSendParts(phone, intro + it.reply);
