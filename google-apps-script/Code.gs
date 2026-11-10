@@ -1400,7 +1400,8 @@ function bbTextPerson(personId, text, opts) {
 
 /** Sends "bubble || [voice] || bubble || [contact card]" as separate messages, in order. Returns the first send. */
 function bbSendParts(phone, msg) {
-  const files = {'[voice]': OPEN_HOUSE_VOICE, '[contact card]': CONTACT_CARD};
+  // [welcome voice] = Drive file "Welcome hello" (a general hello for online sign-ups); skipped quietly until it exists.
+  const files = {'[voice]': OPEN_HOUSE_VOICE, '[welcome voice]': 'Welcome hello', '[contact card]': CONTACT_CARD};
   let first = null;
   String(msg).split(/\s*\|\|\s*/).filter(Boolean).forEach(part => {
     if (files[part.toLowerCase()]) {
@@ -1740,6 +1741,16 @@ function bossCommand(text) {
   if (pend && pend.kind !== 'schedule' && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
     props.deleteProperty('BOSS_PENDING');
     if (Date.now() - pend.at > 30 * 6e4) return say(name + ': that one expired. Ask me again.');
+    if (pend.kind === 'voice') {
+      const audio = shawnaVoice(pend.message);
+      props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
+      const first = String(pend.who || '').split(' ')[0];
+      const r = bbSend(pend.phone, 'Hi' + (first ? ' ' + first : '') + ', it\'s Shawna, Julián\'s assistant. Here\'s a quick voice note 👇🏾');
+      Utilities.sleep(1500);
+      bbPostAttachment(pend.phone, r && r.service, audio);
+      fubFetch('notes', {personId: pend.personId, subject: 'Voice memo sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+      return say('voice memo sent to ' + pend.who + '. ✅');
+    }
     if (pend.kind === 'email') {
       const r = sendFromBcolv(pend.email, pend.subject, pend.message);
       if (!r.ok) return say('the email did NOT go out: ' + (r.error || 'unknown error') + '.');
@@ -1756,10 +1767,11 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
+- voicememo: he wants you to send someone a voice memo / voice note / audio message in your voice ("message" = what you'll say, written to be spoken, 15 to 40 seconds).
 - email: he wants you to email someone (write a short, warm email in his voice, plain paragraphs, no signature; it's signed automatically).
 - note: save a note on a contact. task: remind him to do something about a contact.
 - emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
@@ -1841,6 +1853,15 @@ ${assistantKnowledge()}
     const subject = humanize(a.subject || 'Quick note from Julián'), body = humanize(a.message || '');
     props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, at: Date.now()}));
     return say('send this email to ' + (p.name || a.who) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
+  }
+  if (a.action === 'voicememo') {
+    if (!props.getProperty('ELEVENLABS_API_KEY') || !props.getProperty('ELEVENLABS_VOICE_ID')) return say('voice memos aren\'t connected yet. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID (Claude has the steps).');
+    const {p} = resolvePerson();
+    if (!p || p.many) return say(p && p.many ? 'which one? ' + p.many.map(x => x.name).join(', ') : 'who should get the voice memo? Send me their name and number.');
+    const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+    if (!phone) return say((p.name || a.who) + ' has no mobile number yet. Send me their number.');
+    props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'voice', personId: p.id, who: p.name || a.who, phone: phone, message: humanize(a.message), at: Date.now()}));
+    return say('send ' + (p.name || a.who) + ' a voice memo saying:\n\n"' + humanize(a.message) + '"\n\nReply YES to send or NO to cancel.');
   }
   if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
     let {p, isNew} = resolvePerson();
@@ -1975,6 +1996,25 @@ function vapiCall(number, topic) {
   return {ok: true};
 }
 
+/** Turns text into an MP3 in Shawna's ElevenLabs voice (ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID = the same voice as on
+ *  her Vapi calls). "Julián" is written "Julian" so she says it the way he does. */
+function shawnaVoice(text) {
+  const p = PropertiesService.getScriptProperties();
+  const res = UrlFetchApp.fetch('https://api.elevenlabs.io/v1/text-to-speech/' + p.getProperty('ELEVENLABS_VOICE_ID') + '?output_format=mp3_44100_128', {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: {'xi-api-key': p.getProperty('ELEVENLABS_API_KEY')},
+    payload: JSON.stringify({text: String(text).replace(/Julián/g, 'Julian'), model_id: p.getProperty('ELEVENLABS_MODEL') || 'eleven_multilingual_v2'})});
+  if (res.getResponseCode() >= 300) throw new Error('ElevenLabs ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 160));
+  return res.getBlob().setName('Shawna.mp3');
+}
+
+/** Run once after adding the ElevenLabs keys: texts Julián's personal phone a sample voice memo. */
+function testVoiceMemo() {
+  const p = PropertiesService.getScriptProperties(), to = bbE164(p.getProperty('ALERT_TEXT_TO') || p.getProperty('TEST_TEXT_TO'));
+  const r = bbSend(to, 'Test voice memo from Shawna 👇🏾'); Utilities.sleep(1500);
+  bbPostAttachment(to, r && r.service, shawnaVoice("Hi Julian, it's Shawna. If you can hear this, voice memos are working. Talk soon."));
+  console.log('Sent. Check your personal phone.');
+}
+
 /** Finds a person in the contacts on Julián's phone (iCloud contacts synced to the texting Mac, via BlueBubbles). */
 function macContact(who) {
   try {
@@ -2059,8 +2099,8 @@ const OPEN_HOUSE_TEXTS = {
     {step: 'oh-72h', hours: 72, text: "Hey {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
   // Signed up online through the funnel (no open house given): quick hello within minutes, no open-house voice note.
   online: [
-    {step: 'oh-2h', hours: 0.05, text: "Hey {first}, it's Julián 👋🏾 Thanks for signing up. Just curious, what has you looking at homes right now? || [contact card] || juliancrider.com/?relocate"},
-    {step: 'oh-24h', hours: 24, text: "Hey {first}, Julián again. What would your next home need to have that your current one doesn't? 🏡"},
+    {step: 'oh-2h', hours: 0.05, text: "Hey {first}, it's Julián Crider with The DeBenedetto Team 👋🏾 Welcome, and thanks for signing up. I help people buy and sell homes across Las Vegas and Henderson, so think of me as your go-to for anything real estate. Just curious, what has you looking right now? || [contact card] || [welcome voice] || juliancrider.com/?relocate"},
+    {step: 'oh-24h', hours: 24, text: "Hey {first}, Julián again. Whether it's an open house this weekend or a private tour, what would your next home need to have that your current one doesn't? 🏡"},
     {step: 'oh-72h', hours: 72, text: "Would it be a bad idea if I lined up 2 or 3 homes for you to see? You can pick what you'd like to see here: juliancrider.com/?showing"}],
   agent: [
     {step: 'oh-2h', hours: 2, text: "Hey {first}, Julián here 👋🏾 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]

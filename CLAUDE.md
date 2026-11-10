@@ -57,7 +57,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   steps once they've texted back. FUB rejects textMessages (its texting is off), so texts are logged as notes.
   Sign-in funnel: juliancrider.com/?signin (or ?openhouse; also a button on Homes > Open house) = same questions one per
   screen, not tied to a listing (open house optional). Every ?signin lead → source juliancrider.com + tag Website Lead (plus Open House if named). No open house → "Signed up: online" → tags Website Lead + Online
-  Sign-In, source juliancrider.com, OPEN_HOUSE_TEXTS.online (first text ~3 min, no open-house voice note). Step 1 (name,
+  Sign-In, source juliancrider.com, OPEN_HOUSE_TEXTS.online (first text ~3 min: welcome + introduces Julián and the team, [welcome voice] = Drive file "Welcome hello"
+  if he records one, no open-house voice note). Step 1 (name,
   phone, email, visitor type) signs them in, later answers post action 'enrich' (enrichSignIn: FUB note, re-tier tags, fills the
   Sign-Ins row, cancels queued texts if Has Agent). Notes carry "Form: funnel" / "Form: page" for the A/B answer-rate test.
   Appointments: bookSlot texts a confirmation; remindUpcoming (every 5 min) texts ~15 min before any Google Calendar
@@ -92,7 +93,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
   (assistantKnowledge); humanize() strips dashes from everything she writes. Boss actions also: schedule (personal = his gmail
   calendar or business = BUSINESS_CALENDAR_ID, default julianc@bcolv.com shared to his gmail; asks "personal or
-  business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), callme
+  business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
+  ElevenLabs TTS, ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID = her Vapi voice; Reply YES first; text bubble then MP3; testVoiceMemo), callme
   (vapiCall: Vapi POST /call to Julián only; VAPI_API_KEY, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID; no AI calls to clients without consent).
 - Julián's texts to Shawna go through runBossCommand: script lock, "Shawna Log" sheet tab (in/ok/error), failures retried
   by processAssistantQueue up to 3 times (BOSS_RETRY), then he's told. Check that tab first when something "didn't respond".
