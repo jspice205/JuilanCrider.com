@@ -1890,13 +1890,17 @@ ${assistantKnowledge()}
       props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'schedule', a: a, at: Date.now()}));
       return say('personal or business calendar for this one?');
     }
-    const cal = whichCalendar(which);
-    if (!cal) return say('I can\'t reach your business calendar yet. Share the bcolv calendar with julian.crider@gmail.com (Make changes to events), then ask me again.');
+    const cal = which === 'business' ? null : whichCalendar('personal');
     let p = (a.who || a.phone) ? resolvePerson().p : null;
     if (p && p.many) p = null;
     const title = (a.message || 'Appointment') + (a.who ? ': ' + a.who : '');
     const phone = a.phone || (p && p.phones && p.phones[0] && p.phones[0].value) || '';
-    cal.createEvent(title, start, end, {description: (phone ? 'Phone: ' + phone + '\n' : '') + 'Added by ' + name + ' from Julián\'s text.'});
+    const desc = (phone ? 'Phone: ' + phone + '\n' : '') + 'Added by ' + name + ' from Julián\'s text.';
+    if (cal) cal.createEvent(title, start, end, {description: desc});
+    else {
+      const r = bcolvCall({action: 'event', title: title, start: start.toISOString(), end: end.toISOString(), description: desc});
+      if (!r.ok) return say('I couldn\'t add it to your business calendar: ' + (r.error || 'unknown error') + '. Run setupMailer again in the Shawna Mailer and redeploy it.');
+    }
     if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
     return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
   }
@@ -1924,9 +1928,11 @@ ${assistantKnowledge()}
   if (a.action === 'calendar') {
     const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
     const evs = [];
-    ['personal', 'business'].forEach(w => { const c = whichCalendar(w); if (c) c.getEvents(now, end).forEach(e => evs.push({e: e, w: w})); });
-    evs.sort((x, y) => x.e.getStartTime() - y.e.getStartTime());
-    return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(x.e.getStartTime(), 'America/Los_Angeles', 'h:mm a') + ' ' + x.e.getTitle() + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
+    CalendarApp.getDefaultCalendar().getEvents(now, end).forEach(e => evs.push({t: e.getTitle(), s: e.getStartTime().getTime(), w: 'personal'}));
+    const b = bcolvCall({action: 'events', from: now.toISOString(), to: end.toISOString()});
+    (b.events || []).forEach(e => evs.push({t: e.title, s: e.start, w: 'business'}));
+    evs.sort((x, y) => x.s - y.s);
+    return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(new Date(x.s), 'America/Los_Angeles', 'h:mm a') + ' ' + x.t + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
   }
   if (a.action === 'claude') {
     const sh = getSS().getSheetByName(REQUESTS_TAB.name) || ensureTab(getSS(), REQUESTS_TAB);
@@ -2028,6 +2034,21 @@ function macContact(who) {
     const phone = ((c.phoneNumbers || [])[0] || {}).address || '', email = ((c.emails || [])[0] || {}).address || '';
     return phone || email ? {name: nm(c), phone: phone, email: email} : null;
   } catch (e) { console.log('Mac contacts: ' + e.message); return null; }
+}
+
+/** Calls the "Shawna Mailer" web app running inside julianc@bcolv.com (email + business calendar). */
+function bcolvCall(payload) {
+  const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
+  if (!url) return {ok: false, error: 'bcolv mailer not set up'};
+  const res = UrlFetchApp.fetch(url, {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify(Object.assign({key: props.getProperty('BCOLV_MAILER_KEY')}, payload))});
+  try { return JSON.parse(res.getContentText()); } catch (e) { return {ok: false, error: 'mailer answered ' + res.getResponseCode()}; }
+}
+
+/** Run once after updating the Shawna Mailer: adds a 5-minute test event to the business calendar tomorrow at 8am. */
+function testBusinessCalendar() {
+  const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(8, 0, 0, 0);
+  console.log(JSON.stringify(bcolvCall({action: 'event', title: 'Test from Shawna (delete me)', start: t.toISOString(), end: new Date(t.getTime() + 5 * 6e4).toISOString(), description: 'Business calendar test'})));
 }
 
 /** Sends an email FROM julianc@bcolv.com through the small "Shawna Mailer" script in that account. */
