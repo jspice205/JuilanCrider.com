@@ -1467,8 +1467,17 @@ function bbWebhook(e) {
   // Julián texting his own business number from his personal phone = talking to Shawna (his assistant).
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (boss && from === boss) { runBossCommand(String(data.text).slice(0, 1500), 0); return json({status: 'ok'}); }
-  const found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
-  if (!found.length) return json({status: 'ok'});  // not a Follow Up Boss contact: personal text, leave it alone
+  let found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
+  if (!found.length) {
+    // Someone new texted the business number. People saved in his iPhone contacts are personal (friends, family):
+    // leave them alone. Anyone else is a new lead: add them to FUB so Shawna can answer (they texted first).
+    const mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
+    if (mode === 'off' || props.getProperty('SHAWNA_NEW_NUMBERS') === 'off' || macContactByPhone(from)) return json({status: 'ok'});
+    fubFetch('events', {source: 'Text message', system: 'juliancrider.com', type: 'General Inquiry',
+      message: 'Texted the business number: ' + String(data.text).slice(0, 300), person: {phones: [{value: from}], tags: ['Texted In']}});
+    found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
+    if (!found.length) return json({status: 'ok'});
+  }
   const person = found[0], text = String(data.text).slice(0, 1000);
   try { fubFetch('textMessages', {personId: person.id, message: text, fromNumber: from, toNumber: TEXTING.myNumber, isIncoming: true}); }
   catch (err) { fubFetch('notes', {personId: person.id, subject: 'Text from ' + (person.firstName || 'contact'), body: text}); }
@@ -1566,12 +1575,12 @@ function assistantReply(person, from, text) {
       '\nRecent history (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   const reply = humanize(out.reply);
-  const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0;
+  const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0 || tags.indexOf('No Shawna') >= 0;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
   const muted = Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now();  // Julián is talking with them himself
-  const ok = reply && !out.escalate && !sensitive && n < 3 && tags.indexOf('Text OK') >= 0 && !muted;
+  const ok = reply && !out.escalate && !sensitive && n < Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12) && !muted;
   if (mode === 'backup' && ok && hour >= 8 && hour < 21) {  // hold it; send only if Julián hasn't replied in time
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
@@ -2065,6 +2074,23 @@ function testVoiceMemo() {
   const r = bbSend(to, 'Test voice memo from Shawna 👇🏾'); Utilities.sleep(1500);
   bbPostAttachment(to, r && r.service, shawnaVoice("Hi Julian, it's Shawna. If you can hear this, voice memos are working. Talk soon."));
   console.log('Sent. Check your personal phone.');
+}
+
+/** True if this number is saved in Julián's iPhone contacts (synced to the texting Mac), i.e. someone he knows personally. */
+function macContactByPhone(e164) {
+  try {
+    const want = String(e164).replace(/\D/g, '').slice(-10);
+    const props = PropertiesService.getScriptProperties();
+    let digits = null;
+    const cached = CacheService.getScriptCache().get('MAC_PHONES');
+    if (cached) digits = JSON.parse(cached);
+    else {
+      digits = [];
+      (bbApi('contact').data || []).forEach(c => (c.phoneNumbers || []).forEach(n => digits.push(String(n.address || '').replace(/\D/g, '').slice(-10))));
+      CacheService.getScriptCache().put('MAC_PHONES', JSON.stringify(digits).slice(0, 99000), 21600);
+    }
+    return digits.indexOf(want) >= 0;
+  } catch (e) { return true; }  // can't check: play it safe and treat as personal
 }
 
 /** Finds a person in the contacts on Julián's phone (iCloud contacts synced to the texting Mac, via BlueBubbles). */

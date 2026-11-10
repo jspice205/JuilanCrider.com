@@ -98,6 +98,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
   ElevenLabs TTS, ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID = her Vapi voice; Reply YES first; text bubble then MP3; testVoiceMemo), callme
   (vapiCall: Vapi POST /call to Julián only; VAPI_API_KEY, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID; no AI calls to clients without consent).
+- Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
+  Not in FUB → added (source "Text message", tag "Texted In") unless saved in his iPhone contacts (macContactByPhone,
+  cached 6h; personal people are left alone) or SHAWNA_NEW_NUMBERS=off. Tag `No Shawna` opts a contact out. Up to
+  ASSISTANT_MAX_PER_DAY (12) replies per person per day.
 - Shawna remembers: BOSS_HISTORY (last 16 messages with Julián, 3 days) is sent to Groq with each command; "remember …" adds
   a row to the Shawna Knowledge tab. Calls: no summary from Vapi → Groq writes one; Julián's own test calls get no task.
 - Julián's texts to Shawna go through runBossCommand: script lock, "Shawna Log" sheet tab (in/ok/error), failures retried
