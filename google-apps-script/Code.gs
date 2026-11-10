@@ -2386,6 +2386,10 @@ function processFubOutbox() {
   notes.reverse().forEach(n => {
     done.push(n.id); props.setProperty('OUTBOX_DONE', JSON.stringify(done.slice(-200)));  // mark first: never double-send
     try {
+      // Re-read the note right before sending: if it was canceled or edited a moment ago, respect that.
+      const fresh = fubFetch('notes/' + n.id, null, 'get');
+      if (!/^send text$/i.test(String(fresh.subject || '').trim())) return;
+      n.body = fresh.body;
       const p = fubFetch('people/' + n.personId + '?fields=id,firstName,tags,phones', null, 'get');
       if ((p.tags || []).indexOf('Text Opt-Out') >= 0) throw new Error('they opted out of texts');
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
