@@ -182,6 +182,14 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   trackEmailOpens tags bounces), past clients/sphere/trash, Has Agent. In each FUB automation, turn OFF stop-on-reply. "Funnel" sheet tab tracks stage. Text templates: JC Hot Text 1–3
   (31–33), JC Warm Text 1–2 (34–35), JC Nurture Text 1–8 (36–43). `juliancrider.com/?book` opens Book a consultation
   directly (link for Instagram/text auto-replies); site has no sms: links (they open the booking flow).
+- Closed client loop (Nov 10, `runPastClientLoop`, after runFunnel each morning; PAST_CLIENTS in Code.gs): Julián only
+  moves deal cards. `syncDealStages`: Hot Buyers/Listing Prep/Active Listings → contact stage Active Client; Offer/Due
+  Diligence/Loan/Appraisal → Pending; CLOSED (25/26) → Closed (never backwards). Signed buyer agreement → deal card in
+  Buyers › HOT BUYERS (`dealForAgreement`). Loop from closing date: day 3 text (email if no Text OK), day 7 email, day 30
+  review ask (waits for Script Property REVIEW_LINK), day 60 referral ask, quarterly check-ins (4 rotating), yearly
+  anniversary; Closed → Past Client after day 30. Tag "past client" (older clients) → quarterly only, first 30-60 days out,
+  JC drips paused, funnel skips them. Emails via sendFromBcolv (bcolv), texts via Text Queue (Text OK only). "Past Clients"
+  sheet tab; max 15/day; skip tags Pause / No Past Client Loop / Deceased / Has Agent. `previewPastClientLoop`.
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
