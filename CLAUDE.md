@@ -40,8 +40,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   default GCP project). Self-update only works if that API can be enabled there or the script is moved to a standard
   GCP project; otherwise give Julián the raw-link paste steps (raw.githubusercontent.com/.../Code.gs, Ctrl+A/C,
   paste, Deploy > Manage deployments > New version).
-  Booking: `bookingSlots`/`bookSlot` (GET ?action=slots, POST action=book) read free time from his default Google
-  Calendar (Mon–Sat 9–6 PT, 30 min, 3 h notice) and create the event + FUB note/task.
+  Booking: `bookingSlots(meetingFor(q))`/`bookSlot` (GET ?action=slots&kind=&minutes=&holes=, POST action=book). MEETINGS:
+  phone + video Mon–Sat 9–6 (video 30 or 45 min, Google Meet link via Calendar REST API, VIDEO_LINK fallback), showing,
+  golf by private link juliancrider.com/?golf only (Mon/Tue/Fri tee times 8–3, Thu 11–4; 9 holes 2.5 h / 18 holes 5 h;
+  asks tee time booked + course). Busy = personal calendar + bcolv calendar (via mailer). Every booking: calendar event,
+  FUB person (created if new), FUB appointment + note (+ task, not for golf), confirmation text; 15-min reminder from
+  remindUpcoming. No coffee/lunch/in-person consults (Julián, Nov 2).
 - Texting (bottom of Code.gs): BlueBubbles 1.9.7 on Mariel's MacBook Air (macOS 10.14, so newer versions won't run;
   auto-update off), Messages signed in as julian.crider@gmail.com / 702-498-2571, Cloudflare proxy (URL changes on
   restart; the `new-server` webhook updates BB_URL). Script Properties BB_URL, BB_PASSWORD, BB_KEY. `bbTextPerson` texts
