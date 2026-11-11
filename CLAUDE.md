@@ -195,6 +195,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   SHAWNA_ALLOW). Allowed numbers / "Hey Shawna" threads get `shawnaDirectReply` (no FUB entry). "Hey Shawna" in a text
   Julián sends anyone → SHAWNA_ON_<number>, Shawna joins that thread as his AI assistant. Claude can allow people by a
   FUB note on 2221 with subject "Shawna allow" (one name per line; `processAllowNotes` hourly → "Shawna allow - done").
+- Live info (Nov 11): `liveInfo(text)` adds today's rates (`ratesText`, same feed as the site card) when a text mentions
+  rates/loans (RATE_Q), and a web answer (`webAnswer`: Groq GROQ_WEB_MODEL, default groq/compound-mini, cached 1 h) for
+  current things (WEB_Q: market, news, sports, events…) to client replies, "Hey Shawna" chats and boss action `research`.
+  Prompt "WELL ROUNDED": explains loans/process, chats about the world; current numbers only from LIVE INFO. Vapi prompt
+  includes today's averages (never their own rate). "Hey Shawna" (also hi/yo, shauna/shwna; not "Shana") answers
+  instantly at any hour, and client replies in that thread skip pacing for 3 h (SHAWNA_ON_); if she can't, Julián is told.
+  notifyJulian alerts go into BOSS_HISTORY + LAST_ALERT_WHO, so "what does the email say?" reads that person.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
