@@ -2273,6 +2273,11 @@ function groqChat(key, model, messages) {
     PropertiesService.getScriptProperties().setProperty('GROQ_MODEL', model);
     res = send(model);
   }
+  if (res.getResponseCode() === 429 || res.getResponseCode() >= 500) {  // busy or rate-limited: wait a few seconds, try once more
+    const wait = Math.min(Number((res.getHeaders() || {})['retry-after'] || 4), 10);
+    Utilities.sleep(wait * 1000);
+    res = send(model);
+  }
   if (res.getResponseCode() >= 300) throw new Error('Groq ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return JSON.parse(res.getContentText()).choices[0].message.content;
 }
@@ -2407,7 +2412,7 @@ function testNotify() {
 // ============================================================
 const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['When', 'Request', 'Status']};
 
-function bossCommand(text) {
+function bossCommand(text, tries) {
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
   const say = msg => { const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t); return bbSend(boss, t); };
@@ -2448,9 +2453,10 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"agenda|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
-${assistantKnowledge()}
+About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
+- agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - voicememo: he wants you to send someone a voice memo / voice note / audio message in your voice ("message" = what you'll say, written to be spoken, 15 to 40 seconds).
 - If you just suggested an email reply and he says how to change it ("make it shorter", "add that I'm free Thursday", "say it like this: ..."), return action email for that same person with the updated "message".
@@ -2474,7 +2480,7 @@ Examples (all mean the same as the action shown):
 "hit Kyle up" / "shoot Lisa a text" / "tell him I'm on the way" / "let her know 3 works" / "text bro back" → text
 "run it" / "send it" / "bet" / "yup" / "go ahead" / "do that" / "yes please" → yes to what you just offered
 "who been hittin my line" / "anybody text me" / "what came in" → texts; "who emailed" / "any emails" / "inbox" → emails
-"what I got today" / "what's on deck" / "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
+"anything else I need to do" / "what I got today" / "what's on deck" / "how's my week look" → agenda; "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
 "pull up Dan" / "what's up with Dan" / "who is Dan" → lookup; "remind me to call Dan" → task; "put Dan down for Thursday at 2" → schedule
 "you can talk to Kyle" / "Kyle's cool, you can text him" / "add Kyle to your list" → allow
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
@@ -2487,7 +2493,8 @@ Examples (all mean the same as the action shown):
   const calPick = pend && pend.kind === 'schedule' && pickCalendar(text);
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
   else {
-    const history = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').slice(0, -1);  // earlier messages, not this one
+    const history = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').slice(0, -1).slice(-12)  // earlier messages, not this one
+      .map(h => ({r: h.r, t: String(h.t).slice(0, 250)}));
     const msgs = [{role: 'system', content: sys + '\nYour recent conversation with Julián is below; use it so he never has to repeat himself (e.g. "her", "that time", "same as before").'}]
       .concat(history.map(h => ({role: h.r, content: h.r === 'assistant' ? JSON.stringify({action: 'chat', reply: h.t}) : h.t})), [{role: 'user', content: text}]);
     // Groq sometimes stumbles on a long history: retry with just the last few messages before giving up.
@@ -2497,7 +2504,11 @@ Examples (all mean the same as the action shown):
     catch (e) {
       shawnaLog('error', text, 'first try: ' + String(e.message).slice(0, 200));
       try { a = ask([msgs[0]].concat(msgs.slice(-5))); }
-      catch (e2) { shawnaLog('error', text, 'retry: ' + String(e2.message).slice(0, 200)); return say(name + ': I didn\'t catch that. Try again?'); }
+      catch (e2) {
+        shawnaLog('error', text, 'retry: ' + String(e2.message).slice(0, 200));
+        if (!tries) say('give me a minute, my AI brain is busy right now. I\'ll answer you as soon as it\'s back.');
+        throw new Error('Groq: ' + String(e2.message).slice(0, 120));  // runBossCommand retries in a minute (up to 3 times)
+      }
     }
   }
   const findOne = who => {
@@ -2686,6 +2697,35 @@ Examples (all mean the same as the action shown):
     ((r && r.emails) || []).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
     return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
   }
+  if (a.action === 'agenda') {
+    const week = /week|7|days/i.test(String(a.message || '') + ' ' + text), lines = [];
+    const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
+    if (week) end.setDate(end.getDate() + 6);
+    const fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f);
+    try {
+      const evs = [];
+      CalendarApp.getDefaultCalendar().getEvents(now, end).forEach(e => evs.push({t: e.getTitle(), s: e.getStartTime().getTime()}));
+      ((bcolvCall({action: 'events', from: now.toISOString(), to: end.toISOString()}) || {}).events || []).forEach(e => evs.push({t: e.title + ' (business)', s: e.start}));
+      evs.sort((x, y) => x.s - y.s);
+      lines.push('📅 ' + (evs.length ? (week ? 'this week' : 'today') + ':\n' + evs.slice(0, 12).map(x => '• ' + fmt(x.s, week ? 'EEE h:mm a' : 'h:mm a') + ' ' + x.t).join('\n') : 'nothing on your calendars ' + (week ? 'this week' : 'for the rest of today') + '.'));
+    } catch (e) {}
+    try {
+      const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+      const due = fmt(end, 'yyyy-MM-dd');
+      const tasks = (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=40&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || []).filter(t => String(t.dueDate || '') <= due);
+      const recent = tasks.filter(t => (Date.now() - new Date(t.dueDate)) / 864e5 < 4), old = tasks.length - recent.length;
+      if (tasks.length) lines.push('✅ to do (' + tasks.length + ' open in Follow Up Boss' + (old ? ', ' + old + ' of them older than 3 days' : '') + '):\n' +
+        recent.slice(-8).reverse().map(t => '• ' + String(t.name || '').replace(/^\w+: /, '').slice(0, 90)).join('\n'));
+      else lines.push('✅ no open tasks in Follow Up Boss.');
+    } catch (e) {}
+    try {
+      const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).length;
+      const pe = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
+      if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you (ask "who haven\'t I responded to").');
+      if (pe && pe.kind === 'email' && Date.now() - pe.at < 6 * 36e5) lines.push('📧 my reply to ' + pe.who + '\'s email is waiting for your YES.');
+    } catch (e) {}
+    return say(lines.join('\n\n') || 'you\'re clear. Nothing on the calendar and no open tasks.');
+  }
   if (a.action === 'ask') {
     const question = a.message || text, ctx = [], clip = (x, n) => String(x || '').replace(/\s+/g, ' ').slice(0, n);
     String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0, 2).forEach(nm => {
@@ -2782,7 +2822,7 @@ function runBossCommand(text, tries) {
   try { lock.waitLock(20000); } catch (e) {}  // one of his messages at a time, so they don't trip over each other
   try {
     shawnaLog('in', text, tries ? 'retry ' + tries : '');
-    bossCommand(text);
+    bossCommand(text, tries);
     shawnaLog('ok', text, '');
   } catch (err) {
     shawnaLog('error', text, err.message);
