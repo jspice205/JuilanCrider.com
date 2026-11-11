@@ -131,6 +131,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Settings tab (Nov 11): Script Properties UI is read-only past 50 entries, so Julián adds keys in the sheet's "Settings"
   tab (name in A, value in B); `applySettings` (5-min tick) saves them to Script Properties and erases the value.
   `cleanupProperties` (hourly) deletes old REM_/AI_MUTE_/AI_SENDING_/NEWNUM_ entries.
+- Nov 11 (later): boss commands parse more robustly (retry with short history; "yes please" repeats the offered action).
+  New boss actions: read (latest texts via bbThread + latest unread email via mailer inbox or FUB email notes),
+  unanswered (TEXT_LOG + unread inbox), allow (`allowShawna`: names → numbers from FUB or his phone contacts →
+  SHAWNA_ALLOW). Allowed numbers / "Hey Shawna" threads get `shawnaDirectReply` (no FUB entry). "Hey Shawna" in a text
+  Julián sends anyone → SHAWNA_ON_<number>, Shawna joins that thread as his AI assistant. Claude can allow people by a
+  FUB note on 2221 with subject "Shawna allow" (one name per line; `processAllowNotes` hourly → "Shawna allow - done").
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
