@@ -134,7 +134,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Memory (Nov 11): BOSS_HISTORY 14 days / 30 msgs (<8.5 KB). `personTimeline` = texts (bbThread, falls back to BlueBubbles
   message/query) + 2 weeks of Gmail both ways (`emailHistory`, Shawna Mailer v4 action search) + FUB calls/voice memos/
   notes; boss `read` summarizes it with Groq; client text replies also get their emails. Client auto replies are paced
-  like a person (AI_PENDING, 1-3 min; ASSISTANT_INSTANT=on to send at once); Julián's own commands stay instant.
+  like a person (AI_PENDING, `humanDelay`: read + type + think time with jitter, halved in a live back-and-forth, max 120 s,
+  plus the 1-min queue tick → ~10 s to 3 min; ASSISTANT_INSTANT=on to send at once); Julián's own commands stay instant.
   `unanswered` skips threads whose last message is from Julián/Shawna, test contacts and "No name".
 - Boss prompt has an "understand him like a human" section: casual/urban/voice-to-text phrasings mapped to actions
   (e.g. "who I ain't hit back" → unanswered, "bet"/"run it" → yes). Add new phrasings there when he reports a miss.

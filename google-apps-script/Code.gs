@@ -1970,10 +1970,10 @@ function assistantReply(person, from, text) {
     return true;
   }
   if (mode === 'auto' && ok && hour >= 8 && hour < endHour && props.getProperty('ASSISTANT_INSTANT') !== 'on') {
-    // Like a person: answer about 1 to 3 minutes later (Julián's own texts to Shawna are still answered instantly).
-    // If Julián texts them himself in the meantime, this reply is canceled.
+    // Like a person (Julián's own texts to Shawna are still answered instantly). If Julián texts them himself in the
+    // meantime, this reply is canceled.
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
-    q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + (60 + Math.floor(Math.random() * 120)) * 1000, paced: true};
+    q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + humanDelay(text, reply, from) * 1000, paced: true};
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
@@ -1989,6 +1989,20 @@ function assistantReply(person, from, text) {
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
   fubFetch('notes', {personId: person.id, subject: 'Text sent', body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
   return true;
+}
+
+/** How long a person would take to answer (seconds, before the queue's own 0-60 s tick): time to read their text,
+ *  time to type the reply, a moment to think, all with natural randomness. Faster when they're texting back and forth
+ *  right now. Research (Nov 11): dynamic, length-based delays feel most human; a short "ok" shouldn't take as long as a
+ *  paragraph; and keep a live conversation inside a couple of minutes. Actual send: about 10 s to 3 min. */
+function humanDelay(theirText, reply, phone) {
+  const read = Math.min(String(theirText || '').length / 30, 10);   // reading their text, ~30 characters a second
+  const type = Math.min(String(reply || '').length / 5, 60);        // thumb typing, ~5 characters a second
+  const think = 2 + Math.random() * 10;
+  const lastOut = Number(PropertiesService.getScriptProperties().getProperty('AI_LAST_OUT_' + phone) || 0);
+  const pace = Date.now() - lastOut < 3 * 6e4 ? 0.5 : 1;             // they answered within 3 min: keep the rhythm going
+  const jitter = 0.7 + Math.random() * 0.6;
+  return Math.round(Math.min((read + type + think) * pace * jitter, 120));
 }
 
 /** A usable first name, or ''. Follow Up Boss shows "No Name" when it has none: never greet anyone as "No". */
@@ -2268,6 +2282,7 @@ function processAssistantQueue() {
       if (Number(props.getProperty('AI_MUTE_' + phone) || 0) > Date.now()) return;  // he jumped in meanwhile
       props.setProperty('AI_SENDING_' + phone, String(Date.now()));
       bbSendParts(phone, intro + it.reply);
+      props.setProperty('AI_LAST_OUT_' + phone, String(Date.now()));
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
       fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + (it.paced ? ')' : ', you hadn\'t replied yet)') + (it.next ? '\nNext step: ' + it.next : '')});
@@ -2892,7 +2907,7 @@ function cleanupProperties() {
   Object.keys(all).forEach(k => {
     const v = all[k];
     if (/^REM_/.test(k) && Number(k.split('_').pop()) < now - 864e5) props.deleteProperty(k);  // reminder already sent
-    else if (/^(AI_MUTE_|AI_SENDING_)/.test(k) && Number(v) < now - 36e5) props.deleteProperty(k);
+    else if (/^(AI_MUTE_|AI_SENDING_|AI_LAST_OUT_)/.test(k) && Number(v) < now - 36e5) props.deleteProperty(k);
     else if (/^NEWNUM_/.test(k)) { try { if (JSON.parse(v).at < now - 7 * 864e5) props.deleteProperty(k); } catch (e) { props.deleteProperty(k); } }
   });
 }
