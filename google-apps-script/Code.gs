@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-11-tags';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-11-callnotes';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1902,7 +1902,7 @@ function bbWebhook(e) {
   if (chatGuid) props.setProperty('BB_CHAT_' + from, chatGuid);
   // Julián texting his own business number from his personal phone = talking to Shawna (his assistant).
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
-  if (boss && from === boss) { runBossCommand(String(data.text).slice(0, 1500), 0); return json({status: 'ok'}); }
+  if (boss && from === boss) { runBossCommand(stashCallNotes(String(data.text)), 0); return json({status: 'ok'}); }
   let found = (isEmailHandle
     ? fubFetch('people?limit=1&fields=id,firstName,lastName,tags&email=' + encodeURIComponent(from), null, 'get').people
     : fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people) || [];
@@ -2794,7 +2794,7 @@ function bossCommand(text, tries) {
   if (picked && !pend) return say('I don\'t have a #' + picked + ' waiting. ' + (queue.length ? 'Waiting now: ' + queue.map(x => '#' + x.n + ' ' + pendingLabel(x)).join(', ') : 'Nothing is waiting for your OK.'));
   if (pend && pend.kind !== 'schedule' && ym) {
     dropPend(pend);
-    if (Date.now() - pend.at > (/^(email|deal|event)$/.test(pend.kind || '') ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+    if (Date.now() - pend.at > (/^(email|deal|event)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
     stat('approved');
     if (pend.kind === 'deal') {
       try { return say('done. ' + pend.who + '\'s deal is now in ' + moveDeal(pend) + '. ✅'); } catch (e) { return say('I couldn\'t move that deal: ' + String(e.message).slice(0, 120)); }
@@ -2890,7 +2890,19 @@ Examples (all mean the same as the action shown):
 - chat: small talk or general questions that don't need his data; answer in 1-3 short sentences. Never invent facts about clients, leads or listings: use ask for those.`;
   let a;
   const calPick = pend && pend.kind === 'schedule' && pickCalendar(text);
+  // Call notes: straight to the call-notes action (no routing). If she asked "who was that call with?", a short answer
+  // within 30 minutes is the name for those notes.
+  let cnKey = (text.match(/\[callnotes:(\w+)\]/) || [])[1] || '', cnWho = '';
+  const cnWait = JSON.parse(props.getProperty('CALLNOTES_WAIT') || 'null');
+  if (!cnKey && cnWait && Date.now() - cnWait.at < 30 * 6e4 && text.length < 80 && !/\?/.test(text)) { cnKey = cnWait.key; cnWho = text.trim(); }
+  if (cnKey) props.deleteProperty('CALLNOTES_WAIT');
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
+  else if (cnKey) {
+    const full = CacheService.getScriptCache().get(cnKey) || text;
+    const d = callNotesParse(full);
+    const head = (String(full).split('\n')[0].match(CALL_NOTES_RE) ? String(full).split('\n')[0].replace(CALL_NOTES_RE, '').replace(/^[\s:,-]*(with|from)?\s*/i, '').split(/[:.!?–—]|\s-\s/)[0].trim() : '');
+    a = {action: 'callnotes', who: cnWho || (head && head.length < 40 ? head : '') || d.who || '', phone: d.phone || '', email: d.email || '', data: d, key: cnKey, full: String(full).slice(0, 8000)};
+  }
   else {
     const history = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').slice(0, -1).slice(-12)  // earlier messages, not this one
       .map(h => ({r: h.r, t: String(h.t).slice(0, 250)}));
@@ -3246,6 +3258,48 @@ Examples (all mean the same as the action shown):
       evs.sort((x, y) => x.s - y.s);
       return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(new Date(x.s), 'America/Los_Angeles', 'h:mm a') + ' ' + x.t + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
     }
+    if (a.action === 'callnotes') {
+      const d = a.data || {};
+      if (!a.who && !a.phone) {
+        props.setProperty('CALLNOTES_WAIT', JSON.stringify({key: a.key, at: Date.now()}));
+        return say('📞 got the call notes. Who was the call with? (just the name)');
+      }
+      const {p, isNew} = resolvePerson();
+      if (!p || p.many) {
+        props.setProperty('CALLNOTES_WAIT', JSON.stringify({key: a.key, at: Date.now()}));
+        return say(p && p.many ? 'which ' + a.who + '? ' + p.many.map(x => x.name).join(', ') + ' (reply with the full name)' : 'who was the call with? (just the name)');
+      }
+      const who = p.name || a.who;
+      const body = (d.summary ? d.summary + '\n\n' : '') + (d.details ? 'Details:\n' + d.details + '\n\n' : '') + (d.next ? 'Next step: ' + d.next + '\n\n' : '') +
+        'Notes / transcript (from Julián\'s iPhone call recording):\n' + String(a.full || '').slice(0, 6000);
+      const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0] || bbE164(a.phone || '');
+      let logged = false;
+      try { fubFetch('calls', {personId: p.id, phone: phone ? phone.slice(2) : '', isIncoming: /\b(called me|inbound|incoming|they called)\b/i.test(a.full || ''), outcome: 'Interested', note: ((d.summary || '') + (d.next ? '\nNext step: ' + d.next : '') || 'Call notes saved as a note.').slice(0, 2000)}); logged = true; } catch (e) {}
+      fubFetch('notes', {personId: p.id, subject: 'Call notes' + (d.next ? ': ' + String(d.next).slice(0, 80) : ''), body: body.slice(0, 9000)});
+      const out = ['📞 logged your call with ' + who + (isNew ? ' (new contact)' : '') + '.'];
+      if (d.summary) out.push(humanize(d.summary));
+      const fu = /^\d{4}-\d{2}-\d{2}$/.test(d.followup || '') ? d.followup : Utilities.formatDate(new Date(Date.now() + 2 * 864e5), 'America/Los_Angeles', 'yyyy-MM-dd');
+      try {
+        fubFetch('tasks', {personId: p.id, type: /^(Call|Text|Email|Showing)$/.test(d.followupType || '') ? d.followupType : 'Follow Up', name: String(d.next || 'Follow up from the call').slice(0, 250), dueDate: fu});
+        out.push('✅ task: ' + (d.next || 'follow up') + ' (' + Utilities.formatDate(Utilities.parseDate(fu, 'America/Los_Angeles', 'yyyy-MM-dd'), 'America/Los_Angeles', 'EEE MMM d') + ')');
+      } catch (e) {}
+      try { const t = applyShawnaTags(p.id, d.tags, 'a phone call'); if (t.length) out.push('🏷️ tagged ' + t.join(', ')); } catch (e) {}
+      try { applyIntent(p.id, String(d.intent || ''), 'a phone call'); } catch (e) {}
+      try { if (DEAL_SIGNALS[d.deal]) suggestDeal(p.id, d.deal, 'from your call'); } catch (e) {}
+      const optOut = (p.tags || []).indexOf('Text Opt-Out') >= 0;
+      if (d.text && phone && !optOut) {
+        const n = addPending({personId: p.id, who: who, phone: phone, message: humanize(d.text), at: Date.now(), long: true});
+        out.push('\n💬 follow-up text (' + yesHint(n) + '):\n"' + humanize(d.text) + '"');
+      }
+      let email = a.email;
+      if (!email) { try { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; } catch (e) {} }
+      if (d.emailBody && email && props.getProperty('BCOLV_MAILER_URL')) {
+        const n = addPending({kind: 'email', personId: p.id, who: who, email: email, subject: humanize(d.emailSubject || 'Great talking with you'), message: humanize(d.emailBody), at: Date.now()});
+        out.push('\n📧 recap email (' + yesHint(n) + '):\nSubject: ' + humanize(d.emailSubject || 'Great talking with you') + '\n' + humanize(d.emailBody));
+      }
+      if (pendingQueue().length > 1) out.push('\nReply YES 1, YES 2… for each one, or tell me what to change.');
+      return say(out.join('\n'));
+    }
     if (a.action === 'tag') {
       const p = findOne(a.who);
       if (!p) return say('I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
@@ -3286,6 +3340,33 @@ Examples (all mean the same as the action shown):
     try { doAction(x); } catch (e) { say('I couldn\'t finish #' + (i + 1) + ' (' + String(e.message).slice(0, 80) + '). Ask me that one again?'); }
     Utilities.sleep(800);
   });
+}
+
+// CALL NOTES (Julián, Nov 11): he records a call on his iPhone (business line 702-498-2571), copies the transcript or
+// summary from the Notes app and texts it to Shawna ("call notes Lisa" + paste, or the "Send call to Shawna" shortcut).
+// Shawna logs the call in Follow Up Boss, tags, sets the follow-up task, suggests a deal move, and drafts the follow-up
+// text and email for his YES. Long transcripts are kept whole in the cache (6 h); his message carries a [callnotes:key].
+const CALL_NOTES_RE = /^\s*(?:📞\s*)?(?:call\s*notes?|call\s+(?:summary|recap|transcript)|notes?\s+(?:from|on)\s+(?:my\s+)?call|transcript)\b/i;
+function stashCallNotes(text) {
+  if (!CALL_NOTES_RE.test(text) && !(text.length > 1400 && /transcript|summary|call/i.test(text.slice(0, 400)))) return text.slice(0, 1500);
+  const key = 'CN' + Date.now();
+  CacheService.getScriptCache().put(key, text.slice(0, 90000), 6 * 3600);
+  return text.slice(0, 160).replace(/\s+/g, ' ') + ' [callnotes:' + key + ']';
+}
+function callNotesParse(full) {
+  const props = PropertiesService.getScriptProperties();
+  const raw = groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+    {role: 'system', content: 'Julián Crider is a Las Vegas Realtor. He just had a phone call and pasted his notes, the call summary or the transcript (the first line may say who it was with). Today is ' +
+      Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '. Return JSON only:\n' +
+      '{"who": "the other person\'s full name (as Julián wrote it, else from the call; empty if unknown)", "phone": "their phone if said", "email": "their email if said", ' +
+      '"summary": "2 to 4 short lines: who they are and what was discussed", "details": "key facts, one per line: budget, areas, beds, timeline, pre-approval, must haves, their situation, anything personal worth remembering", ' +
+      '"next": "the next step that was agreed", "followup": "YYYY-MM-DD when Julián should follow up (what they agreed, else 2 days from today)", "followupType": "Call, Text, Email, Showing or Follow Up", ' +
+      '"tags": "comma separated, only if clear: moved_away, agent, referral_partner, relocation, seller, investor, has_agent, bought_elsewhere, renter, past_client", ' +
+      '"intent": "not_now, not_interested or empty", "deal": "offer, under_contract, closed, listing or empty", ' +
+      '"text": "a short follow-up text from Julián in his voice: thank them, recap one specific thing they said, the next step. Warm, human, light Chris Voss, 1 emoji at most, no dashes", ' +
+      '"emailSubject": "short subject", "emailBody": "a short recap email (3 to 6 sentences, plain paragraphs, no signature) if the call had details worth putting in writing, else empty"}'},
+    {role: 'user', content: String(full).slice(0, 14000)}], {maxTokens: 1400});
+  try { return JSON.parse(raw); } catch (e) { const j = String(raw).match(/\{[\s\S]*\}/); return j ? JSON.parse(j[0]) : {}; }
 }
 
 /** Runs one of Julián's texts to Shawna with a log and a safety net: if it fails (Mac busy, Groq hiccup), it's queued
