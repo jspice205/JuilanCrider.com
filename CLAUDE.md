@@ -209,6 +209,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   past_client) → `applyShawnaTags` from texts/emails/DMs + note "Shawna tagged: …". Boss action `tag` (add, "remove:").
   checkClientEmails ignores FUB "Received" copies of his own emails (relatedPeople sentByPerson false) and counts them
   as his reply. Margaret Anjewel 1970 (moved to Nashville): Referral Partner, Partner, Moved Away.
+- Call notes (Nov 11, option 1): Julián records calls on his iPhone (native recording, both sides hear the notice),
+  copies the transcript/summary from Notes and texts Shawna "call notes <name>" + paste (or the "Send call to Shawna"
+  shortcut). Webhook `stashCallNotes` keeps long text whole in cache ([callnotes:key], 6 h; CALL_NOTES_RE); bossCommand skips
+  routing → `callNotesParse` (Groq: who, summary, details, next, followup date/type, tags, intent, deal, text, email) →
+  action `callnotes`: resolvePerson (creates new), FUB call log + "Call notes" note, follow-up task on the agreed day,
+  applyShawnaTags/applyIntent/suggestDeal, pending follow-up text (long: 6 h to approve) + recap email from bcolv.
+  Unknown/ambiguous name → asks; a short reply within 30 min (CALLNOTES_WAIT) names it.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
