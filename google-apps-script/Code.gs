@@ -2507,8 +2507,9 @@ function groqChat(key, model, messages) {
     payload: JSON.stringify({model: m, messages: messages, temperature: 0.7, max_tokens: 400, response_format: {type: 'json_object'}})});
   let res = send(model);
   if (res.getResponseCode() === 404 || /model_not_found|decommissioned/.test(res.getContentText())) {
+    const wasMain = model === (PropertiesService.getScriptProperties().getProperty('GROQ_MODEL') || ASSISTANT.model);
     model = groqPickModel(key);  // Groq retires models now and then: pick the best one this account has and remember it
-    PropertiesService.getScriptProperties().setProperty('GROQ_MODEL', model);
+    if (wasMain) PropertiesService.getScriptProperties().setProperty('GROQ_MODEL', model);
     res = send(model);
   }
   if (res.getResponseCode() === 429 || res.getResponseCode() >= 500) {  // busy or rate-limited: wait a few seconds, try once more
@@ -2763,12 +2764,14 @@ Examples (all mean the same as the action shown):
     const msgs = [{role: 'system', content: sys + '\nYour recent conversation with Julián is below; use it so he never has to repeat himself (e.g. "her", "that time", "same as before").'}]
       .concat(history.map(h => ({role: h.r, content: h.r === 'assistant' ? JSON.stringify({action: 'chat', reply: h.t}) : h.t})), [{role: 'user', content: text}]);
     // Groq sometimes stumbles on a long history: retry with just the last few messages before giving up.
-    const ask = m => { const raw = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, m);
+    // Working out what he wants runs on a fast, smaller model with its own Groq allowance (GROQ_ROUTER_MODEL), so his
+    // texts rarely wait behind client replies and email briefs; the main model is the backup.
+    const ask = (m, model) => { const raw = groqChat(key, model, m);
       try { return JSON.parse(raw); } catch (e) { const j = String(raw).match(/\{[\s\S]*\}/); if (j) return JSON.parse(j[0]); throw e; } };
-    try { a = ask(msgs); }
+    try { a = ask(msgs, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b'); }
     catch (e) {
       shawnaLog('error', text, 'first try: ' + String(e.message).slice(0, 200));
-      try { a = ask([msgs[0]].concat(msgs.slice(-5))); }
+      try { a = ask([msgs[0]].concat(msgs.slice(-5)), props.getProperty('GROQ_MODEL') || ASSISTANT.model); }
       catch (e2) {
         shawnaLog('error', text, 'retry: ' + String(e2.message).slice(0, 200));
         if (!tries) say('give me a minute, my AI brain is busy right now. I\'ll answer you as soon as it\'s back.');
