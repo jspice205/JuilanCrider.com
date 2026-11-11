@@ -137,6 +137,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   like a person (AI_PENDING, `humanDelay`: read + type + think time with jitter, halved in a live back-and-forth, max 120 s,
   plus the 1-min queue tick → ~10 s to 3 min; ASSISTANT_INSTANT=on to send at once); Julián's own commands stay instant.
   `unanswered` skips threads whose last message is from Julián/Shawna, test contacts and "No name".
+- Email briefs (Nov 11): processEmailAssistant (unread inbox + FUB "Received" via checkClientEmails) no longer makes
+  Gmail drafts or "X emailed you" alerts: it texts Julián "📧 X emailed you: <summary>" + the reply Shawna would send;
+  BOSS_PENDING kind email (threadId, valid 6 h) → YES sends in the thread; "change it…" rewrites. EMAIL_ASSISTANT=auto
+  sends non-sensitive replies and tells him after. FUB note "Shawna suggested reply".
 - Email threads (Nov 11): Shawna Mailer v5 `reply` answers the client's latest message in the thread (reply), or reply-all
   to Julián's latest when the thread is only his (campaign) — never to himself. Boss `email` replies in the latest thread
   with them from 60 days ({from: to:} search); with mailer <5 only threads whose latest message is theirs.
