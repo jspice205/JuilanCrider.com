@@ -2338,7 +2338,19 @@ function checkClientEmails() {
     const em = (fubFetch('emails?personId=' + p.id + '&limit=3&fields=id,status,date', null, 'get').emails || []);
     const last = em[0];
     if (last && last.status === 'Received' && !watch[last.id] && new Date(last.date).getTime() > Date.now() - 6 * 36e5)
-      watch[last.id] = {p: p.id, name: p.name, at: new Date(last.date).getTime(), told: 0, nudged: 0};
+      watch[last.id] = {p: p.id, name: p.name, at: new Date(last.date).getTime(), told: 0, nudged: 0, fresh: 1};
+  });
+  // Replies to the drip campaigns land in Follow Up Boss and Gmail. Even if he already opened it, Shawna reads it from
+  // Gmail (Shawna Mailer v4), learns from it (not now / not interested / name) and drafts the answer.
+  Object.keys(watch).filter(id => watch[id].fresh).forEach(id => {
+    const w = watch[id]; delete w.fresh;
+    try {
+      const em = ((fubFetch('people/' + w.p + '?fields=emails', null, 'get').emails) || []).map(e => String(e.value).toLowerCase()).filter(validEmail)[0];
+      if (!em) return;
+      const r = bcolvCall({action: 'search', query: 'from:' + em + ' newer_than:2d', max: 2});
+      const msgs = ((r && r.messages) || []).filter(m => !m.fromMe).sort((x, y) => x.date - y.date).slice(-1);
+      if (msgs.length && processEmailAssistant(msgs) > 0) w.told = 1;  // Shawna already texted him about it
+    } catch (e) { console.log('Campaign reply: ' + e.message); }
   });
   const nudgeMin = Number(props.getProperty('EMAIL_NUDGE_MIN') || 60);
   Object.keys(watch).forEach(id => {
@@ -2504,6 +2516,7 @@ Examples (all mean the same as the action shown):
     }
     return {p: a.who ? addContact() : null, isNew: true};
   };
+  if (/^(ask|read|unanswered)$/.test(a.action)) { try { bbSend(boss, 'On it 👀 one sec.'); } catch (e) {} }  // he knows she heard him
   if (a.action === 'contact') {
     const p = addContact();
     if (!p) fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: 'Add contact: ' + text});
@@ -3276,7 +3289,7 @@ function processEmailOutbox() {
 // Follow Up Boss (vendors, newsletters, other agents) are left alone. "Not right now" / "not interested" emails change
 // their campaign (applyIntent). Emails stay unread in his inbox.
 // ============================================================
-function processEmailAssistant() {
+function processEmailAssistant(list) {
   const props = PropertiesService.getScriptProperties(), mode = (props.getProperty('EMAIL_ASSISTANT') || 'draft').toLowerCase();
   const key = props.getProperty('GROQ_API_KEY');
   if (mode === 'off' || !key || !props.getProperty('BCOLV_MAILER_URL')) return;
@@ -3284,11 +3297,12 @@ function processEmailAssistant() {
   if (hour < 7 || hour >= 22) return;
   const v = bcolvCall({action: 'version'});
   if (!v || !(v.version >= 3)) return;  // the Shawna Mailer needs the v3 update to read email
-  const res = bcolvCall({action: 'inbox', days: 2, max: 20});
-  if (!res || !res.ok) return;
+  let emails = Array.isArray(list) ? list : null;
+  if (!emails) { const res = bcolvCall({action: 'inbox', days: 2, max: 20}); if (!res || !res.ok) return 0; emails = res.emails || []; }
+  let handled = 0;
   const me = Number(props.getProperty('FUB_ME') || 0) || (() => { const id = fubFetch('me', null, 'get').id; props.setProperty('FUB_ME', id); return id; })();
   const done = JSON.parse(props.getProperty('EMAIL_AI_DONE') || '[]'), name = assistantName();
-  (res.emails || []).filter(m => done.indexOf(m.id) < 0).slice(0, 5).forEach(m => {
+  emails.filter(m => done.indexOf(m.id) < 0 && !m.fromMe).slice(0, 5).forEach(m => {
     done.push(m.id); props.setProperty('EMAIL_AI_DONE', JSON.stringify(done.slice(-400)));  // mark first: never answer twice
     const addr = String((String(m.from).match(/<([^>]+)>/) || [null, m.from])[1] || '').trim().toLowerCase();
     if (!validEmail(addr) || /no-?reply|notification|mailer-daemon|postmaster|bcolv\.com|followupboss|zillow|realscout/i.test(addr)) return;
@@ -3321,7 +3335,9 @@ function processEmailAssistant() {
     notifyJulian(draft ? who + ' emailed you' : name + ' answered ' + who + "'s email",
       draft ? name + ' wrote a reply for you. It\'s in your bcolv Gmail Drafts: open it, change anything you like, and hit send.' + (sensitive ? ' Heads up: ' + (out.reason || 'this one needs you') + '.' : '')
         : 'She replied: "' + reply.slice(0, 160) + '"');
+    handled++;
   });
+  return handled;
 }
 
 /** EMAIL OUTBOX (bcolv): a FUB note with subject "Send bcolv email" by Julián's account (user 2, e.g. Claude) is
