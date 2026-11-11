@@ -289,6 +289,7 @@ function autoUpdateFromGitHub() {
   try { trackEmailOpens(); } catch (e) { console.log('Email opens: ' + e.message); }
   try { cleanupProperties(); } catch (e) { console.log('Property cleanup: ' + e.message); }
   try { processAllowNotes(); } catch (e) { console.log('Shawna allow: ' + e.message); }
+  try { cleanupOldTasks(); } catch (e) { console.log('Old tasks: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
@@ -2278,6 +2279,10 @@ function groqChat(key, model, messages) {
     Utilities.sleep(wait * 1000);
     res = send(model);
   }
+  if (res.getResponseCode() >= 300) {  // still failing: a smaller, faster model on the same account usually has room
+    const fb = PropertiesService.getScriptProperties().getProperty('GROQ_FALLBACK') || 'llama-3.1-8b-instant';
+    if (fb !== model) { const r2 = send(fb); if (r2.getResponseCode() < 300) { console.log('Groq: used fallback ' + fb); res = r2; } }
+  }
   if (res.getResponseCode() >= 300) throw new Error('Groq ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
   return JSON.parse(res.getContentText()).choices[0].message.content;
 }
@@ -2446,6 +2451,7 @@ function bossCommand(text, tries) {
     props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
     fubFetch('notes', {personId: pend.personId, subject: 'Text sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+    if (pend.taskId) { try { fubFetch('tasks/' + pend.taskId, {isCompleted: true}, 'put'); } catch (e) {} }
     return say(name + ': sent to ' + pend.who + '. ✅');
   }
   if (pend && /^\s*(no|n|cancel|stop|don.?t)\b/i.test(text)) { props.deleteProperty('BOSS_PENDING'); return say(name + ': canceled. Nothing was sent.'); }
@@ -2453,10 +2459,12 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"agenda|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"agenda|taskdone|taskstart|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
+- taskdone: he says tasks are done or wants them cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "clear the old tasks", "clear them all"). "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
+- taskstart: he wants to work a task from your to-do list ("do 2", "let's knock out number 3", "start the Sonia one", "handle 1"). "message": the number; "who": the person if he names one.
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - voicememo: he wants you to send someone a voice memo / voice note / audio message in your voice ("message" = what you'll say, written to be spoken, 15 to 40 seconds).
 - If you just suggested an email reply and he says how to change it ("make it shorter", "add that I'm free Thursday", "say it like this: ..."), return action email for that same person with the updated "message".
@@ -2714,8 +2722,12 @@ Examples (all mean the same as the action shown):
       const due = fmt(end, 'yyyy-MM-dd');
       const tasks = (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=40&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || []).filter(t => String(t.dueDate || '') <= due);
       const recent = tasks.filter(t => (Date.now() - new Date(t.dueDate)) / 864e5 < 4), old = tasks.length - recent.length;
-      if (tasks.length) lines.push('✅ to do (' + tasks.length + ' open in Follow Up Boss' + (old ? ', ' + old + ' of them older than 3 days' : '') + '):\n' +
-        recent.slice(-8).reverse().map(t => '• ' + String(t.name || '').replace(/^\w+: /, '').slice(0, 90)).join('\n'));
+      const list = tasks.slice(0, 10), names = {};
+      list.forEach(t => { if (t.personId && !(t.personId in names)) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); names[t.personId] = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) { names[t.personId] = ''; } } });
+      props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
+      if (list.length) lines.push('✅ to do (' + tasks.length + ' open' + (old ? ', ' + old + ' older than 3 days' : '') + '):\n' +
+        list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80)).join('\n') +
+        '\n\nText "do 2" and I\'ll start it, or "done 2" to check it off.');
       else lines.push('✅ no open tasks in Follow Up Boss.');
     } catch (e) {}
     try {
@@ -2725,6 +2737,41 @@ Examples (all mean the same as the action shown):
       if (pe && pe.kind === 'email' && Date.now() - pe.at < 6 * 36e5) lines.push('📧 my reply to ' + pe.who + '\'s email is waiting for your YES.');
     } catch (e) {}
     return say(lines.join('\n\n') || 'you\'re clear. Nothing on the calendar and no open tasks.');
+  }
+  if (a.action === 'taskdone' || a.action === 'taskstart') {
+    const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+    const saved = JSON.parse(props.getProperty('AGENDA_TASKS') || '[]'), arg = String(a.message || '').toLowerCase();
+    const nums = (arg.match(/\d+/g) || []).map(Number).filter(n => n >= 1 && n <= saved.length);
+    let picks = nums.map(n => saved[n - 1]);
+    if (!picks.length && a.who) picks = saved.filter(t => String(t.who + ' ' + t.name).toLowerCase().indexOf(String(a.who).toLowerCase().split(' ')[0]) >= 0).slice(0, 1);
+    if (a.action === 'taskdone') {
+      if (!picks.length && /old|all/.test(arg)) {
+        const open = fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=100&fields=id,dueDate', null, 'get').tasks || [];
+        picks = open.filter(t => /all/.test(arg) || (Date.now() - new Date(t.dueDate)) / 864e5 > 7);
+      }
+      if (!picks.length) return say('which ones? Text "done" with the numbers from my list, like "done 2" (or "clear the old tasks").');
+      let n = 0; picks.forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); n++; } catch (e) {} });
+      return say('checked off ' + n + ' task' + (n === 1 ? '' : 's') + '. ✅');
+    }
+    const t = picks[0];
+    if (!t) return say('which one? Text "do" with the number from my list, like "do 2". Ask "what do I need to do today" to see the list.');
+    if (!t.personId) return say('that one isn\'t tied to a person: "' + t.name + '". Text "done ' + (saved.indexOf(t) + 1) + '" when it\'s handled.');
+    const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName,tags,phones,emails', null, 'get'), who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name;
+    const phone = (pp.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0], tl = personTimeline(pp, phone);
+    const isCall = /^call/i.test(t.name);
+    const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: assistantPrompt(name, 'julian') + '\nJulián wants to handle this to-do now: "' + t.name + '". Using everything below, write ' + (isCall ? 'a 2-line briefing for his call (who, what they want, what to say first) in "reply", plus a short text he could send instead in "text".' : 'the text he should send them now in "reply" (his voice, picks up exactly where things left off).') + ' Return JSON {"reply": "...", "text": "..."}.'},
+      {role: 'user', content: 'Contact: ' + who + '\n' + (tl || 'no history') }]));
+    if (isCall) {
+      const alt = humanize(r.text || '');
+      if (alt && phone && (pp.tags || []).indexOf('Text Opt-Out') < 0) props.setProperty('BOSS_PENDING', JSON.stringify({personId: pp.id, who: who, phone: phone, message: alt, at: Date.now(), taskId: t.id}));
+      return say('📞 ' + who + (phone ? ' ' + phone.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') : '') + '\n' + humanize(r.reply || '') +
+        (alt && phone ? '\n\nOr I can text them:\n"' + alt + '"\nReply YES to send it.' : '') + '\n\nText "done ' + (saved.indexOf(t) + 1) + '" after you talk.');
+    }
+    const msg = humanize(r.reply || '');
+    if (!phone || !msg) return say('I couldn\'t draft that one (no number for ' + who + '). Text "done ' + (saved.indexOf(t) + 1) + '" when it\'s handled.');
+    props.setProperty('BOSS_PENDING', JSON.stringify({personId: pp.id, who: who, phone: phone, message: msg, at: Date.now(), taskId: t.id}));
+    return say('here\'s what I\'d text ' + who + ':\n\n"' + msg + '"\n\nReply YES to send it (I\'ll check the task off), or tell me what to change.');
   }
   if (a.action === 'ask') {
     const question = a.message || text, ctx = [], clip = (x, n) => String(x || '').replace(/\s+/g, ' ').slice(0, n);
@@ -3072,6 +3119,18 @@ function applySettings() {
 
 /** Hourly: removes housekeeping entries that are no longer needed (old reminder marks, expired mutes), so Script
  *  Properties stays small. Never touches keys or settings. */
+/** Daily: the automatic reminder tasks ("They texted back…", "they reached out…", "New Showing request…", "Shawna took
+ *  their call…") are checked off after 7 days, so his task list only shows what's still real. */
+function cleanupOldTasks() {
+  const props = PropertiesService.getScriptProperties(), day = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+  if (props.getProperty('TASK_CLEAN_DAY') === day) return;
+  props.setProperty('TASK_CLEAN_DAY', day);
+  const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+  (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=100&fields=id,name,dueDate', null, 'get').tasks || [])
+    .filter(t => (Date.now() - new Date(t.dueDate)) / 864e5 > 7 && /They texted back|they reached out|New Showing request|took their call|They asked for you/i.test(String(t.name || '')))
+    .forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); Utilities.sleep(100); } catch (e) {} });
+}
+
 function cleanupProperties() {
   const props = PropertiesService.getScriptProperties(), all = props.getProperties(), now = Date.now();
   Object.keys(all).forEach(k => {
