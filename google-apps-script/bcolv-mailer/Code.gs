@@ -33,7 +33,7 @@ function doPost(e) {
       .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), end: e.getEndTime().getTime(), description: e.getDescription()}));
     return out({ok: true, events: evs});
   }
-  if (d.action === 'version') return out({ok: true, version: 4});  // v2 attachments · v3 inbox + reply/draft · v4 search
+  if (d.action === 'version') return out({ok: true, version: 5});  // v2 attachments · v3 inbox + reply · v4 search · v5 safe thread replies
   if (d.action === 'search') {  // any Gmail search (read or unread, sent or received): the last few messages of each thread
     const me = Session.getEffectiveUser().getEmail().toLowerCase(), list = [];
     GmailApp.search(String(d.query || ''), 0, Math.min(Number(d.max) || 8, 20)).forEach(t => {
@@ -60,10 +60,20 @@ function doPost(e) {
   if (d.action === 'reply') {  // reply in the same thread, or save it as a draft for Julián to review
     const t = GmailApp.getThreadById(String(d.threadId || ''));
     if (!t) return out({ok: false, error: 'thread not found'});
-    const last = t.getMessages().pop(), opts = {htmlBody: d.html || undefined, name: d.name || 'Julián Crider'};
-    if (d.draft) return out({ok: true, draft: true, id: last.createDraftReply(String(d.text || ''), opts).getId()});
-    last.reply(String(d.text || ''), opts);
-    return out({ok: true, sent: true});
+    // Reply to the client's latest message in the thread (opened or not). If the thread only has Julián's messages
+    // (e.g. a campaign email they never answered), reply-all to his latest one so it goes to them, never to himself.
+    const me = Session.getEffectiveUser().getEmail().toLowerCase(), msgs = t.getMessages();
+    const theirs = msgs.filter(m => String(m.getFrom()).toLowerCase().indexOf(me) < 0).pop();
+    const opts = {htmlBody: d.html || undefined, name: d.name || 'Julián Crider'}, body = String(d.text || '');
+    if (theirs) {
+      if (d.draft) return out({ok: true, draft: true, id: theirs.createDraftReply(body, opts).getId()});
+      theirs.reply(body, opts);
+    } else {
+      const mine = msgs[msgs.length - 1];
+      if (d.draft) return out({ok: true, draft: true, id: mine.createDraftReplyAll(body, opts).getId()});
+      mine.replyAll(body, opts);
+    }
+    return out({ok: true, sent: true, to: theirs ? theirs.getFrom() : msgs[msgs.length - 1].getTo()});
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.to || ''))) return out({ok: false, error: 'bad address'});
   // Attachments (v2): [{name, mimeType, base64}], e.g. a CMA PDF.

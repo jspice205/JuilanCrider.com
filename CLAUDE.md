@@ -137,6 +137,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   like a person (AI_PENDING, `humanDelay`: read + type + think time with jitter, halved in a live back-and-forth, max 120 s,
   plus the 1-min queue tick → ~10 s to 3 min; ASSISTANT_INSTANT=on to send at once); Julián's own commands stay instant.
   `unanswered` skips threads whose last message is from Julián/Shawna, test contacts and "No name".
+- Email threads (Nov 11): Shawna Mailer v5 `reply` answers the client's latest message in the thread (reply), or reply-all
+  to Julián's latest when the thread is only his (campaign) — never to himself. Boss `email` replies in the latest thread
+  with them from 60 days ({from: to:} search); with mailer <5 only threads whose latest message is theirs.
 - Campaign replies (Nov 11): checkClientEmails sees FUB "Received" emails (FUB hides bodies) → mailer search from:<their
   email> → processEmailAssistant(list) drafts/intent even if Julián already opened it. ask/read/unanswered send an
   instant "On it 👀 one sec." before the slower answer. FUB sends drips through a connected Gmail (email account 683781,
