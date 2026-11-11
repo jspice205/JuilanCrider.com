@@ -157,6 +157,14 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   retries once on 429/5xx; if both routing tries fail she says "give me a minute…" once and throws so runBossCommand retries
   (3x). Boss action `agenda` (today/week): both calendars + FUB open tasks (tasks?assignedUserId&isCompleted=false) +
   waiting texts + pending email approval.
+- Assistant upgrades (Nov 11): approvals queue BOSS_QUEUE (numbered #n, 6 h; plain YES = newest; "YES 2"/"NO 2");
+  `addPending` everywhere (text, email, voice, deal, event). `agendaText(week)` shared by agenda + `morningBriefing`
+  (8am daily trigger; MORNING_BRIEFING=off; adds overnight email opens + duplicate count). `weeklyScorecard` Fridays 9am
+  (text + email; counters via `stat()` in STAT_<week>: calls, booked, shawnaTexts, neededYou, emailsIn, approved).
+  Deal signals: Groq "deal" (offer/under_contract/closed/listing) from texts, emails, calls → `suggestDeal` (YES → `moveDeal`
+  moves/creates the FUB deal + contact stage). Vapi bookings: appointmentISO checked against both calendars → FUB
+  appointment if found, else pending kind event (YES adds it). `findDuplicates` nightly → "Duplicates" tab. Boss prompt
+  "BE A REAL ASSISTANT": never stuck, closest action, one short question if needed.
 - Tasks from the text thread (Nov 11): agenda lists up to 10 open FUB tasks numbered (AGENDA_TASKS); "do 2" → taskstart
   (Groq drafts the text from personTimeline → BOSS_PENDING with taskId; YES sends and checks the task off; call tasks get
   a briefing + optional text); "done 2" / "clear the old tasks" → taskdone. `cleanupOldTasks` (daily, hourly hook)

@@ -903,6 +903,7 @@ function scoreFubDatabase() {
     console.log('Ran out of time; continuing automatically in about a minute.');
   } else {
     try { runFunnel(people); } catch (err) { console.error('Funnel: ' + err); }
+    try { findDuplicates(people); } catch (err) { console.error('Duplicates: ' + err); }
     try { runPastClientLoop(people); } catch (err) { console.error('Closed client loop: ' + err); }
   }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
@@ -1954,6 +1955,7 @@ function assistantReply(person, from, text) {
       '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
+  if (out.important || out.escalate) stat('neededYou');
   if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
     const k = 'IMP_' + person.id;
     if (Date.now() - Number(props.getProperty(k) || 0) > 2 * 36e5) {
@@ -2011,6 +2013,171 @@ function humanDelay(theirText, reply, phone) {
   const pace = Date.now() - lastOut < 3 * 6e4 ? 0.5 : 1;             // they answered within 3 min: keep the rhythm going
   const jitter = 0.7 + Math.random() * 0.6;
   return Math.round(Math.min((read + type + think) * pace * jitter, 120));
+}
+
+/** Today's (or this week's) calendar, numbered to-dos and what's waiting on Julián. Numbered tasks are remembered so he
+ *  can text "do 2" / "done 2". Used by the agenda command and the morning briefing. */
+function agendaText(week) {
+  const props = PropertiesService.getScriptProperties(), lines = [];
+  const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
+  if (week) end.setDate(end.getDate() + 6);
+  const fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f);
+  try {
+    const evs = [];
+    CalendarApp.getDefaultCalendar().getEvents(now, end).forEach(e => evs.push({t: e.getTitle(), s: e.getStartTime().getTime()}));
+    ((bcolvCall({action: 'events', from: now.toISOString(), to: end.toISOString()}) || {}).events || []).forEach(e => evs.push({t: e.title + ' (business)', s: e.start}));
+    evs.sort((x, y) => x.s - y.s);
+    lines.push('📅 ' + (evs.length ? (week ? 'this week' : 'today') + ':\n' + evs.slice(0, 12).map(x => '• ' + fmt(x.s, week ? 'EEE h:mm a' : 'h:mm a') + ' ' + x.t).join('\n') : 'nothing on your calendars ' + (week ? 'this week' : 'for the rest of today') + '.'));
+  } catch (e) {}
+  try {
+    const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+    const due = fmt(end, 'yyyy-MM-dd');
+    const tasks = (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=40&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || []).filter(t => String(t.dueDate || '') <= due);
+    const old = tasks.filter(t => (Date.now() - new Date(t.dueDate)) / 864e5 >= 4).length;
+    const list = tasks.slice(0, 10), names = {};
+    list.forEach(t => { if (t.personId && !(t.personId in names)) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); names[t.personId] = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) { names[t.personId] = ''; } } });
+    props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
+    if (list.length) lines.push('✅ to do (' + tasks.length + ' open' + (old ? ', ' + old + ' older than 3 days' : '') + '):\n' +
+      list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80)).join('\n') +
+      '\n\nText "do 2" and I\'ll start it, or "done 2" to check it off.');
+    else lines.push('✅ no open tasks in Follow Up Boss.');
+  } catch (e) {}
+  try {
+    const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).length;
+    if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you (ask "who haven\'t I responded to").');
+    const q = pendingQueue();
+    if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '\nReply "YES 2" (or NO 2) for a specific one.');
+  } catch (e) {}
+  return lines.join('\n\n') || 'you\'re clear. Nothing on the calendar and no open tasks.';
+}
+
+// ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
+function pendingQueue() {
+  return JSON.parse(PropertiesService.getScriptProperties().getProperty('BOSS_QUEUE') || '[]').filter(x => Date.now() - x.at < 6 * 36e5);
+}
+function addPending(item) {
+  const props = PropertiesService.getScriptProperties();
+  let q = pendingQueue();
+  item.at = item.at || Date.now();
+  item.n = q.length ? Math.max.apply(null, q.map(x => x.n || 0)) + 1 : 1;
+  q.push(item); q = q.slice(-6);
+  props.setProperty('BOSS_QUEUE', JSON.stringify(q));
+  props.setProperty('BOSS_PENDING', JSON.stringify(item));
+  return item.n;
+}
+function pendingLabel(x) {
+  return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
+    : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : 'text to ' + x.who;
+}
+function yesHint(n) { return pendingQueue().length > 1 ? 'Reply YES ' + n : 'Reply YES'; }
+
+// ---------- Weekly numbers (for the Friday scorecard) ----------
+function weekKey() { return 'STAT_' + Utilities.formatDate(new Date(), 'America/Los_Angeles', "YYYY-'W'ww"); }
+function stat(key, n) {
+  try {
+    const props = PropertiesService.getScriptProperties(), k = weekKey(), o = JSON.parse(props.getProperty(k) || '{}');
+    o[key] = (o[key] || 0) + (n || 1); props.setProperty(k, JSON.stringify(o));
+  } catch (e) {}
+}
+
+// ---------- Deals: Shawna notices offers, contracts and closings and offers to move the deal card ----------
+const DEAL_SIGNALS = {
+  offer: {buyer: 21, seller: 36, label: 'OFFER', contact: 'Pending'}, under_contract: {buyer: 28, seller: 24, label: 'UNDER CONTRACT (Due Diligence)', contact: 'Pending'},
+  closed: {buyer: 25, seller: 26, label: 'CLOSED', contact: 'Closed'}, listing: {buyer: 20, seller: 20, label: 'LISTING PREP', contact: 'Active Client'}};
+function suggestDeal(personId, signal, why) {
+  const sg = DEAL_SIGNALS[signal]; if (!sg || !personId) return;
+  const props = PropertiesService.getScriptProperties(), k = 'DEAL_SUG_' + personId + '_' + signal;
+  if (Date.now() - Number(props.getProperty(k) || 0) < 3 * 864e5) return;  // once every 3 days per person and signal
+  props.setProperty(k, String(Date.now()));
+  const pp = fubFetch('people/' + personId + '?fields=id,name,firstName,lastName', null, 'get'), who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name;
+  const n = addPending({kind: 'deal', personId: personId, who: who, signal: signal, stageName: sg.label});
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  const msg = '🏠 Sounds like ' + who + ' ' + {offer: 'is making an offer', under_contract: 'is under contract', closed: 'closed', listing: 'wants to list'}[signal] +
+    (why ? ' (' + String(why).slice(0, 120) + ')' : '') + '. Want me to move their deal to ' + sg.label + ' in Follow Up Boss? ' + yesHint(n) + '.';
+  if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
+}
+function moveDeal(pend) {
+  const sg = DEAL_SIGNALS[pend.signal], me = fubFetch('me', null, 'get').id;
+  const deals = fubFetch('deals?personId=' + pend.personId + '&limit=10', null, 'get').deals || [];
+  const open = deals.filter(d => !/closed|lost/i.test(String(d.stageName || '')))[0] || deals[0];
+  const seller = open ? Number(open.pipelineId) === 2 : pend.signal === 'listing';
+  const stageId = seller ? sg.seller : sg.buyer;
+  if (open) fubFetch('deals/' + open.id, {stageId: stageId}, 'put');
+  else fubFetch('deals', {name: pend.who + ' · ' + sg.label.toLowerCase(), stageId: stageId, peopleIds: [pend.personId], userIds: [me]});
+  try { fubFetch('people/' + pend.personId, {stage: sg.contact}, 'put'); } catch (e) {}
+  fubFetch('notes', {personId: pend.personId, subject: 'Deal moved', body: 'Deal moved to ' + sg.label + ' (Julián approved by text).'});
+  return sg.label;
+}
+
+/** 8am every day: Shawna texts Julián his day (calendar, numbered to-dos, what's waiting) plus hot leads who opened or
+ *  clicked his emails overnight. Turn off with Script Property MORNING_BRIEFING = off. */
+function morningBriefing() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('MORNING_BRIEFING') === 'off') return;
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  if (!boss) return;
+  const parts = ['Good morning ☀️ here\'s your ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE') + ':', agendaText(false)];
+  try {
+    const sh = getSS().getSheetByName(EMAIL_OPENS_TAB.name);
+    if (sh && sh.getLastRow() > 1) {
+      const rows = sh.getRange(2, 1, Math.min(sh.getLastRow() - 1, 300), 5).getValues().filter(r => r[0] instanceof Date && Date.now() - r[0].getTime() < 16 * 36e5);
+      const seen = {}, hot = [];
+      rows.forEach(r => { if (!seen[r[2]] && hot.length < 5) { seen[r[2]] = 1; hot.push('• ' + r[2] + (r[3] === 'click' ? ' clicked ' : ' opened ') + '"' + String(r[4]).slice(0, 40) + '"'); } });
+      if (hot.length) parts.push('👀 opened your emails since last night:\n' + hot.join('\n'));
+    }
+  } catch (e) {}
+  try { const d = Number(props.getProperty('DUP_COUNT') || 0); if (d) parts.push('🧹 ' + d + ' possible duplicate contacts are listed in the "Duplicates" tab.'); } catch (e) {}
+  const msg = parts.join('\n\n');
+  try { bbSend(boss, humanize(msg)); bossMemory('assistant', msg); } catch (e) { console.log('Morning briefing: ' + e.message); }
+}
+
+/** Fridays 9am: how the week went, by text (and a copy by email to julianc@bcolv.com). */
+function weeklyScorecard() {
+  const props = PropertiesService.getScriptProperties(), boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  const st = JSON.parse(props.getProperty(weekKey()) || '{}'), lines = [];
+  try {
+    const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+    const fresh = (fubFetch('people?limit=100&sort=-created&fields=id,source,created,assignedUserId,tags', null, 'get').people || [])
+      .filter(p => Date.now() - new Date(p.created) < 7 * 864e5 && (!p.assignedUserId || p.assignedUserId === me) && !(p.tags || []).some(t => /^Test\b/i.test(t)));
+    const by = {}; fresh.forEach(p => by[p.source || 'other'] = (by[p.source || 'other'] || 0) + 1);
+    lines.push('🆕 new leads: ' + fresh.length + (fresh.length ? ' (' + Object.keys(by).map(k => k + ' ' + by[k]).join(', ') + ')' : ''));
+  } catch (e) {}
+  try {
+    const sh = getSS().getSheetByName(EMAIL_OPENS_TAB.name);
+    if (sh && sh.getLastRow() > 1) {
+      const rows = sh.getRange(2, 1, Math.min(sh.getLastRow() - 1, 1000), 4).getValues().filter(r => r[0] instanceof Date && Date.now() - r[0].getTime() < 7 * 864e5);
+      lines.push('📧 people who opened or clicked your emails: ' + Object.keys(rows.reduce((o, r) => (o[r[2]] = 1, o), {})).length + ' (' + rows.filter(r => r[3] === 'click').length + ' clicked)');
+    }
+  } catch (e) {}
+  lines.push('📞 calls Shawna answered: ' + (st.calls || 0) + ' · 📅 appointments confirmed: ' + (st.booked || 0));
+  lines.push('💬 texts Shawna handled: ' + (st.shawnaTexts || 0) + ' · needed you: ' + (st.neededYou || 0) + ' · client emails briefed: ' + (st.emailsIn || 0) + ' · your approvals: ' + (st.approved || 0));
+  const msg = 'Your week 📊\n\n' + lines.join('\n') + '\n\nHave a great weekend. Reply "how\'s my week look" anytime for what\'s next.';
+  if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
+  try { MailApp.sendEmail({to: NOTIFY_EMAIL, subject: 'Your week with Shawna', body: msg, name: 'Shawna'}); } catch (e) {}
+}
+
+/** Nightly (after scoring): possible duplicate contacts (same phone, email or full name) → "Duplicates" tab. */
+const DUPLICATES_TAB = {name: 'Duplicates', color: '#9E9E9E', headers: ['Why', 'Contacts (Follow Up Boss IDs)', 'Suggestion']};
+function findDuplicates(people) {
+  const groups = {}, add = (k, p) => { if (!k) return; (groups[k] = groups[k] || []).push(p); };
+  people.filter(p => !/trash/i.test(String(p.stage || ''))).forEach(p => {
+    ((p.phones || []).map(x => String(x.value || '').replace(/\D/g, '').slice(-10)).filter(x => x.length === 10)).forEach(d => add('phone ' + d, p));
+    ((p.emails || []).map(x => String(x.value || '').toLowerCase().trim()).filter(validEmail)).forEach(e => add('email ' + e, p));
+    const nm = String(p.name || '').toLowerCase().replace(/\s+/g, ' ').trim(); if (nm.split(' ').length > 1) add('name ' + nm, p);
+  });
+  const seen = {}, rows = [];
+  Object.keys(groups).forEach(k => {
+    const g = groups[k].filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i);
+    if (g.length < 2) return;
+    const ids = g.map(p => p.id).sort((a, b) => a - b).join(','); if (seen[ids]) return; seen[ids] = 1;
+    const test = g.filter(p => (p.tags || []).some(t => /^Test\b/i.test(t)));
+    rows.push(['same ' + k.split(' ')[0], g.map(p => p.name + ' (' + p.id + ')').join(' · '),
+      test.length ? 'Test contact(s): ' + test.map(p => p.name).join(', ') + ' can go to Trash' : 'Merge into the oldest (' + Math.min.apply(null, g.map(p => p.id)) + ')']);
+  });
+  const sh = ensureTab(getSS(), DUPLICATES_TAB);
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 3).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows.slice(0, 500).map(r => r.map(cell)));
+  PropertiesService.getScriptProperties().setProperty('DUP_COUNT', String(rows.length));
 }
 
 /** A usable first name, or ''. Follow Up Boss shows "No Name" when it has none: never greet anyone as "No". */
@@ -2112,6 +2279,7 @@ function learnFromReply(p, out, where) {
     try { fubFetch('people/' + p.id, {firstName: parts[0], lastName: parts.slice(1).join(' ')}, 'put'); p.firstName = parts[0]; } catch (e) {}
   }
   try { applyIntent(p.id, String((out && out.intent) || ''), where); } catch (e) { console.log('Intent: ' + e.message); }
+  try { if (out && DEAL_SIGNALS[out.deal]) suggestDeal(p.id, out.deal, 'from ' + where); } catch (e) { console.log('Deal: ' + e.message); }
 }
 
 /** "Not right now" → tag Not Now: the morning funnel moves them to the slower Long-Term Nurture (about monthly) and stops
@@ -2261,7 +2429,7 @@ Them: "Not ready yet" → "Totally fair 🙌🏾 I'm here whenever you are. Mind
 GOALS (gently, over time): understand what they want and when, help them feel taken care of, and when they're ready, offer a quick call (juliancrider.com/?book), a showing (juliancrider.com/?showing) or a home value (juliancrider.com/?value).
 RULES: never invent facts, listings, prices, availability, rates or promises. No legal, tax or lending advice (point to their CPA or lender, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
 NAMES: if the contact's name is unknown, never guess or use a placeholder (never "No", "Name" or "there"); when it fits naturally, ask who you're talking with, once.
-Return JSON only: {"important": true if Julián should know about this soon (they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty"}`;
+Return JSON only: {"important": true if Julián should know about this soon (they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty", "deal": "offer if they say they are making or made an offer; under_contract if they're under contract or in escrow; closed if they closed or got the keys; listing if they want to list or sell their home now; otherwise empty"}`;
 }
 
 function groqChat(key, model, messages) {
@@ -2326,6 +2494,7 @@ function processAssistantQueue() {
       props.setProperty('AI_SENDING_' + phone, String(Date.now()));
       bbSendParts(phone, intro + it.reply);
       props.setProperty('AI_LAST_OUT_' + phone, String(Date.now()));
+      stat('shawnaTexts');
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
       fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + (it.paced ? ')' : ', you hadn\'t replied yet)') + (it.next ? '\nNext step: ' + it.next : '')});
@@ -2423,10 +2592,28 @@ function bossCommand(text, tries) {
   const say = msg => { const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t); return bbSend(boss, t); };
   bossMemory('user', text);
   // A pending "send this text?" waiting for YES / NO
-  const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
-  if (pend && pend.kind !== 'schedule' && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
-    props.deleteProperty('BOSS_PENDING');
-    if (Date.now() - pend.at > (pend.kind === 'email' ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+  let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
+  const queue = pendingQueue();
+  const ym = text.match(/^\s*(?:yes|y|yeah|yep|yup|send|send it|go|go ahead|ok|okay|bet|run it|do it|approved?)\s*(?:#|number|no\.)?\s*(\d)?\s*[.!👍🏾👍]*\s*$/i);
+  const nm = text.match(/^\s*(?:no|n|nah|cancel|stop|don.?t)\s*(?:#|number)?\s*(\d)?(?:\s*[.!]*\s*$|\b)/i);
+  const picked = (ym && ym[1]) || (nm && nm[1]);
+  if (picked) pend = queue.filter(x => x.n === Number(picked))[0] || null;
+  const dropPend = x => { props.setProperty('BOSS_QUEUE', JSON.stringify(pendingQueue().filter(q => q.at !== x.at)));
+    const cur = JSON.parse(props.getProperty('BOSS_PENDING') || 'null'); if (cur && cur.at === x.at) props.deleteProperty('BOSS_PENDING'); };
+  if (picked && !pend) return say('I don\'t have a #' + picked + ' waiting. ' + (queue.length ? 'Waiting now: ' + queue.map(x => '#' + x.n + ' ' + pendingLabel(x)).join(', ') : 'Nothing is waiting for your OK.'));
+  if (pend && pend.kind !== 'schedule' && ym) {
+    dropPend(pend);
+    if (Date.now() - pend.at > (/^(email|deal|event)$/.test(pend.kind || '') ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+    stat('approved');
+    if (pend.kind === 'deal') {
+      try { return say('done. ' + pend.who + '\'s deal is now in ' + moveDeal(pend) + '. ✅'); } catch (e) { return say('I couldn\'t move that deal: ' + String(e.message).slice(0, 120)); }
+    }
+    if (pend.kind === 'event') {
+      const start = new Date(pend.start), end = new Date(start.getTime() + (pend.minutes || 30) * 6e4);
+      CalendarApp.getDefaultCalendar().createEvent(pend.title, start, end, {description: (pend.phone ? 'Phone: ' + pend.phone + '\n' : '') + 'Booked on a call with ' + name + '.'});
+      try { fubFetch('appointments', {title: pend.title, start: start.toISOString(), end: end.toISOString(), invitees: [{personId: pend.personId}]}); } catch (e) {}
+      return say('added to your calendar: ' + pend.title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
+    }
     if (pend.kind === 'voice') {
       const audio = shawnaVoice(pend.message);
       props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
@@ -2454,7 +2641,7 @@ function bossCommand(text, tries) {
     if (pend.taskId) { try { fubFetch('tasks/' + pend.taskId, {isCompleted: true}, 'put'); } catch (e) {} }
     return say(name + ': sent to ' + pend.who + '. ✅');
   }
-  if (pend && /^\s*(no|n|cancel|stop|don.?t)\b/i.test(text)) { props.deleteProperty('BOSS_PENDING'); return say(name + ': canceled. Nothing was sent.'); }
+  if (pend && pend.kind !== 'schedule' && nm) { dropPend(pend); return say(name + ': canceled ' + pendingLabel(pend) + '. Nothing was sent.'); }
 
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
@@ -2481,6 +2668,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - ask: ANY question about his business data: clients, leads, texts, emails, calls you took, website sign-ups and forms, Instagram leads, his calendar, Follow Up Boss ("who called today?", "did anyone ask about Summerlin?", "what did Joey email me?", "any new leads from the website?", "how many open house sign-ins this week?", "what's going on with the Juniper Springs guy?"). Put his question in "message", names in "who", and a Gmail search in "query" when email might help. Prefer ask over chat whenever real data could answer it.
 - allow: he wants you to be able to text or answer someone who's saved in his phone contacts (friends or clients he saved), e.g. "you can talk to Kyle Henry". Names in "who", comma separated.
 - If he answers "yes", "sure", "please do" or similar to something you just offered, return THAT action (e.g. read) with the same people. Never answer "yes" with chat.
+BE A REAL ASSISTANT: understand every message the way a smart human assistant would, whatever the wording, slang, typos or voice-to-text. Never get stuck and never say you can't. If no action matches exactly, pick the one that gets him closest: ask (answer anything from his calendar, texts, emails, calls, Follow Up Boss, website), text or email (do it for him), agenda (his day or week), or claude (anything that needs something new built). If you need one missing detail, ask one short question in "reply" with action chat. If he asks for several things at once, do the most important one and say in "reply" what you'll do next.
 UNDERSTAND HIM LIKE A HUMAN WOULD: Julián texts fast, casual and sometimes urban, often by voice-to-text, with typos, slang and missing words. Figure out what he means, not the exact words, and pick the action. Never say you didn't understand if a reasonable person would get it; if it's truly unclear, ask one short question.
 Examples (all mean the same as the action shown):
 "who haven't I replied to" / "who I ain't hit back" / "who's waiting on me" / "who I left on read" / "anybody I need to get back to" / "who still needs a reply" → unanswered
@@ -2590,7 +2778,7 @@ Examples (all mean the same as the action shown):
       const pick = msgs.find(m => v5 || (!m.fromMe && !msgs.some(o => o.threadId === m.threadId && o.fromMe && o.date > m.date)));
       if (pick) { threadId = pick.threadId; subject = /^re:/i.test(pick.subject) ? pick.subject : 'Re: ' + pick.subject; }
     } catch (e) {}
-    props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()}));
+    addPending({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()});
     return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
   }
   if (a.action === 'voicememo') {
@@ -2599,7 +2787,7 @@ Examples (all mean the same as the action shown):
     if (!p || p.many) return say(p && p.many ? 'which one? ' + p.many.map(x => x.name).join(', ') : 'who should get the voice memo? Send me their name and number.');
     const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
     if (!phone) return say((p.name || a.who) + ' has no mobile number yet. Send me their number.');
-    props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'voice', personId: p.id, who: p.name || a.who, phone: phone, message: humanize(a.message), at: Date.now()}));
+    addPending({kind: 'voice', personId: p.id, who: p.name || a.who, phone: phone, message: humanize(a.message), at: Date.now()});
     return say('send ' + (p.name || a.who) + ' a voice memo saying:\n\n"' + humanize(a.message) + '"\n\nReply YES to send or NO to cancel.');
   }
   if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
@@ -2616,7 +2804,7 @@ Examples (all mean the same as the action shown):
     if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
     const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
     if (!phone) return say(p.name + ' has no mobile number yet. Send me their number and I\'ll text them.');
-    props.setProperty('BOSS_PENDING', JSON.stringify({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now()}));
+    addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now()});
     return say(name + ': send this to ' + p.name + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\nReply YES to send or NO to cancel.');
   }
   if (a.action === 'schedule') {
@@ -2705,39 +2893,7 @@ Examples (all mean the same as the action shown):
     ((r && r.emails) || []).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
     return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
   }
-  if (a.action === 'agenda') {
-    const week = /week|7|days/i.test(String(a.message || '') + ' ' + text), lines = [];
-    const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
-    if (week) end.setDate(end.getDate() + 6);
-    const fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f);
-    try {
-      const evs = [];
-      CalendarApp.getDefaultCalendar().getEvents(now, end).forEach(e => evs.push({t: e.getTitle(), s: e.getStartTime().getTime()}));
-      ((bcolvCall({action: 'events', from: now.toISOString(), to: end.toISOString()}) || {}).events || []).forEach(e => evs.push({t: e.title + ' (business)', s: e.start}));
-      evs.sort((x, y) => x.s - y.s);
-      lines.push('📅 ' + (evs.length ? (week ? 'this week' : 'today') + ':\n' + evs.slice(0, 12).map(x => '• ' + fmt(x.s, week ? 'EEE h:mm a' : 'h:mm a') + ' ' + x.t).join('\n') : 'nothing on your calendars ' + (week ? 'this week' : 'for the rest of today') + '.'));
-    } catch (e) {}
-    try {
-      const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
-      const due = fmt(end, 'yyyy-MM-dd');
-      const tasks = (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=40&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || []).filter(t => String(t.dueDate || '') <= due);
-      const recent = tasks.filter(t => (Date.now() - new Date(t.dueDate)) / 864e5 < 4), old = tasks.length - recent.length;
-      const list = tasks.slice(0, 10), names = {};
-      list.forEach(t => { if (t.personId && !(t.personId in names)) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); names[t.personId] = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) { names[t.personId] = ''; } } });
-      props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
-      if (list.length) lines.push('✅ to do (' + tasks.length + ' open' + (old ? ', ' + old + ' older than 3 days' : '') + '):\n' +
-        list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80)).join('\n') +
-        '\n\nText "do 2" and I\'ll start it, or "done 2" to check it off.');
-      else lines.push('✅ no open tasks in Follow Up Boss.');
-    } catch (e) {}
-    try {
-      const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).length;
-      const pe = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
-      if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you (ask "who haven\'t I responded to").');
-      if (pe && pe.kind === 'email' && Date.now() - pe.at < 6 * 36e5) lines.push('📧 my reply to ' + pe.who + '\'s email is waiting for your YES.');
-    } catch (e) {}
-    return say(lines.join('\n\n') || 'you\'re clear. Nothing on the calendar and no open tasks.');
-  }
+  if (a.action === 'agenda') return say(agendaText(/week|7|days/i.test(String(a.message || '') + ' ' + text)));
   if (a.action === 'taskdone' || a.action === 'taskstart') {
     const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
     const saved = JSON.parse(props.getProperty('AGENDA_TASKS') || '[]'), arg = String(a.message || '').toLowerCase();
@@ -2764,13 +2920,13 @@ Examples (all mean the same as the action shown):
       {role: 'user', content: 'Contact: ' + who + '\n' + (tl || 'no history') }]));
     if (isCall) {
       const alt = humanize(r.text || '');
-      if (alt && phone && (pp.tags || []).indexOf('Text Opt-Out') < 0) props.setProperty('BOSS_PENDING', JSON.stringify({personId: pp.id, who: who, phone: phone, message: alt, at: Date.now(), taskId: t.id}));
+      if (alt && phone && (pp.tags || []).indexOf('Text Opt-Out') < 0) addPending({personId: pp.id, who: who, phone: phone, message: alt, at: Date.now(), taskId: t.id});
       return say('📞 ' + who + (phone ? ' ' + phone.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') : '') + '\n' + humanize(r.reply || '') +
         (alt && phone ? '\n\nOr I can text them:\n"' + alt + '"\nReply YES to send it.' : '') + '\n\nText "done ' + (saved.indexOf(t) + 1) + '" after you talk.');
     }
     const msg = humanize(r.reply || '');
     if (!phone || !msg) return say('I couldn\'t draft that one (no number for ' + who + '). Text "done ' + (saved.indexOf(t) + 1) + '" when it\'s handled.');
-    props.setProperty('BOSS_PENDING', JSON.stringify({personId: pp.id, who: who, phone: phone, message: msg, at: Date.now(), taskId: t.id}));
+    addPending({personId: pp.id, who: who, phone: phone, message: msg, at: Date.now(), taskId: t.id});
     return say('here\'s what I\'d text ' + who + ':\n\n"' + msg + '"\n\nReply YES to send it (I\'ll check the task off), or tell me what to change.');
   }
   if (a.action === 'ask') {
@@ -3049,11 +3205,11 @@ function vapiWebhook(e) {
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
       const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly said yes when asked if they could get a text (a recap or confirmation). appointment: the date, time and type of any appointment that was actually booked on the call, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "recap": "..."}.'},
+        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly said yes when asked if they could get a text (a recap or confirmation). appointment: the date, time and type of any appointment that was actually booked on the call, else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
         {role: 'user', content: transcript.slice(0, 5000)}]));
       if (!summary) summary = humanize(r.summary || '');
       callerName = String(r.name || '').trim();
-      recapInfo = {ok: r.textOk === true, appt: String(r.appointment || '').trim(), recap: humanize(r.recap || '')};
+      recapInfo = {ok: r.textOk === true, appt: String(r.appointment || '').trim(), iso: String(r.appointmentISO || ''), minutes: Number(r.minutes) || 30, deal: String(r.deal || ''), recap: humanize(r.recap || '')};
       if (/^(no|unknown|shawna|juli[aá]n)\b/i.test(callerName)) callerName = '';
     } catch (e) {}
   }
@@ -3078,6 +3234,27 @@ function vapiWebhook(e) {
   if (num && num === boss) return json({status: 'ok'});  // Julián testing: note only, no call-back task
   try { notifyJulian((callerName || 'Someone') + ' called', assistantName() + ' took a call' + (num ? ' from ' + num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : '') + ': ' + String(summary || 'no summary').slice(0, 220) + ' There\'s a call-back task in Follow Up Boss.'); } catch (e) {}
   createCallTask(person.id, assistantName() + ' took their call: ' + summary.slice(0, 140) + ' Call them back.', 'Call');
+  stat('calls');
+  // Did the appointment Shawna booked actually land on his calendar? If yes, mirror it in Follow Up Boss; if not, ask him.
+  try {
+    const m2 = recapInfo && recapInfo.iso.match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    if (m2) {
+      const start = Utilities.parseDate(m2[1] + ' ' + m2[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm'), mins = recapInfo.minutes || 30;
+      const from = new Date(start.getTime() - 45 * 6e4), to = new Date(start.getTime() + 45 * 6e4);
+      const onCal = CalendarApp.getDefaultCalendar().getEvents(from, to).length > 0 ||
+        ((bcolvCall({action: 'events', from: from.toISOString(), to: to.toISOString()}) || {}).events || []).length > 0;
+      const who2 = callerName || 'caller', title = 'Call with ' + who2;
+      if (onCal) {
+        fubFetch('appointments', {title: title, start: start.toISOString(), end: new Date(start.getTime() + mins * 6e4).toISOString(), invitees: [{personId: person.id}]});
+        fubFetch('notes', {personId: person.id, subject: 'Appointment confirmed', body: 'Booked on the call with ' + assistantName() + ' and found on your calendar: ' + recapInfo.appt});
+        stat('booked');
+      } else {
+        const n = addPending({kind: 'event', personId: person.id, who: who2, title: title, start: start.getTime(), minutes: mins, phone: num});
+        notifyJulian('📅 Check this booking', assistantName() + ' told ' + who2 + ' they\'re set for ' + recapInfo.appt + ', but I don\'t see it on your calendar. Want me to add it? ' + yesHint(n) + '.');
+      }
+    }
+    if (recapInfo && DEAL_SIGNALS[recapInfo.deal]) suggestDeal(person.id, recapInfo.deal, 'said on a call');
+  } catch (e) { console.log('Call booking check: ' + e.message); }
   // Recap text after the call: only when the caller said yes to a text on the call (a call alone isn't text consent).
   if (recapInfo && recapInfo.ok && num && (recapInfo.recap || recapInfo.appt)) {
     try {
@@ -3331,6 +3508,8 @@ function queueOpenHouseTexts(personId, d, kind) {
 
 function ensureTextQueueTrigger() {
   const has = name => ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === name);
+  if (!has('morningBriefing')) ScriptApp.newTrigger('morningBriefing').timeBased().atHour(8).everyDays(1).inTimezone('America/Los_Angeles').create();
+  if (!has('weeklyScorecard')) ScriptApp.newTrigger('weeklyScorecard').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(9).inTimezone('America/Los_Angeles').create();
   if (!has('processTextQueue')) ScriptApp.newTrigger('processTextQueue').timeBased().everyMinutes(15).create();
   if (!has('remindUpcoming')) ScriptApp.newTrigger('remindUpcoming').timeBased().everyMinutes(5).create();
   if (!has('processAssistantQueue')) ScriptApp.newTrigger('processAssistantQueue').timeBased().everyMinutes(1).create();
@@ -3499,11 +3678,12 @@ function processEmailAssistant(list) {
       const msg = '📧 ' + who + ' emailed you: ' + said + '\n\nI answered for you:\n"' + reply + '"';
       if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
     } else {  // default: tell him what it says and what she'd send; YES sends it in the same thread, or he says what to change
-      props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: who, email: addr, subject: subject, message: reply, threadId: m.threadId, at: Date.now()}));
+      const pn = addPending({kind: 'email', personId: p.id, who: who, email: addr, subject: subject, message: reply, threadId: m.threadId, at: Date.now()});
+      stat('emailsIn');
       fubFetch('notes', {personId: p.id, subject: name + ' suggested reply', body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nSuggested reply (waiting for Julián):\n' + reply +
         (sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '')});
       const msg = '📧 ' + who + ' emailed you: ' + said + (sensitive ? '\n\n(Heads up: ' + (out.reason || 'this one needs you') + '.)' : '') +
-        '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\nReply YES to send it, or tell me what to change.';
+        '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\n' + yesHint(pn) + ' to send it, or tell me what to change.';
       if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) { console.log('Email brief: ' + e.message); return; } }
     }
     handled++;
