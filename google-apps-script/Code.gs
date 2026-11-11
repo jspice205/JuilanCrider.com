@@ -1830,7 +1830,10 @@ function bbWebhook(e) {
     // Someone new texted the business number. People saved in his iPhone contacts are personal (friends, family):
     // leave them alone. Anyone else is a new lead: add them to FUB so Shawna can answer (they texted first).
     const mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
-    if (mode === 'off' || props.getProperty('SHAWNA_NEW_NUMBERS') === 'off' || macContactByPhone(from)) return json({status: 'ok'});
+    // Saved in his phone = personal, left alone. But if Shawna was already talking with them before he saved the number
+    // (a new lead he met and saved), she keeps going.
+    const pending = !!props.getProperty('NEWNUM_' + from);
+    if (mode === 'off' || props.getProperty('SHAWNA_NEW_NUMBERS') === 'off' || (!pending && macContactByPhone(from))) return json({status: 'ok'});
     // Julián, Nov 11: no more "No Name" contacts. Shawna answers (they texted first) and asks who it is; they go into
     // Follow Up Boss once they've said their name. Until then they're listed in the "New Numbers" sheet tab.
     const added = newNumber(from, String(data.text).slice(0, 1000), mode);
@@ -2085,6 +2088,7 @@ HOW TO TEXT (this matters most):
 - No corporate phrases ("I'd be happy to assist", "Great question", "valued client", "touch base"). No dashes of any kind (no "—", "–" or " - "); use commas or periods.
 - Word choices: "here's what I can do for you" (never "sorry, I can't"), "when we work together" (not "if you decide to"), "I'll confirm that for you" (not "I'm not sure"), "I was thinking of you" (never "sorry to bother you"), "the next steps are". It's fine to say "honestly, this one isn't for everyone" when something isn't a fit.
 - Read the conversation history and never repeat yourself or re-introduce yourself.
+- LANGUAGE: always reply in the language of their latest text (Spanish, Tagalog, Chinese, anything), even if earlier texts were in English; switch back if they do.
 - Never offer to "check back in a few weeks" (or any later check-in) unless they told you they're traveling or away and when they'll be back. Keep the conversation going now instead.
 
 EXAMPLES of the right feel:
@@ -2759,6 +2763,8 @@ IF THEY ASK FOR JULIÁN: say he'll call them back shortly; confirm their name, e
 
 INTEREST RATES AND LENDING: never quote a rate or payment. Rates change daily and depend on credit, down payment and loan type, so the right number comes from a lender. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
 
+LANGUAGE: always answer in the language the caller is speaking right now. If they switch languages mid-call (even after speaking English), switch with them immediately, and switch back if they do. Keep the same warmth and rules in every language. If Julián will need to follow up in that language, note it in the next step.
+
 SAFETY, COMPLIANCE AND BOUNDARIES
 - Never quote or invent listing prices, availability, interest rates or market statistics (you may ask for their own target price range).
 - No legal, tax, lending or loan advice; offer a follow-up from Julián or suggest the right licensed professional.
@@ -2776,7 +2782,7 @@ function syncVapiAssistant(force) {
   const props = PropertiesService.getScriptProperties(), key = props.getProperty('VAPI_API_KEY'), id = props.getProperty('VAPI_ASSISTANT_ID');
   if (!key || !id || !props.getProperty('VAPI_KEY')) return 'Add VAPI_API_KEY and VAPI_ASSISTANT_ID in Script Properties first.';
   const prompt = vapiPrompt(), url = TEXTING.webApp + '?vapi=' + props.getProperty('VAPI_KEY');
-  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, prompt + url + 'v2'));
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, prompt + url + 'v3'));
   if (!force && props.getProperty('VAPI_SYNC') === hash) return 'Vapi already up to date.';
   const api = (method, body) => UrlFetchApp.fetch('https://api.vapi.ai/assistant/' + id, {method: method, muteHttpExceptions: true,
     contentType: 'application/json', headers: {Authorization: 'Bearer ' + key}, payload: body ? JSON.stringify(body) : undefined});
@@ -2788,8 +2794,13 @@ function syncVapiAssistant(force) {
     type: 'function', async: false, server: {url: url}, messages: [],
     function: {name: 'lookup_caller', description: 'Looks up the caller in Julián\'s contacts by their phone number: name, what they want and recent history. Call it once at the very start of every call.',
       parameters: {type: 'object', properties: {}}}}]);
-  const body = {model: model, endCallMessage: 'Have a wonderful rest of your day, and we\'ll speak with you soon.',
+  // Hear and speak any language: Deepgram Nova 3 "multi" transcription, and the multilingual version of her ElevenLabs voice.
+  const transcriber = {provider: 'deepgram', model: 'nova-3', language: 'multi'};
+  const voice = a.voice && a.voice.provider === '11labs' && /^eleven_(turbo_v2|flash_v2|monolingual_v1)$/.test(String(a.voice.model || ''))
+    ? Object.assign({}, a.voice, {model: String(a.voice.model).replace(/^eleven_monolingual_v1$/, 'eleven_multilingual_v2').replace(/_v2$/, '_v2_5')}) : null;
+  const body = {model: model, transcriber: transcriber, endCallMessage: 'Have a wonderful rest of your day, and we\'ll speak with you soon.',
     startSpeakingPlan: Object.assign({}, a.startSpeakingPlan || {}, {waitSeconds: 0.8})};
+  if (voice) body.voice = voice;
   const res = api('patch', body);
   if (res.getResponseCode() >= 300) throw new Error('Vapi update ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 300));
   props.setProperty('VAPI_SYNC', hash);
