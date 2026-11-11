@@ -33,7 +33,26 @@ function doPost(e) {
       .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), end: e.getEndTime().getTime(), description: e.getDescription()}));
     return out({ok: true, events: evs});
   }
-  if (d.action === 'version') return out({ok: true, version: 2});  // v2: attachments
+  if (d.action === 'version') return out({ok: true, version: 3});  // v2: attachments · v3: read inbox + reply/draft
+  if (d.action === 'inbox') {  // recent unread emails in the inbox that he didn't send, newest first (left unread)
+    const me = Session.getEffectiveUser().getEmail().toLowerCase(), list = [];
+    GmailApp.search('in:inbox is:unread newer_than:' + Math.min(Number(d.days) || 2, 7) + 'd', 0, Math.min(Number(d.max) || 20, 30)).forEach(t => {
+      const msgs = t.getMessages(), m = msgs[msgs.length - 1];
+      if (String(m.getFrom()).toLowerCase().indexOf(me) >= 0) return;
+      const body = String(m.getPlainBody() || '').split(/\r?\n(?:On .{5,120}wrote:|-{2,} ?Original Message|From: )/)[0]
+        .split(/\r?\n/).filter(l => !/^>/.test(l)).join('\n').trim().slice(0, 3000);
+      list.push({threadId: t.getId(), id: m.getId(), from: m.getFrom(), subject: m.getSubject(), date: m.getDate().getTime(), body: body});
+    });
+    return out({ok: true, emails: list});
+  }
+  if (d.action === 'reply') {  // reply in the same thread, or save it as a draft for Julián to review
+    const t = GmailApp.getThreadById(String(d.threadId || ''));
+    if (!t) return out({ok: false, error: 'thread not found'});
+    const last = t.getMessages().pop(), opts = {htmlBody: d.html || undefined, name: d.name || 'Julián Crider'};
+    if (d.draft) return out({ok: true, draft: true, id: last.createDraftReply(String(d.text || ''), opts).getId()});
+    last.reply(String(d.text || ''), opts);
+    return out({ok: true, sent: true});
+  }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.to || ''))) return out({ok: false, error: 'bad address'});
   // Attachments (v2): [{name, mimeType, base64}], e.g. a CMA PDF.
   const files = (d.attachments || []).slice(0, 5).map(a => Utilities.newBlob(Utilities.base64Decode(a.base64), a.mimeType || 'application/pdf', a.name || 'attachment.pdf'));

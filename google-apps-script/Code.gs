@@ -952,7 +952,7 @@ function runFunnel(people) {
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
   let used = props.getProperty('FUNNEL_DAY') === today ? Number(props.getProperty('FUNNEL_COUNT')) || 0 : 0, started = 0;
 
-  const paused = p => /active client|pending|under contract|closed/i.test(String(p.stage || '')) || has(p, 'Pause');
+  const paused = p => /active client|pending|under contract|closed/i.test(String(p.stage || '')) || has(p, 'Pause') || has(p, 'Not Interested');
   const isBounced = p => has(p, 'Bounced') && !has(p, 'Opened Email');
   const ok = p => {
     const tags = p.tags || [], stage = String(p.stage || '');
@@ -1041,8 +1041,10 @@ function runFunnel(people) {
     .forEach(p => start(p, stageOf(p).slice(8), 'after re-intro'));
   // In priority order, until tonight's limit is used up.
   // Hot/Warm tags stay on for good, so only a tag added tonight moves someone up from Warm or Nurture.
-  eligible.filter(p => has(p, 'Hot') && (!stageOf(p) || (p.newHot && /warm|nurture/.test(stageOf(p))))).forEach(p => start(p, 'hot', 'Tier A'));
-  eligible.filter(p => has(p, 'Warm') && !has(p, 'Hot') && (!stageOf(p) || (p.newWarm && stageOf(p) === 'nurture'))).forEach(p => start(p, 'warm', 'Tier B'));
+  // They said "not right now": off the Hot/Warm/Legacy/Farm drip and onto the slower Long-Term Nurture (Nov 11).
+  eligible.filter(p => has(p, 'Not Now') && stageOf(p) && !/^nurture$|^paused$/.test(stageOf(p))).forEach(p => start(p, 'nurture', 'said not right now'));
+  eligible.filter(p => has(p, 'Hot') && !has(p, 'Not Now') && (!stageOf(p) || (p.newHot && /warm|nurture/.test(stageOf(p))))).forEach(p => start(p, 'hot', 'Tier A'));
+  eligible.filter(p => has(p, 'Warm') && !has(p, 'Hot') && !has(p, 'Not Now') && (!stageOf(p) || (p.newWarm && stageOf(p) === 'nurture'))).forEach(p => start(p, 'warm', 'Tier B'));
   eligible.filter(p => FUNNEL.handoffDays[stageOf(p)] && daysAgo(rows[p.id].started) >= FUNNEL.handoffDays[stageOf(p)])
     .forEach(p => start(p, 'nurture', 'finished ' + stageOf(p)));
   eligible.filter(p => stageOf(p) === 'paused').forEach(p => start(p, 'nurture', 'resumed after pause'));
@@ -1683,11 +1685,12 @@ function bbSend(phone, text) {
   if (!to) throw new Error('Not a US mobile number: ' + phone);
   // Existing conversation: send into it. New number: on this Mac's macOS (10.14) Messages can't address an unknown
   // "buddy", so start a new chat with the message instead. iMessage first, then green SMS (needs Text Message Forwarding).
-  const tries = [
+  const known = PropertiesService.getScriptProperties().getProperty('BB_CHAT_' + to);
+  const tries = (known ? [[known.split(';')[0] + ', the chat they texted from', () => bbApi('message/text', {chatGuid: known, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})]] : []).concat([
     ['iMessage, existing chat', () => bbApi('message/text', {chatGuid: 'iMessage;-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})],
     ['iMessage, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'iMessage', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})],
     ['SMS, existing chat', () => bbApi('message/text', {chatGuid: 'SMS;-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})],
-    ['SMS, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'SMS', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})]];
+    ['SMS, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'SMS', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})]]);
   let last;
   for (const [label, fn] of tries) {
     try { const r = fn(); console.log('Texted ' + to + ' (' + label + ').'); return {service: label.split(',')[0], result: r}; }
@@ -1791,6 +1794,10 @@ function bbWebhook(e) {
   const isEmailHandle = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(handle);
   const from = bbE164(handle) || (isEmailHandle ? handle.toLowerCase() : '');
   if (!from) return json({status: 'ok'});
+  // Remember the exact chat (iMessage or green SMS) they texted from, so replies go back the same way. Google Voice and
+  // Android numbers only get SMS; an "iMessage" reply to them looks sent but never arrives.
+  const chatGuid = String(((data.chats || [])[0] || {}).guid || '');
+  if (chatGuid) props.setProperty('BB_CHAT_' + from, chatGuid);
   // Julián texting his own business number from his personal phone = talking to Shawna (his assistant).
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (boss && from === boss) { runBossCommand(String(data.text).slice(0, 1500), 0); return json({status: 'ok'}); }
@@ -1805,10 +1812,11 @@ function bbWebhook(e) {
     // leave them alone. Anyone else is a new lead: add them to FUB so Shawna can answer (they texted first).
     const mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
     if (mode === 'off' || props.getProperty('SHAWNA_NEW_NUMBERS') === 'off' || macContactByPhone(from)) return json({status: 'ok'});
-    fubFetch('events', {source: 'Text message', system: 'juliancrider.com', type: 'General Inquiry',
-      message: 'Texted the business number: ' + String(data.text).slice(0, 300), person: {phones: [{value: from}], tags: ['Texted In']}});
-    found = fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [];
-    if (!found.length) return json({status: 'ok'});
+    // Julián, Nov 11: no more "No Name" contacts. Shawna answers (they texted first) and asks who it is; they go into
+    // Follow Up Boss once they've said their name. Until then they're listed in the "New Numbers" sheet tab.
+    const added = newNumber(from, String(data.text).slice(0, 1000), mode);
+    if (!added) return json({status: 'ok'});
+    found = [added];
   }
   const person = found[0], text = String(data.text).slice(0, 1000);
   try { fubFetch('textMessages', {personId: person.id, message: text, fromNumber: from, toNumber: TEXTING.myNumber, isIncoming: true}); }
@@ -1899,13 +1907,15 @@ function assistantReply(person, from, text) {
   const name = assistantName();
   const p = fubFetch('people/' + person.id + '?fields=id,firstName,lastName,tags,stage,price', null, 'get');
   const tags = p.tags || [];
-  const notes = (fubFetch('notes?personId=' + person.id + '&limit=8', null, 'get').notes || []).reverse()
-    .map(n => (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').slice(0, 400)).join('\n');
+  const notes = personHistory(person.id);
+  const thread = bbThread(from), first = realFirst(p);
   const r = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
     {role: 'system', content: assistantPrompt(name, assistantPersona(from))},
-    {role: 'user', content: 'Contact: ' + [p.firstName, p.lastName].join(' ') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
-      '\nRecent history (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
+    {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown, never guess one)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
+      (thread ? '\nThe text conversation so far (oldest first, from the phone):\n' + thread : '') +
+      '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
+  learnFromReply(p, out, 'a text');
   const reply = humanize(out.reply);
   const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0 || tags.indexOf('No Shawna') >= 0;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
@@ -1934,6 +1944,94 @@ function assistantReply(person, from, text) {
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
   fubFetch('notes', {personId: person.id, subject: 'Text sent', body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
   return true;
+}
+
+/** A usable first name, or ''. Follow Up Boss shows "No Name" when it has none: never greet anyone as "No". */
+function realFirst(p) {
+  const f = String((p && p.firstName) || '').trim();
+  return !f || /^(no|name|no name|unknown|caller|texted in|\+?\d[\d\s().-]*)$/i.test(f) ? '' : f;
+}
+
+/** The last ~20 messages of the real text thread with this number (read from the texting Mac), oldest first. */
+function bbThread(phone) {
+  if (!/^\+1\d{10}$|@/.test(String(phone || ''))) return '';
+  const known = PropertiesService.getScriptProperties().getProperty('BB_CHAT_' + phone);
+  const guids = [known, 'iMessage;-;' + phone, 'SMS;-;' + phone].filter((g, i, a) => g && a.indexOf(g) === i);
+  for (const g of guids) {
+    try {
+      const msgs = (bbApi('chat/' + encodeURIComponent(g) + '/message?limit=20&sort=DESC').data || []).filter(m => m.text).reverse();
+      if (msgs.length) return msgs.map(m => (m.isFromMe ? 'Julián: ' : 'Them: ') + String(m.text).replace(/\s+/g, ' ').slice(0, 300)).join('\n');
+    } catch (e) {}
+  }
+  return '';
+}
+
+/** The person's recent Follow Up Boss history for Shawna: notes (texts, calls, emails sent), oldest first. */
+function personHistory(personId) {
+  return (fubFetch('notes?personId=' + personId + '&limit=15', null, 'get').notes || []).reverse()
+    .filter(n => !/draft$/i.test(String(n.subject || '')))
+    .map(n => String(n.created || '').slice(0, 10) + ' ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 350)).join('\n');
+}
+
+/** After Shawna reads a reply: save their name if we didn't have it, and act on "not right now" / "not interested". */
+function learnFromReply(p, out, where) {
+  const nm = String((out && out.name) || '').trim();
+  if (nm && !realFirst(p) && !/^(no|unknown|shawna|juli[aá]n)\b/i.test(nm)) {
+    const parts = nm.split(/\s+/);
+    try { fubFetch('people/' + p.id, {firstName: parts[0], lastName: parts.slice(1).join(' ')}, 'put'); p.firstName = parts[0]; } catch (e) {}
+  }
+  try { applyIntent(p.id, String((out && out.intent) || ''), where); } catch (e) { console.log('Intent: ' + e.message); }
+}
+
+/** "Not right now" → tag Not Now: the morning funnel moves them to the slower Long-Term Nurture (about monthly) and stops
+ *  the Hot/Warm drip. "Not interested" → tag Not Interested: their JC drip pauses. Julián removes the tag to undo. */
+function applyIntent(personId, intent, where) {
+  const tag = intent === 'not_now' ? 'Not Now' : intent === 'not_interested' ? 'Not Interested' : '';
+  if (!tag) return;
+  const p = fubFetch('people/' + personId + '?fields=id,tags', null, 'get');
+  if ((p.tags || []).indexOf(tag) >= 0) return;
+  fubFetch('people/' + personId, {tags: (p.tags || []).concat(tag)}, 'put');
+  fubFetch('notes', {personId: personId, subject: tag, body: tag === 'Not Now'
+    ? 'They said "not right now" in ' + where + '. Next morning they move to the slower Long-Term Nurture emails (about once a month) and the Hot/Warm emails stop. Remove the "Not Now" tag to undo.'
+    : 'They said they\'re not interested in ' + where + '. Their email drip pauses next morning. Remove the "Not Interested" tag to undo.'});
+}
+
+// NEW NUMBERS (Julián, Nov 11): a number that isn't in Follow Up Boss or his phone's contacts texts the business line.
+// Shawna answers (they texted first), asks who it is (once), and adds them to FUB only when they've said their name.
+// Max 3 replies while the name is unknown. Everything is listed in the "New Numbers" sheet tab.
+const NEW_NUMBERS_TAB = {name: 'New Numbers', color: '#F4B400', headers: ['When', 'Number', 'What they texted', 'Status']};
+function newNumber(from, text, mode) {
+  const props = PropertiesService.getScriptProperties(), k = 'NEWNUM_' + from;
+  const st = JSON.parse(props.getProperty(k) || '{"texts":[],"asks":0}');
+  st.texts.push(text.slice(0, 300)); st.at = st.at || Date.now();
+  const sheet = ensureTab(getSS(), NEW_NUMBERS_TAB), key = props.getProperty('GROQ_API_KEY');
+  let out = {};
+  if (key) {
+    try {
+      out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+        {role: 'system', content: assistantPrompt(assistantName(), assistantPersona(from)) + '\nTHIS PERSON IS NEW: they are not in the contacts and you do not know their name. Answer what they said briefly and warmly, ' +
+          (st.asks ? 'and do not ask their name again.' : 'and naturally ask who you\'re texting with (for example "Who do I have the pleasure of texting with?").') + ' Put their name in "name" only if they actually said it.'},
+        {role: 'user', content: 'Text conversation so far:\n' + (bbThread(from) || st.texts.map(t => 'Them: ' + t).join('\n')) + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]));
+    } catch (e) { console.log('New number: ' + e.message); }
+  }
+  const name = String(out.name || '').trim();
+  if (name && !/^(no|unknown|shawna|juli[aá]n)\b/i.test(name)) {
+    const parts = name.split(/\s+/);
+    fubFetch('events', {source: 'Text message', system: 'juliancrider.com', type: 'General Inquiry',
+      message: 'Texted the business number:\n' + st.texts.join('\n'), person: {firstName: parts[0], lastName: parts.slice(1).join(' '), phones: [{value: from}], tags: ['Texted In']}});
+    props.deleteProperty(k);
+    sheet.appendRow([new Date(), from, cell(st.texts.join(' | ').slice(0, 1000)), 'Added to Follow Up Boss as ' + cell(name)]);
+    return (fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + encodeURIComponent(from.slice(2)), null, 'get').people || [])[0] || null;
+  }
+  if (st.texts.length === 1) sheet.appendRow([new Date(), from, cell(text.slice(0, 300)), 'Waiting for their name (not in Follow Up Boss yet)']);
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
+  const reply = humanize(out.reply || ''), muted = Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now();
+  if (reply && !out.escalate && !muted && st.asks < 3 && (mode === 'auto' || mode === 'backup') && hour >= 8 && hour < endHour) {
+    props.setProperty('AI_SENDING_' + from, String(Date.now()));
+    try { bbSend(from, reply); st.asks++; } catch (e) { console.log('New number reply not sent: ' + e.message); }
+  }
+  props.setProperty(k, JSON.stringify(st));
+  return null;
 }
 
 // ASSISTANT_PERSONA = julian (default, Julián's choice Nov 9: replies are written as Julián himself, no intro) or shawna.
@@ -1978,7 +2076,8 @@ Them: "Not ready yet" → "Totally fair 🙌🏾 I'm here whenever you are. Mind
 
 GOALS (gently, over time): understand what they want and when, help them feel taken care of, and when they're ready, offer a quick call (juliancrider.com/?book), a showing (juliancrider.com/?showing) or a home value (juliancrider.com/?value).
 RULES: never invent facts, listings, prices, availability, rates or promises. No legal, tax or lending advice (point to their CPA or lender, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
-Return JSON only: {"reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián"}`;
+NAMES: if the contact's name is unknown, never guess or use a placeholder (never "No", "Name" or "there"); when it fits naturally, ask who you're talking with, once.
+Return JSON only: {"reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty"}`;
 }
 
 function groqChat(key, model, messages) {
@@ -2523,19 +2622,29 @@ function vapiWebhook(e) {
   const transcript = String(m.transcript || (m.artifact && m.artifact.transcript) || '').slice(0, 6000);
   const rec = m.recordingUrl || (m.artifact && m.artifact.recordingUrl) || '';
   const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
-  if (!summary && transcript && props.getProperty('GROQ_API_KEY')) {
+  let callerName = '';
+  if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
       const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: 'Summarize this real estate phone call for the agent in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Return JSON {"summary": "..."}.'},
+        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). Return JSON {"summary": "...", "name": "caller full name or empty"}.'},
         {role: 'user', content: transcript.slice(0, 5000)}]));
-      summary = humanize(r.summary || '');
+      if (!summary) summary = humanize(r.summary || '');
+      callerName = String(r.name || '').trim();
+      if (/^(no|unknown|shawna|juli[aá]n)\b/i.test(callerName)) callerName = '';
     } catch (e) {}
   }
+  const boss0 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   let person = null;
-  if (num) person = (fubFetch('people?limit=1&fields=id,firstName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
+  if (num) person = (fubFetch('people?limit=1&fields=id,firstName,lastName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
+  if (person && callerName && !realFirst(person) && num !== boss0) {  // they told Shawna their name: fix "No Name"
+    const parts = callerName.split(/\s+/);
+    try { fubFetch('people/' + person.id, {firstName: parts[0], lastName: parts.slice(1).join(' ')}, 'put'); } catch (e) {}
+  }
   if (!person) {
+    // Never a "No Name" contact: their name if they gave it, else "Caller" + their number so the call-back task makes sense.
+    const parts = callerName ? callerName.split(/\s+/) : ['Caller', num ? num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : ''];
     const r = fubFetch('events', {source: 'Phone call', system: 'juliancrider.com', type: 'Inquiry',
-      message: 'Called and talked with ' + assistantName() + ': ' + summary, person: {phones: num ? [{value: num}] : [], tags: ['Phone Lead']}});
+      message: 'Called and talked with ' + assistantName() + ': ' + summary, person: {firstName: parts[0], lastName: parts.slice(1).join(' '), phones: num ? [{value: num}] : [], tags: ['Phone Lead']}});
     person = (r.personId && {id: r.personId}) || r.person || (num && (fubFetch('people?limit=1&fields=id,firstName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0]);
   }
   if (!person) return json({status: 'no person'});
@@ -2655,6 +2764,7 @@ function ensureTextQueueTrigger() {
 function remindUpcoming() {
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { checkClientEmails(); } catch (e) { console.log('Email alerts: ' + e.message); }
+  try { processEmailAssistant(); } catch (e) { console.log('Email assistant: ' + e.message); }
   const now = Date.now(), props = PropertiesService.getScriptProperties();
   const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 9 * 6e4), new Date(now + 21 * 6e4));
   events.forEach(ev => {
@@ -2750,6 +2860,63 @@ function processEmailOutbox() {
   });
 }
 
+// ============================================================
+// EMAIL ASSISTANT (Nov 11). Every 5 minutes, 7am-10pm, Shawna reads new unread emails in julianc@bcolv.com (through the
+// Shawna Mailer v3) from people who are in Follow Up Boss and assigned to Julián, and writes a reply as Julián, using
+// their texts, notes and past emails. EMAIL_ASSISTANT = draft (default): the reply is saved as a Gmail draft in that
+// thread and Julián gets a text to review and send it. auto: she sends it herself (but anything that needs him, like
+// offers, contracts, complaints or Has Agent, is still only drafted). off: nothing. Emails from people who aren't in
+// Follow Up Boss (vendors, newsletters, other agents) are left alone. "Not right now" / "not interested" emails change
+// their campaign (applyIntent). Emails stay unread in his inbox.
+// ============================================================
+function processEmailAssistant() {
+  const props = PropertiesService.getScriptProperties(), mode = (props.getProperty('EMAIL_ASSISTANT') || 'draft').toLowerCase();
+  const key = props.getProperty('GROQ_API_KEY');
+  if (mode === 'off' || !key || !props.getProperty('BCOLV_MAILER_URL')) return;
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
+  if (hour < 7 || hour >= 22) return;
+  const v = bcolvCall({action: 'version'});
+  if (!v || !(v.version >= 3)) return;  // the Shawna Mailer needs the v3 update to read email
+  const res = bcolvCall({action: 'inbox', days: 2, max: 20});
+  if (!res || !res.ok) return;
+  const me = Number(props.getProperty('FUB_ME') || 0) || (() => { const id = fubFetch('me', null, 'get').id; props.setProperty('FUB_ME', id); return id; })();
+  const done = JSON.parse(props.getProperty('EMAIL_AI_DONE') || '[]'), name = assistantName();
+  (res.emails || []).filter(m => done.indexOf(m.id) < 0).slice(0, 5).forEach(m => {
+    done.push(m.id); props.setProperty('EMAIL_AI_DONE', JSON.stringify(done.slice(-400)));  // mark first: never answer twice
+    const addr = String((String(m.from).match(/<([^>]+)>/) || [null, m.from])[1] || '').trim().toLowerCase();
+    if (!validEmail(addr) || /no-?reply|notification|mailer-daemon|postmaster|bcolv\.com|followupboss|zillow|realscout/i.test(addr)) return;
+    const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,tags,stage,assignedUserId,phones&email=' + encodeURIComponent(addr), null, 'get').people || [])[0];
+    if (!p || (p.assignedUserId && p.assignedUserId !== me)) return;
+    const tags = p.tags || [];
+    if (tags.indexOf('No Shawna') >= 0 || tags.indexOf('Partner') >= 0) return;
+    const phone = bbE164(((p.phones || [])[0] || {}).value || ''), first = realFirst(p);
+    let out;
+    try {
+      out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+        {role: 'system', content: assistantPrompt(name, assistantPersona(phone || '')) + '\nTHIS IS AN EMAIL REPLY, not a text: 2 to 5 short sentences, warm and plain. Start with "Hi ' + (first || 'there') + '," on its own line. No subject line and no sign-off or signature (they are added automatically). Fewer emojis than in texts (0 or 1).'},
+        {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
+          (phone ? '\nTheir text conversation (oldest first):\n' + bbThread(phone) : '') + '\nFollow Up Boss history (oldest first):\n' + personHistory(p.id) +
+          '\n\nThey just emailed. Subject: "' + m.subject + '"\n"' + String(m.body || '').slice(0, 2500) + '"\n\nReply as JSON only.'}]));
+    } catch (e) { console.log('Email assistant (' + addr + '): ' + e.message); return; }
+    learnFromReply(p, out, 'an email');
+    const reply = humanize(out.reply || '');
+    if (!reply) return;
+    const sensitive = !!out.escalate || ASSISTANT.escalate.test(m.body + ' ' + m.subject) || tags.indexOf('Has Agent') >= 0;
+    const draft = mode !== 'auto' || sensitive;
+    const html = '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + reply.split(/\n{2,}|\n/).map(par => '<p style="margin:0 0 12px">' +
+      par.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>').join('') + '<p style="margin:0">Julián</p>' + EMAIL_FOOTER + '</div>';
+    const r = bcolvCall({action: 'reply', threadId: m.threadId, text: reply + '\n\nJulián', html: html, draft: draft});
+    if (!r || !r.ok) { console.log('Email assistant: reply not saved for ' + addr + ': ' + ((r && r.error) || 'no answer')); return; }
+    const who = first || addr;
+    fubFetch('notes', {personId: p.id, subject: draft ? name + ' email draft (in Gmail Drafts)' : 'Email sent: Re: ' + m.subject,
+      body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\n' + (draft ? 'Draft reply waiting in julianc@bcolv.com Drafts:\n' : 'Replied from julianc@bcolv.com:\n') + reply +
+        (sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '')});
+    notifyJulian(draft ? who + ' emailed you' : name + ' answered ' + who + "'s email",
+      draft ? name + ' wrote a reply for you. It\'s in your bcolv Gmail Drafts: open it, change anything you like, and hit send.' + (sensitive ? ' Heads up: ' + (out.reason || 'this one needs you') + '.' : '')
+        : 'She replied: "' + reply.slice(0, 160) + '"');
+  });
+}
+
 /** EMAIL OUTBOX (bcolv): a FUB note with subject "Send bcolv email" by Julián's account (user 2, e.g. Claude) is
  *  emailed to that contact FROM julianc@bcolv.com through the Shawna Mailer. Body: first line "Subject: …", optional
  *  line "File: <Google Drive file id>" (attached, e.g. a CMA PDF), then the email text. Attachments need Shawna Mailer
@@ -2773,7 +2940,7 @@ function processBcolvEmailOutbox() {
     let attachments;
     if (fileId) {
       const v = bcolvCall({action: 'version'});
-      if (!v || v.version !== 2) { console.log('bcolv email waiting: Shawna Mailer needs the v2 update for attachments'); return; }
+      if (!v || !(v.version >= 2)) { console.log('bcolv email waiting: Shawna Mailer needs the v2 update for attachments'); return; }
       const f = DriveApp.getFileById(fileId), b = f.getBlob();
       attachments = [{name: f.getName(), mimeType: b.getContentType(), base64: Utilities.base64Encode(b.getBytes())}];
     }
