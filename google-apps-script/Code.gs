@@ -1949,7 +1949,8 @@ function assistantReply(person, from, text) {
     {role: 'system', content: assistantPrompt(name, assistantPersona(from))},
     {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown, never guess one)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
       (thread ? '\nThe text conversation so far (oldest first, from the phone):\n' + thread : '') +
-      '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
+      '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + (function () { try { const f = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); const m = emailHistory((f.emails || []).map(e => e.value), 14); return m ? '\nTheir recent emails (oldest first):\n' + m : ''; } catch (e) { return ''; } })() +
+      '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
   const reply = humanize(out.reply);
@@ -1965,6 +1966,14 @@ function assistantReply(person, from, text) {
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
     q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + delay * 6e4};
+    props.setProperty('AI_PENDING', JSON.stringify(q));
+    return true;
+  }
+  if (mode === 'auto' && ok && hour >= 8 && hour < endHour && props.getProperty('ASSISTANT_INSTANT') !== 'on') {
+    // Like a person: answer about 1 to 3 minutes later (Julián's own texts to Shawna are still answered instantly).
+    // If Julián texts them himself in the meantime, this reply is canceled.
+    const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
+    q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + (60 + Math.floor(Math.random() * 120)) * 1000, paced: true};
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
@@ -1993,13 +2002,51 @@ function bbThread(phone) {
   if (!/^\+1\d{10}$|@/.test(String(phone || ''))) return '';
   const known = PropertiesService.getScriptProperties().getProperty('BB_CHAT_' + phone);
   const guids = [known, 'iMessage;-;' + phone, 'SMS;-;' + phone].filter((g, i, a) => g && a.indexOf(g) === i);
+  const fmt = msgs => msgs.map(m => (m.dateCreated ? Utilities.formatDate(new Date(m.dateCreated), 'America/Los_Angeles', 'M/d h:mma') + ' ' : '') +
+    (m.isFromMe ? 'Julián: ' : 'Them: ') + String(m.text).replace(/\s+/g, ' ').slice(0, 300)).join('\n');
   for (const g of guids) {
     try {
-      const msgs = (bbApi('chat/' + encodeURIComponent(g) + '/message?limit=20&sort=DESC').data || []).filter(m => m.text).reverse();
-      if (msgs.length) return msgs.map(m => (m.isFromMe ? 'Julián: ' : 'Them: ') + String(m.text).replace(/\s+/g, ' ').slice(0, 300)).join('\n');
+      const msgs = (bbApi('chat/' + encodeURIComponent(g) + '/message?limit=25&sort=DESC').data || []).filter(m => m.text).reverse();
+      if (msgs.length) return fmt(msgs);
+    } catch (e) {}
+    try {  // older BlueBubbles: the message query endpoint
+      const msgs = (bbApi('message/query', {chatGuid: g, limit: 25, offset: 0, sort: 'DESC'}).data || []).filter(m => m.text).reverse();
+      if (msgs.length) return fmt(msgs);
     } catch (e) {}
   }
   return '';
+}
+
+/** Their emails with Julián over the last 2 weeks (read or unread, both directions), from julianc@bcolv.com via the
+ *  Shawna Mailer v4. Oldest first. '' if the mailer is older or they have no email. */
+function emailHistory(emails, days) {
+  const list = (emails || []).map(e => String(e).trim().toLowerCase()).filter(validEmail).slice(0, 2);
+  if (!list.length || !PropertiesService.getScriptProperties().getProperty('BCOLV_MAILER_URL')) return '';
+  const q = '{' + list.map(e => 'from:' + e + ' to:' + e).join(' ') + '} newer_than:' + (days || 14) + 'd';
+  const r = bcolvCall({action: 'search', query: q, max: 8});
+  if (!r || !r.ok) return '';
+  return (r.messages || []).sort((x, y) => x.date - y.date).slice(-8).map(m => Utilities.formatDate(new Date(m.date), 'America/Los_Angeles', 'M/d h:mma') + ' ' +
+    (m.fromMe ? 'Julián' : 'Them') + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 500)).join('\n');
+}
+
+/** Everything about a person from the last ~2 weeks, in one place: texts (from the Mac), emails (Gmail), and calls,
+ *  voice memos and notes (Follow Up Boss). Used for read-backs, replies and lookups. */
+function personTimeline(p, phone) {
+  const full = p && p.id ? fubFetch('people/' + p.id + '?fields=id,name,phones,emails', null, 'get') : null;
+  phone = phone || (full ? bbE164(((full.phones || [])[0] || {}).value || '') : '');
+  const parts = [];
+  const texts = phone ? bbThread(phone) : '';
+  if (texts) parts.push('TEXTS:\n' + texts.split('\n').slice(-12).join('\n'));
+  const mails = full ? emailHistory((full.emails || []).map(e => e.value), 14) : '';
+  if (mails) parts.push('EMAILS:\n' + mails);
+  if (full) {
+    const notes = (fubFetch('notes?personId=' + full.id + '&limit=25', null, 'get').notes || [])
+      .filter(n => Date.now() - new Date(n.created) < 14 * 864e5 && !/draft$/i.test(String(n.subject || '')))
+      .slice(0, 10).reverse()
+      .map(n => String(n.created || '').slice(5, 10) + ' ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 400));
+    if (notes.length) parts.push('CALLS, VOICE MEMOS AND NOTES (Follow Up Boss):\n' + notes.join('\n'));
+  }
+  return parts.join('\n\n');
 }
 
 /** The person's recent Follow Up Boss history for Shawna: notes (texts, calls, emails sent), oldest first. */
@@ -2223,7 +2270,7 @@ function processAssistantQueue() {
       bbSendParts(phone, intro + it.reply);
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
-      fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + ', you hadn\'t replied yet)' + (it.next ? '\nNext step: ' + it.next : '')});
+      fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + (it.paced ? ')' : ', you hadn\'t replied yet)') + (it.next ? '\nNext step: ' + it.next : '')});
       try {
         const who = (fubFetch('people/' + it.personId + '?fields=firstName', null, 'get').firstName) || 'them';
         textLog({who: who, text: '', reply: it.reply.slice(0, 200)});
@@ -2521,36 +2568,42 @@ Examples (all mean the same as the action shown):
   if (a.action === 'read') {
     const names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0, 4);
     if (!names.length) return say('whose messages should I read you?');
-    let inbox = null;
-    const parts = names.map(nm => {
-      const p = findOne(nm), person = p && !p.many ? fubFetch('people/' + p.id + '?fields=id,name,phones,emails', null, 'get') : null;
-      let phone = person ? bbE164(((person.phones || [])[0] || {}).value || '') : '';
-      if (!phone) { const c = macContact(nm); if (c) phone = bbE164(c.phone); }
-      const out = [];
-      if (phone) {
-        const th = bbThread(phone).split('\n').filter(Boolean).slice(-4);
-        if (th.length) out.push('texts:\n' + th.map(l => '  ' + l.replace(/^Them:/, (person && person.name ? person.name.split(' ')[0] : nm) + ':').slice(0, 220)).join('\n'));
-      }
-      const emails = person ? (person.emails || []).map(e => String(e.value).toLowerCase()) : [];
-      if (emails.length) {
-        if (!inbox) { const r = bcolvCall({action: 'inbox', days: 7, max: 30}); inbox = (r && r.emails) || []; }
-        const m = inbox.find(x => emails.some(e => String(x.from).toLowerCase().indexOf(e) >= 0));
-        if (m) out.push('email "' + m.subject + '":\n  ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 400));
-        else {
-          const n = (fubFetch('notes?personId=' + person.id + '&limit=10', null, 'get').notes || []).find(x => /emailed|email draft/i.test(String(x.subject || '') + String(x.body || '').slice(0, 30)));
-          if (n) out.push('email: ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 400));
-        }
-      }
-      return '• ' + ((person && person.name) || nm) + (out.length ? '\n' + out.join('\n') : ': I don\'t see recent texts or unread emails from them.');
+    const blocks = names.map(nm => {
+      const p = findOne(nm), person = p && !p.many ? p : null;
+      let phone = '';
+      if (!person) { const c = macContact(nm); if (c) phone = bbE164(c.phone); }
+      const tl = personTimeline(person, phone);
+      return {who: (person && person.name) || nm, tl: tl};
     });
-    return say(parts.join('\n\n') + '\n\nWant me to answer any of them? Just tell me what to say.');
+    if (blocks.every(b => !b.tl)) return say('I don\'t see texts, emails or calls with ' + names.join(', ') + ' in the last 2 weeks.');
+    let answer = '';
+    try {
+      const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+        {role: 'system', content: 'You are ' + name + ', Julián\'s assistant. For each person below, tell Julián in 1 to 3 short lines what they most recently said or asked (quote short bits), across texts, emails and calls, with the day, and whether they\'re still waiting on a reply. Plain text, no dashes. Return JSON {"summary": "..."} with one bullet (•) per person.'},
+        {role: 'user', content: blocks.map(b => '### ' + b.who + '\n' + (b.tl || 'nothing in the last 2 weeks')).join('\n\n').slice(0, 12000)}]));
+      answer = humanize(r.summary || '');
+    } catch (e) {}
+    if (!answer) answer = blocks.map(b => '• ' + b.who + '\n' + (b.tl ? b.tl.split('\n').filter(l => /Them|emailed|Call with/.test(l)).slice(-3).join('\n') : 'nothing in the last 2 weeks')).join('\n\n');
+    return say(answer + '\n\nWant me to answer any of them? Just tell me what to say.');
   }
   if (a.action === 'unanswered') {
-    const log = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).slice(-6).reverse();
-    const r = bcolvCall({action: 'inbox', days: 3, max: 10}), mails = ((r && r.emails) || []).slice(0, 5);
-    const lines = log.map(x => '• ' + x.who + ' (text): "' + String(x.text || '').slice(0, 100) + '"')
-      .concat(mails.map(m => '• ' + String(m.from).replace(/<.*>/, '').trim() + ' (email, "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
-    return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails.');
+    const seen = {}, lines = [];
+    JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => Date.now() - x.at < 7 * 864e5).reverse().forEach(x => {
+      const ph = x.phone || '', k = ph || x.who;
+      if (seen[k] || lines.length >= 8) return; seen[k] = 1;
+      let who = x.who;
+      if (ph) {
+        const th = bbThread(ph).split('\n').filter(Boolean), last = th[th.length - 1] || '';
+        if (/Julián: /.test(last)) return;  // someone (Julián or Shawna) already answered
+        const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,tags&phone=' + ph.slice(2), null, 'get').people || [])[0];
+        if (p && (p.tags || []).some(t => /^Test\b/i.test(t))) return;
+        who = p ? ([realFirst(p), p.lastName].join(' ').trim() || ph) : ph;
+      } else if (/^no name$/i.test(String(who))) return;
+      lines.push('• ' + who + ' (text): "' + String(x.text || '').slice(0, 100) + '"');
+    });
+    const r = bcolvCall({action: 'inbox', days: 7, max: 10});
+    ((r && r.emails) || []).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
+    return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
   }
   if (a.action === 'allow') {
     const names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean);
@@ -2627,9 +2680,11 @@ function shawnaLog(kind, text, detail) {
 function bossMemory(role, text) {
   try {
     const props = PropertiesService.getScriptProperties();
-    const h = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').filter(x => Date.now() - x.at < 3 * 864e5);
-    h.push({r: role, t: String(text).slice(0, 400), at: Date.now()});
-    props.setProperty('BOSS_HISTORY', JSON.stringify(h.slice(-16)));
+    let h = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').filter(x => Date.now() - x.at < 14 * 864e5);  // 2 weeks
+    h.push({r: role, t: String(text).slice(0, 300), at: Date.now()});
+    h = h.slice(-30);
+    while (JSON.stringify(h).length > 8500) h.shift();  // stay under the 9 KB limit of one Script Property
+    props.setProperty('BOSS_HISTORY', JSON.stringify(h));
   } catch (e) {}
 }
 
