@@ -216,6 +216,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   action `callnotes`: resolvePerson (creates new), FUB call log + "Call notes" note, follow-up task on the agreed day,
   applyShawnaTags/applyIntent/suggestDeal, pending follow-up text (long: 6 h to approve) + recap email from bcolv.
   Unknown/ambiguous name → asks; a short reply within 30 min (CALLNOTES_WAIT) names it.
+- Saw-you-called (Nov 11): after a Vapi call from someone already in FUB with Text OK (no recap consent path), Text
+  Queue step `call-followup` (~1 min, 9am-9pm): "Hey X, it's Julián. Saw you just called… good time to call you back?"
+  Vapi versions: syncVapiAssistant PATCH publishes (v35-37 on Nov 11); the dashboard "Draft" is an old local draft, never
+  publish it (it has the old receptionist prompt).
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
