@@ -153,6 +153,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   search (Groq writes the query; mailer v4), Website Leads + Sign-Ins tabs, both calendars (7 days) → Groq answer.
   Alerts that matter: client texts Groq marks important/escalate → notifyJulian (once per person per 2 h, even with
   TEXT_ALERTS off); every real Vapi caller → notifyJulian with the summary.
+- Scheduled texts (Nov 11): boss text with "when" (Friday / next week / in 2 weeks; default 10:00, nudged into 9am-9pm) →
+  approval shows the time; YES → Text Queue row step "scheduled" (editable in the tab), sent by processTextQueue via
+  `sendApprovedText` (Julián-approved: respects Text Opt-Out, not the Text OK tag). "cancel the text to X" → unschedule.
+  agenda lists scheduled texts.
 - Multi-requests (Nov 11): routing may return {"actions": [...]} (≤5); bossCommand runs `doAction` for each in order (each
   answers separately; approvals get numbered). Routing maxTokens 1000.
 - groqChat(key, model, messages, {maxTokens, noPick}) (Nov 11): default max_tokens 900 (routing 700; Groq free tier counts

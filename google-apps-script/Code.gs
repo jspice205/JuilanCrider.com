@@ -2114,6 +2114,13 @@ function agendaText(week) {
   try {
     const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).length;
     if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you (ask "who haven\'t I responded to").');
+    try {
+      const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+      if (sh && sh.getLastRow() > 1) {
+        const sc = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().filter(r => r[3] === 'scheduled' && r[4] === 'pending' && r[0] instanceof Date && r[0] <= end);
+        if (sc.length) lines.push('🕒 scheduled texts:\n' + sc.slice(0, 6).map(r => '• ' + fmt(r[0], 'EEE h:mm a') + ' to ' + r[2]).join('\n'));
+      }
+    } catch (e) {}
     const q = pendingQueue();
     if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '\nReply "YES 2" (or NO 2) for a specific one.');
   } catch (e) {}
@@ -2719,6 +2726,12 @@ function bossCommand(text, tries) {
       fubFetch('notes', {personId: pend.personId, subject: 'Email sent', body: 'To ' + pend.email + ' from ' + (r.from || 'bcolv') + ': "' + pend.subject + '"\n\n' + pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
       return say('emailed ' + pend.who + ' from ' + (r.from || 'your bcolv email') + '. ✅');
     }
+    if (pend.sendAt && pend.sendAt > Date.now()) {  // scheduled for later: it waits in the Text Queue tab (editable there)
+      ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(pend.sendAt), pend.personId, cell(pend.who), 'scheduled', 'pending', 0, '', cell(pend.message)]);
+      ensureTextQueueTrigger();
+      fubFetch('notes', {personId: pend.personId, subject: 'Text scheduled', body: 'For ' + Utilities.formatDate(new Date(pend.sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + ':\n' + pend.message});
+      return say('scheduled ✅ ' + pend.who + ' gets it ' + Utilities.formatDate(new Date(pend.sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + '. Text "cancel the text to ' + String(pend.who).split(' ')[0] + '" to stop it.');
+    }
     props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
     fubFetch('notes', {personId: pend.personId, subject: 'Text sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
@@ -2730,10 +2743,11 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"agenda|taskdone|taskstart|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
+- unschedule: cancel a text he scheduled for later ("cancel the text to Lisa", "don't send Dan that message Friday"). Put the person in "who".
 - taskdone: he says tasks are done or wants them cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "clear the old tasks", "clear them all"). "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
 - taskstart: he wants to work a task from your to-do list ("do 2", "let's knock out number 3", "start the Sonia one", "handle 1"). "message": the number; "who": the person if he names one.
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
@@ -2902,8 +2916,16 @@ Examples (all mean the same as the action shown):
       if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
       if (!phone) return say(p.name + ' has no mobile number yet. Send me their number and I\'ll text them.');
-      addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now()});
-      return say(name + ': send this to ' + p.name + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\nReply YES to send or NO to cancel.');
+      const wm = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+      let sendAt = wm ? Utilities.parseDate(wm[1] + ' ' + wm[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm').getTime() : 0;
+      if (sendAt && sendAt < Date.now() + 10 * 6e4) sendAt = 0;  // "now" or the past: just send it
+      if (sendAt) {  // texts only go out 9am-9pm: nudge a late or early time into that window
+        const h = Number(Utilities.formatDate(new Date(sendAt), 'America/Los_Angeles', 'H'));
+        if (h < 9) sendAt += (9 - h) * 36e5; else if (h >= 21) sendAt += (24 - h + 9) * 36e5;
+      }
+      const whenTxt = sendAt ? Utilities.formatDate(new Date(sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") : '';
+      const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
+      return say(name + ': ' + (sendAt ? 'schedule this for ' + p.name + ' on ' + whenTxt : 'send this to ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\n' + yesHint(n) + ' or NO to cancel.');
     }
     if (a.action === 'schedule') {
       const m = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
@@ -2992,7 +3014,16 @@ Examples (all mean the same as the action shown):
       return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
     }
     if (a.action === 'agenda') return say(agendaText(/week|7|days/i.test(String(a.message || '') + ' ' + text)));
-    if (a.action === 'taskdone' || a.action === 'taskstart') {
+    if (a.action === 'unschedule') {
+    const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+    if (!sh || sh.getLastRow() < 2) return say('nothing is scheduled.');
+    const want = String(a.who || '').toLowerCase().split(' ')[0];
+    const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
+    let n = 0;
+    rows.forEach((r, i) => { if (r[3] === 'scheduled' && r[4] === 'pending' && (!want || String(r[2]).toLowerCase().indexOf(want) >= 0)) { sh.getRange(i + 2, 5).setValue('canceled by Julián'); n++; } });
+    return say(n ? 'canceled ' + n + ' scheduled text' + (n > 1 ? 's' : '') + (a.who ? ' to ' + a.who : '') + '. ✅' : 'I don\'t see a scheduled text' + (a.who ? ' to ' + a.who : '') + '.');
+  }
+  if (a.action === 'taskdone' || a.action === 'taskstart') {
       const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
       const saved = JSON.parse(props.getProperty('AGENDA_TASKS') || '[]'), arg = String(a.message || '').toLowerCase();
       const nums = (arg.match(/\d+/g) || []).map(Number).filter(n => n >= 1 && n <= saved.length);
@@ -3658,6 +3689,18 @@ function remindUpcoming() {
   });
 }
 
+/** A text Julián approved (scheduled for later): goes to their number unless they opted out, logged in Follow Up Boss. */
+function sendApprovedText(personId, text) {
+  const p = fubFetch('people/' + personId + '?fields=id,firstName,tags,phones', null, 'get');
+  if ((p.tags || []).indexOf('Text Opt-Out') >= 0) return 'skipped: they opted out';
+  const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+  if (!phone) return 'skipped: no mobile number';
+  PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + phone, String(Date.now()));
+  bbSendParts(phone, text);
+  try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: text + '\n\n(scheduled by Julián)'}); } catch (e) {}
+  return 'sent';
+}
+
 function processTextQueue() {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   if (hour < 9 || hour >= 21) return;  // quiet hours: wait for the morning
@@ -3671,9 +3714,9 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|scheduled)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
-      const res = bbTextPerson(id, text);
+      const res = step === 'scheduled' ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
