@@ -137,6 +137,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   like a person (AI_PENDING, `humanDelay`: read + type + think time with jitter, halved in a live back-and-forth, max 120 s,
   plus the 1-min queue tick → ~10 s to 3 min; ASSISTANT_INSTANT=on to send at once); Julián's own commands stay instant.
   `unanswered` skips threads whose last message is from Julián/Shawna, test contacts and "No name".
+- Campaign replies (Nov 11): checkClientEmails sees FUB "Received" emails (FUB hides bodies) → mailer search from:<their
+  email> → processEmailAssistant(list) drafts/intent even if Julián already opened it. ask/read/unanswered send an
+  instant "On it 👀 one sec." before the slower answer. FUB sends drips through a connected Gmail (email account 683781,
+  gmail threads since Nov 10); replies arrive there.
 - Boss action `ask` (Nov 11): answers any question from all sources at once: personTimeline for named people, FUB
   notes feed (calls/texts/emails/notes, 40 newest) + newest contacts, BlueBubbles chat/query latest threads, Gmail
   search (Groq writes the query; mailer v4), Website Leads + Sign-Ins tabs, both calendars (7 days) → Groq answer.
