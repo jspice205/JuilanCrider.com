@@ -165,6 +165,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   moves/creates the FUB deal + contact stage). Vapi bookings: appointmentISO checked against both calendars → FUB
   appointment if found, else pending kind event (YES adds it). `findDuplicates` nightly → "Duplicates" tab. Boss prompt
   "BE A REAL ASSISTANT": never stuck, closest action, one short question if needed.
+- Rich texts (Nov 11): website bookings send a tap-to-add calendar invite (`icsInvite`, .ics with 30-min alarm) under the
+  confirmation; any text bubble with a listing link (zillow/redfin/realtor/realscout/…) gets its og:image sent as a photo
+  bubble (`listingPhoto`, cached 6 h; blocked sites just send the link). Julián rejected numbered quick replies (too old
+  school). Tapbacks/typing/effects need a newer Mac + BlueBubbles Private API.
 - Tasks from the text thread (Nov 11): agenda lists up to 10 open FUB tasks numbered (AGENDA_TASKS); "do 2" → taskstart
   (Groq drafts the text from personTimeline → BOSS_PENDING with taskId; YES sends and checks the task off; call tasks get
   a briefing + optional text); "done 2" / "clear the old tasks" → taskdone. `cleanupOldTasks` (daily, hourly hook)

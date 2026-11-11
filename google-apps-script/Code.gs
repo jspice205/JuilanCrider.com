@@ -256,10 +256,16 @@ function bookSlot(d) {
   } catch (err) { console.error('Booking FUB: ' + err); }
   try {  // confirmation text (the 15-minute reminder comes from remindUpcoming)
     const first = String(d.name).trim().split(/\s+/)[0];
-    bbSend(d.phone, showing ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
+    const sent = bbSend(d.phone, showing ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
       : golf ? `Hey ${first}, it's Julián ⛳ We're on for ${d.holes || 18} holes ${label}${d.course ? ' at ' + d.course : ''}. Looking forward to it!`
       : video ? `Hey ${first}, it's Julián 👋🏾 You're all set for our video call ${label}.${link ? " Here's the link: " + link : " I'll send the link shortly."}`
       : `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. I'll call you then. If anything changes, just text me here.`);
+    try {  // tap-to-add calendar invite right under the confirmation
+      Utilities.sleep(1500);
+      const invTitle = showing ? 'Showing with Julián: ' + String(d.property).split(',')[0] : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
+      bbPostAttachment(d.phone, sent && sent.service, icsInvite(invTitle, slot, end, showing ? String(d.property) : golf ? (d.course || '') : (link || 'Julián will call you'),
+        (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.'));
+    } catch (e) { console.log('Calendar invite not sent: ' + e.message); }
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
   return {status: 'success', label: label, link: link};
 }
@@ -1768,6 +1774,38 @@ function bbTextPerson(personId, text, opts) {
   return 'sent';
 }
 
+/** A tap-to-add calendar invite (.ics) for a client's phone, with a 30-minute reminder. */
+function icsInvite(title, start, end, location, description) {
+  const esc = v => String(v || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  const utc = d => Utilities.formatDate(new Date(d), 'UTC', "yyyyMMdd'T'HHmmss'Z'");
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//juliancrider.com//Shawna//EN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    'UID:' + Utilities.getUuid() + '@juliancrider.com', 'DTSTAMP:' + utc(new Date()), 'DTSTART:' + utc(start), 'DTEND:' + utc(end),
+    'SUMMARY:' + esc(title), 'LOCATION:' + esc(location), 'DESCRIPTION:' + esc(description),
+    'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(title), 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  return Utilities.newBlob(ics, 'text/calendar', title.replace(/[\\/:*?"<>|]/g, '').slice(0, 60) + '.ics');
+}
+
+/** The main photo of a listing page (its og:image), or null. Used to send a photo bubble under a listing link.
+ *  Some sites (e.g. Zillow) block this; then the link simply goes alone. */
+function listingPhoto(url) {
+  if (!/^https?:\/\/[^\s]+/.test(url) || /juliancrider\.com\/?(\?|$)/.test(url)) return null;
+  const cache = CacheService.getScriptCache(), key = 'OG_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url));
+  let img = cache.get(key);
+  if (img === 'none') return null;
+  try {
+    if (!img) {
+      const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true});
+      const m = res.getResponseCode() < 300 && res.getContentText().slice(0, 200000).match(/<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i);
+      img = m ? m[1].replace(/&amp;/g, '&') : 'none';
+      cache.put(key, img, 21600);
+      if (img === 'none') return null;
+    }
+    const r = UrlFetchApp.fetch(img, {muteHttpExceptions: true});
+    if (r.getResponseCode() >= 300 || r.getBlob().getBytes().length > 4e6 || !/^image\//.test(r.getBlob().getContentType())) return null;
+    return r.getBlob().setName('home.' + (/png/.test(r.getBlob().getContentType()) ? 'png' : 'jpg'));
+  } catch (e) { return null; }
+}
+
 /** Sends "bubble || [voice] || bubble || [contact card]" as separate messages, in order. Returns the first send. */
 function bbSendParts(phone, msg) {
   // [welcome voice] = Drive file "Welcome hello" (a general hello for online sign-ups); skipped quietly until it exists.
@@ -1781,6 +1819,12 @@ function bbSendParts(phone, msg) {
       catch (err) { if (fileTok) throw err; console.log(part + ' not sent: ' + err.message); }
     } else {
       const r = bbSend(phone, part); first = first || r; Utilities.sleep(1500);
+      // A home link in the message: send its photo right under it, so it reads like a listing card.
+      const url = (part.match(/https?:\/\/[^\s)]+/) || [])[0];
+      if (url && /zillow|redfin|realtor\.com|homes\.com|realscout|compass|trulia|lvrealtors|gvar|idx|listing|property|homedetails/i.test(url)) {
+        const photo = listingPhoto(url);
+        if (photo) { try { bbPostAttachment(phone, first && first.service, photo); Utilities.sleep(1500); } catch (e) { console.log('Listing photo: ' + e.message); } }
+      }
     }
   });
   return first;
