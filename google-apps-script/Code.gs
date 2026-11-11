@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-10-files';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-11-vapi';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -287,6 +287,7 @@ function autoUpdateFromGitHub() {
   console.log(updateFromGitHub(true));
   try { ensureTextQueueTrigger(); } catch (e) { console.log('Text triggers: ' + e.message); }
   try { trackEmailOpens(); } catch (e) { console.log('Email opens: ' + e.message); }
+  try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
@@ -1693,10 +1694,27 @@ function bbSend(phone, text) {
     ['SMS, new chat', () => bbApi('chat/new', {addresses: [to], message: text, service: 'SMS', method: 'apple-script', tempGuid: 'jc-' + Utilities.getUuid()})]]);
   let last;
   for (const [label, fn] of tries) {
-    try { const r = fn(); console.log('Texted ' + to + ' (' + label + ').'); return {service: label.split(',')[0], result: r}; }
+    try {
+      const r = fn();
+      // First text to a number we've never had a working chat with: make sure the iMessage really went. Android and
+      // Google Voice numbers can't get iMessage; Messages marks it "Not Delivered" and we resend it as a green SMS.
+      if (!known && /^iMessage/.test(label) && /^\+1/.test(to) && !bbDelivered(to)) { console.log(label + ' not delivered: trying SMS'); last = new Error('iMessage not delivered'); continue; }
+      if (!known && /^\+1/.test(to)) PropertiesService.getScriptProperties().setProperty('BB_CHAT_' + to, (label.split(',')[0] === 'SMS' ? 'SMS' : 'iMessage') + ';-;' + to);
+      console.log('Texted ' + to + ' (' + label + ').');
+      return {service: label.split(',')[0], result: r};
+    }
     catch (err) { last = err; console.log(label + ' failed: ' + String(err.message).slice(0, 300)); }
   }
   throw last;
+}
+
+/** After an iMessage to a new number: false if Messages marked it "Not Delivered" (the number can't get iMessage). */
+function bbDelivered(to) {
+  Utilities.sleep(7000);
+  try {
+    const m = (bbApi('chat/' + encodeURIComponent('iMessage;-;' + to) + '/message?limit=1&sort=DESC').data || [])[0];
+    return !(m && m.isFromMe && Number(m.error) > 0);
+  } catch (e) { return true; }  // can't tell: assume it went
 }
 
 /** Texts a Follow Up Boss contact (only if tagged "Text OK") and logs it on their timeline. */
@@ -2616,6 +2634,10 @@ function vapiWebhook(e) {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('VAPI_KEY') || e.parameter.vapi !== props.getProperty('VAPI_KEY')) return json({status: 'ignored'});
   const m = (JSON.parse((e.postData && e.postData.contents) || '{}').message) || {};
+  if (m.type === 'tool-calls') {  // Shawna asks, at the start of a call: who is this caller?
+    const caller = bbE164((((m.call || {}).customer) || (m.customer || {})).number || '');
+    return json({results: (m.toolCallList || []).map(c => ({toolCallId: c.id, result: vapiLookup(caller)}))});
+  }
   if (m.type !== 'end-of-call-report') return json({status: 'ok'});
   const call = m.call || {}, num = bbE164(((call.customer || {}).number) || '');
   let summary = (m.analysis && m.analysis.summary) || m.summary || '';
@@ -2655,6 +2677,74 @@ function vapiWebhook(e) {
   createCallTask(person.id, assistantName() + ' took their call: ' + summary.slice(0, 140) + ' Call them back.', 'Call');
   return json({status: 'ok'});
 }
+
+/** What Shawna should know about a caller, from Follow Up Boss (read to herself, never out loud). */
+function vapiLookup(num) {
+  try {
+    if (!num) return 'No caller ID. Ask their name.';
+    const props = PropertiesService.getScriptProperties();
+    if (num === bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '')) return 'This is Julián himself calling to test you. Be relaxed and natural.';
+    const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,stage,tags,price&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
+    if (!p) return 'New caller, not in Julián\'s contacts. Ask their name early.';
+    const first = realFirst(p), tags = (p.tags || []).filter(t => /buyer|seller|relocation|luxury|open house|past client|hot|warm|agent|not now|pre-?approved/i.test(t));
+    return ['Known contact: ' + (first ? [first, p.lastName].join(' ') : 'name unknown, ask it'), 'Stage: ' + (p.stage || 'Lead'),
+      tags.length ? 'Tags: ' + tags.join(', ') : '', p.price ? 'Price range: $' + Number(p.price).toLocaleString('en-US') : '',
+      'Recent history (oldest first, for you only, never read it out):\n' + personHistory(p.id).split('\n').slice(-8).join('\n')].filter(Boolean).join('\n').slice(0, 2500);
+  } catch (e) { return 'Lookup unavailable right now. Ask their name.'; }
+}
+
+/** Shawna's phone instructions (Vapi). Built from the same facts she uses for texts, so both stay in sync. */
+function vapiPrompt() {
+  const name = assistantName();
+  return `You are ${name}, the AI assistant who answers Julián J. Crider's phone when he can't pick up. You already told the caller in your greeting that you're Julián's assistant and that the call may be recorded. If anyone sincerely asks whether you're AI, say yes, warmly.
+${assistantKnowledge()}
+
+FIRST: call the lookup_caller tool right away, quietly, before your second sentence. If they're a known contact, use their first name and pick up where things left off (for example "Hi Dan, good to hear from you. Did the report make sense?"). Never read the notes out loud or mention a CRM.
+
+HOW TO TALK (this matters most):
+- Sound like a warm, sharp human receptionist. Short sentences. Calm pace.
+- Ask ONE question, then stop and wait for the answer. Never ask two things at once. Never answer for them, never assume their answer, never say what you "have so far" or list fields like "phone awaiting".
+- If they pause, give them time. A short "take your time" is fine.
+- Chris Voss, lightly: mirror their last few words, label feelings ("sounds like timing is the big question"), calm "what" and "how" questions, and once in a while a no-oriented question ("would it be a bad idea to...?"). If they say "no" to a no-oriented question, that means go ahead.
+- You already have their phone number from caller ID. Never ask for it.
+
+WHAT TO LEARN (one question at a time, only what fits the conversation): their name if unknown; what's prompting the call; buying, selling or both; timing; areas or neighborhoods; price range; whether they're pre-approved or paying cash; whether they're working with another agent; and the best time for Julián to call back. If they want something sent, ask for their email and spell it back.
+
+INTEREST RATES AND LENDING: never quote a rate or payment. Say rates change daily and depend on credit, down payment and loan type, so the right number comes from a lender. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
+NEVER invent listings, prices, availability, rates or promises; say "I'll confirm that for you" and make sure Julián calls back. No legal, tax or lending advice. Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class.
+If it's about an offer, a contract, a negotiation, commission, a complaint or anything urgent, say Julián will call them back today and end politely.
+
+CLOSING: repeat the next step in one sentence (for example "Julián will call you this afternoon about the Summerlin homes"), then say "Have a wonderful rest of your day, speak with you soon." and end the call. No dashes of any kind in what you say.`;
+}
+
+/** Hourly (from autoUpdateFromGitHub): pushes Shawna's phone prompt, the caller lookup tool and a calmer turn-taking
+ *  setting to the Vapi assistant, only when something changed. Needs VAPI_API_KEY + VAPI_ASSISTANT_ID. */
+function syncVapiAssistant(force) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('VAPI_API_KEY'), id = props.getProperty('VAPI_ASSISTANT_ID');
+  if (!key || !id || !props.getProperty('VAPI_KEY')) return 'Add VAPI_API_KEY and VAPI_ASSISTANT_ID in Script Properties first.';
+  const prompt = vapiPrompt(), url = TEXTING.webApp + '?vapi=' + props.getProperty('VAPI_KEY');
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, prompt + url + 'v1'));
+  if (!force && props.getProperty('VAPI_SYNC') === hash) return 'Vapi already up to date.';
+  const api = (method, body) => UrlFetchApp.fetch('https://api.vapi.ai/assistant/' + id, {method: method, muteHttpExceptions: true,
+    contentType: 'application/json', headers: {Authorization: 'Bearer ' + key}, payload: body ? JSON.stringify(body) : undefined});
+  const cur = api('get');
+  if (cur.getResponseCode() >= 300) throw new Error('Vapi ' + cur.getResponseCode() + ': ' + cur.getContentText().slice(0, 200));
+  const a = JSON.parse(cur.getContentText()), model = Object.assign({}, a.model || {});
+  model.messages = [{role: 'system', content: prompt}];
+  model.tools = (model.tools || []).filter(t => !(t.function && t.function.name === 'lookup_caller')).concat([{
+    type: 'function', async: false, server: {url: url}, messages: [],
+    function: {name: 'lookup_caller', description: 'Looks up the caller in Julián\'s contacts by their phone number: name, what they want and recent history. Call it once at the very start of every call.',
+      parameters: {type: 'object', properties: {}}}}]);
+  const body = {model: model, endCallMessage: 'Have a wonderful rest of your day, speak with you soon.',
+    startSpeakingPlan: Object.assign({}, a.startSpeakingPlan || {}, {waitSeconds: 0.8})};
+  const res = api('patch', body);
+  if (res.getResponseCode() >= 300) throw new Error('Vapi update ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 300));
+  props.setProperty('VAPI_SYNC', hash);
+  return 'Vapi updated: new phone instructions, caller lookup and calmer pacing.';
+}
+
+/** Run once by hand to push Shawna's phone setup to Vapi now (it also happens on its own every hour). */
+function updateVapiNow() { console.log(syncVapiAssistant(true)); }
 
 /** Run once: makes the secret key and prints the Server URL for the Vapi assistant. */
 function setupVoice() {
