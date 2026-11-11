@@ -288,6 +288,7 @@ function autoUpdateFromGitHub() {
   try { ensureTextQueueTrigger(); } catch (e) { console.log('Text triggers: ' + e.message); }
   try { trackEmailOpens(); } catch (e) { console.log('Email opens: ' + e.message); }
   try { cleanupProperties(); } catch (e) { console.log('Property cleanup: ' + e.message); }
+  try { processAllowNotes(); } catch (e) { console.log('Shawna allow: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
@@ -1804,6 +1805,14 @@ function bbWebhook(e) {
     if (to) {
       assistantCancel(to);
       const sentByShawna = Number(props.getProperty('AI_SENDING_' + to) || 0) > Date.now() - 90 * 1000;
+      const group = /;\+;/.test(String(((data.chats || [])[0] || {}).guid || ''));
+      // "Hey Shawna" in his own text to someone = bring Shawna into that conversation (friends, saved contacts, anyone).
+      if (!sentByShawna && !group && /\bhey,?\s+shawna\b/i.test(String(data.text || ''))) {
+        props.setProperty('SHAWNA_ON_' + to, String(Date.now()));
+        props.deleteProperty('AI_MUTE_' + to);
+        try { shawnaDirectReply(to, '', String(data.text)); } catch (e) { console.log('Hey Shawna: ' + e.message); }
+        return json({status: 'ok'});
+      }
       if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
     }
     return json({status: 'ok'});
@@ -1832,6 +1841,11 @@ function bbWebhook(e) {
     const mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
     // Saved in his phone = personal, left alone. But if Shawna was already talking with them before he saved the number
     // (a new lead he met and saved), she keeps going.
+    // Contacts he allowed (texted "you can talk to Kyle") or brought in with "Hey Shawna": she answers, no CRM entry needed.
+    if (props.getProperty('SHAWNA_ON_' + from) || JSON.parse(props.getProperty('SHAWNA_ALLOW') || '[]').indexOf(from) >= 0) {
+      try { shawnaDirectReply(from, String(data.text).slice(0, 1000), ''); } catch (e) { console.log('Allowed contact: ' + e.message); }
+      return json({status: 'ok'});
+    }
     const pending = !!props.getProperty('NEWNUM_' + from);
     if (mode === 'off' || props.getProperty('SHAWNA_NEW_NUMBERS') === 'off' || (!pending && macContactByPhone(from))) return json({status: 'ok'});
     // Julián, Nov 11: no more "No Name" contacts. Shawna answers (they texted first) and asks who it is; they go into
@@ -1856,7 +1870,7 @@ function bbWebhook(e) {
     createCallTask(person.id, 'They asked for you directly (texted JULIAN). Reply or call now.', 'Text');
     return json({status: 'ok'});
   }
-  textLog({who: [person.firstName, person.lastName].join(' ').trim(), text: text.slice(0, 200)});
+  textLog({who: [realFirst(person), person.lastName].join(' ').trim() || from, phone: from, text: text.slice(0, 200)});
   if (props.getProperty('TEXT_ALERTS') === 'on') {
     try { notifyJulian([person.firstName, person.lastName].join(' ').trim() + ' texted you', '"' + text.slice(0, 140) + '" Check your messages.'); } catch (e) {}
   }
@@ -2016,6 +2030,58 @@ function applyIntent(personId, intent, where) {
   fubFetch('notes', {personId: personId, subject: tag, body: tag === 'Not Now'
     ? 'They said "not right now" in ' + where + '. Next morning they move to the slower Long-Term Nurture emails (about once a month) and the Hot/Warm emails stop. Remove the "Not Now" tag to undo.'
     : 'They said they\'re not interested in ' + where + '. Their email drip pauses next morning. Remove the "Not Interested" tag to undo.'});
+}
+
+/** Lets Shawna text and answer people saved in his phone (by name: Follow Up Boss first, then his phone's contacts). */
+function allowShawna(names) {
+  const props = PropertiesService.getScriptProperties(), allow = JSON.parse(props.getProperty('SHAWNA_ALLOW') || '[]'), ok = [], missing = [];
+  names.forEach(nm => {
+    let phone = '';
+    const hits = (fubFetch('people?limit=5&fields=id,name,phones&q=' + encodeURIComponent(nm), null, 'get').people || []).filter(p => String(p.name || '').toLowerCase() === nm.toLowerCase());
+    if (hits.length === 1) phone = bbE164(((hits[0].phones || [])[0] || {}).value || '');
+    if (!phone) { const c = macContact(nm); if (c) phone = bbE164(c.phone); }
+    if (phone) { if (allow.indexOf(phone) < 0) allow.push(phone); ok.push(nm); } else missing.push(nm);
+  });
+  props.setProperty('SHAWNA_ALLOW', JSON.stringify(allow.slice(-300)));
+  return {ok: ok, missing: missing};
+}
+
+/** Hourly: a FUB note "Shawna allow" on contact 2221 (written by Claude) lists names Shawna may text; processed once. */
+function processAllowNotes() {
+  const pid = Number(PropertiesService.getScriptProperties().getProperty('REQUESTS_PERSON_ID') || 2221);
+  (fubFetch('notes?personId=' + pid + '&limit=20', null, 'get').notes || []).filter(n => /^shawna allow$/i.test(String(n.subject || '').trim())).forEach(n => {
+    const names = String(n.body || '').split(/\n|,/).map(x => x.trim()).filter(Boolean);
+    const r = allowShawna(names);
+    fubFetch('notes/' + n.id, {subject: 'Shawna allow - done', body: String(n.body || '') + '\n\nAllowed: ' + (r.ok.join(', ') || 'none') + (r.missing.length ? '\nNo number found: ' + r.missing.join(', ') : '')}, 'put');
+  });
+}
+
+/** Shawna texting someone who isn't a lead in Follow Up Boss (a saved contact he allowed, or "Hey Shawna" in his own
+ *  text). invite = Julián's "Hey Shawna..." message (she joins and introduces herself); else they just texted her. */
+function shawnaDirectReply(phone, text, invite) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
+  const mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
+  if (!key || mode === 'off') return false;
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
+  if (hour < 8 || hour >= endHour) return false;
+  if (!invite && Number(props.getProperty('AI_MUTE_' + phone) || 0) > Date.now()) return false;  // he's talking with them himself
+  if (!invite && mode === 'draft') return false;
+  const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + phone;
+  const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
+  if (n >= Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12)) return false;
+  const name = assistantName(), thread = bbThread(phone);
+  const out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+    {role: 'system', content: assistantPrompt(name, invite ? 'shawna' : assistantPersona(phone)) + '\nThis person is someone Julián knows personally (not a lead in his CRM). Be warm and natural; real estate only if they bring it up or Julián asked.'},
+    {role: 'user', content: (thread ? 'The text conversation so far (oldest first):\n' + thread + '\n\n' : '') +
+      (invite ? 'Julián just brought you into this conversation by texting: "' + invite + '". Say a quick hi as ' + name + ', his AI assistant, and do what he asked or help with what they need.'
+        : 'They just texted: "' + text + '"') + '\n\nReply as JSON only.'}]));
+  const reply = humanize(out.reply || '');
+  if (!reply || out.escalate) return false;
+  props.setProperty('AI_SENDING_' + phone, String(Date.now()));
+  bbSend(phone, reply);
+  props.setProperty(cnt, today + '|' + (n + 1));
+  textLog({who: phone, phone: phone, text: text.slice(0, 200), reply: reply.slice(0, 200)});
+  return true;
 }
 
 // NEW NUMBERS (Julián, Nov 11): a number that isn't in Follow Up Boss or his phone's contacts texts the business line.
@@ -2270,7 +2336,7 @@ function bossCommand(text) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|alerts|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|alerts|claude|chat", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule: start as YYYY-MM-DDTHH:mm, Las Vegas time", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
@@ -2283,6 +2349,10 @@ ${assistantKnowledge()}
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
 - hot: list his hottest leads right now.
 - texts: he asks who texted him / what came in / what you answered for him.
+- read: he wants to hear what someone actually said: their latest texts and emails ("what did Kyle say?", "read me Sandy's email", "what did these people say?"). Put the person or people in "who", comma separated (use names from your recent conversation when he says "them" or "these people").
+- unanswered: who he hasn't replied to yet (texts and emails), with what they said.
+- allow: he wants you to be able to text or answer someone who's saved in his phone contacts (friends or clients he saved), e.g. "you can talk to Kyle Henry". Names in "who", comma separated.
+- If he answers "yes", "sure", "please do" or similar to something you just offered, return THAT action (e.g. read) with the same people. Never answer "yes" with chat.
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
 - remember: he tells you something to remember for good (a preference, a fact about his business or a client). Put the fact in "message", written as a full sentence.
 - callme: he wants you to phone him (e.g. "call me", "give me a call"). Put anything he wants to talk about in "message".
@@ -2296,8 +2366,15 @@ ${assistantKnowledge()}
     const history = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').slice(0, -1);  // earlier messages, not this one
     const msgs = [{role: 'system', content: sys + '\nYour recent conversation with Julián is below; use it so he never has to repeat himself (e.g. "her", "that time", "same as before").'}]
       .concat(history.map(h => ({role: h.r, content: h.r === 'assistant' ? JSON.stringify({action: 'chat', reply: h.t}) : h.t})), [{role: 'user', content: text}]);
-    try { a = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, msgs)); }
-    catch (e) { return say(name + ': I didn\'t catch that. Try again?'); }
+    // Groq sometimes stumbles on a long history: retry with just the last few messages before giving up.
+    const ask = m => { const raw = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, m);
+      try { return JSON.parse(raw); } catch (e) { const j = String(raw).match(/\{[\s\S]*\}/); if (j) return JSON.parse(j[0]); throw e; } };
+    try { a = ask(msgs); }
+    catch (e) {
+      shawnaLog('error', text, 'first try: ' + String(e.message).slice(0, 200));
+      try { a = ask([msgs[0]].concat(msgs.slice(-5))); }
+      catch (e2) { shawnaLog('error', text, 'retry: ' + String(e2.message).slice(0, 200)); return say(name + ': I didn\'t catch that. Try again?'); }
+    }
   }
   const findOne = who => {
     const q = String(who || '').trim(), get = term => fubFetch('people?limit=8&fields=id,name,firstName,lastName,tags,phones,created&q=' + encodeURIComponent(term), null, 'get').people || [];
@@ -2430,6 +2507,45 @@ ${assistantKnowledge()}
     const log = JSON.parse(props.getProperty('TEXT_LOG') || '[]').slice(-8).reverse();
     return say(log.length ? 'latest texts:\n' + log.map(x => '• ' + x.who + ' (' + Utilities.formatDate(new Date(x.at), 'America/Los_Angeles', 'EEE h:mm a') + '): ' +
       (x.reply ? 'I answered "' + x.reply.slice(0, 80) + '"' : '"' + x.text.slice(0, 80) + '"')).join('\n') : 'no client texts in the last few days.');
+  }
+  if (a.action === 'read') {
+    const names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0, 4);
+    if (!names.length) return say('whose messages should I read you?');
+    let inbox = null;
+    const parts = names.map(nm => {
+      const p = findOne(nm), person = p && !p.many ? fubFetch('people/' + p.id + '?fields=id,name,phones,emails', null, 'get') : null;
+      let phone = person ? bbE164(((person.phones || [])[0] || {}).value || '') : '';
+      if (!phone) { const c = macContact(nm); if (c) phone = bbE164(c.phone); }
+      const out = [];
+      if (phone) {
+        const th = bbThread(phone).split('\n').filter(Boolean).slice(-4);
+        if (th.length) out.push('texts:\n' + th.map(l => '  ' + l.replace(/^Them:/, (person && person.name ? person.name.split(' ')[0] : nm) + ':').slice(0, 220)).join('\n'));
+      }
+      const emails = person ? (person.emails || []).map(e => String(e.value).toLowerCase()) : [];
+      if (emails.length) {
+        if (!inbox) { const r = bcolvCall({action: 'inbox', days: 7, max: 30}); inbox = (r && r.emails) || []; }
+        const m = inbox.find(x => emails.some(e => String(x.from).toLowerCase().indexOf(e) >= 0));
+        if (m) out.push('email "' + m.subject + '":\n  ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 400));
+        else {
+          const n = (fubFetch('notes?personId=' + person.id + '&limit=10', null, 'get').notes || []).find(x => /emailed|email draft/i.test(String(x.subject || '') + String(x.body || '').slice(0, 30)));
+          if (n) out.push('email: ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 400));
+        }
+      }
+      return '• ' + ((person && person.name) || nm) + (out.length ? '\n' + out.join('\n') : ': I don\'t see recent texts or unread emails from them.');
+    });
+    return say(parts.join('\n\n') + '\n\nWant me to answer any of them? Just tell me what to say.');
+  }
+  if (a.action === 'unanswered') {
+    const log = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).slice(-6).reverse();
+    const r = bcolvCall({action: 'inbox', days: 3, max: 10}), mails = ((r && r.emails) || []).slice(0, 5);
+    const lines = log.map(x => '• ' + x.who + ' (text): "' + String(x.text || '').slice(0, 100) + '"')
+      .concat(mails.map(m => '• ' + String(m.from).replace(/<.*>/, '').trim() + ' (email, "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
+    return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails.');
+  }
+  if (a.action === 'allow') {
+    const names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean);
+    const r = allowShawna(names);
+    return say((r.ok.length ? 'done. I can now text and answer ' + r.ok.join(', ') + '. ✅' : '') + (r.missing.length ? (r.ok.length ? '\n' : '') + 'I couldn\'t find a number for ' + r.missing.join(', ') + '. Send me their numbers.' : ''));
   }
   if (a.action === 'alerts') {
     const on = /on|yes|start/i.test(String(a.message || text)) && !/off|stop|no\b/i.test(String(a.message || ''));
