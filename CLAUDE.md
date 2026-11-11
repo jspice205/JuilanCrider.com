@@ -123,7 +123,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   PATCHes the Vapi assistant: system prompt `vapiPrompt()` (built from SHAWNA_FACTS + Shawna Knowledge: one question at a
   time, never ask for the phone number, rates → lender/Julián, Chris Voss), tool `lookup_caller` (server = web app ?vapi=,
   vapiWebhook answers `tool-calls` with `vapiLookup`: FUB name/stage/tags/last notes), endCallMessage, startSpeakingPlan
-  waitSeconds 0.8. Needs VAPI_API_KEY + VAPI_ASSISTANT_ID. First texts to new numbers: if the iMessage is "Not
+  waitSeconds 0.8, multilingual (transcriber deepgram nova-3 'multi', ElevenLabs *_v2_5 voice; prompt: answer in the caller's
+  current language; texts too). Needs VAPI_API_KEY + VAPI_ASSISTANT_ID. Saved-in-contacts numbers stay ignored unless
+  Shawna was already talking with them (NEWNUM_ pending); FUB contacts always get Shawna whether saved or not. First texts to new numbers: if the iMessage is "Not
   Delivered" (Android/Google Voice), `bbDelivered` → resend as SMS; the working chat is saved in BB_CHAT_<number>.
   Test numbers: 2493 = Julián's Google Voice 702-763-1554, 2492 = friend; both tagged "Test - do not market".
 - Settings tab (Nov 11): Script Properties UI is read-only past 50 entries, so Julián adds keys in the sheet's "Settings"
