@@ -287,6 +287,7 @@ function autoUpdateFromGitHub() {
   console.log(updateFromGitHub(true));
   try { ensureTextQueueTrigger(); } catch (e) { console.log('Text triggers: ' + e.message); }
   try { trackEmailOpens(); } catch (e) { console.log('Email opens: ' + e.message); }
+  try { cleanupProperties(); } catch (e) { console.log('Property cleanup: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
@@ -2678,6 +2679,39 @@ function vapiWebhook(e) {
   return json({status: 'ok'});
 }
 
+// ============================================================
+// SETTINGS TAB (Nov 11). Apps Script's Script Properties page goes read-only after 50 entries, so Julián adds keys and
+// settings in the "Settings" sheet tab instead: setting name in column A, value in column B. Every 5 minutes the script
+// saves it into Script Properties and erases the value from the sheet (keys never sit in the sheet).
+// ============================================================
+const SETTINGS_TAB = {name: 'Settings', color: '#5F6368', headers: ['Setting name (for example VAPI_API_KEY)', 'Value (saved into the script within 5 minutes, then erased here)', 'Status']};
+function applySettings() {
+  const sheet = ensureTab(getSS(), SETTINGS_TAB), last = sheet.getLastRow();
+  if (last < 2) return;
+  const props = PropertiesService.getScriptProperties();
+  sheet.getRange(2, 1, last - 1, 2).getValues().forEach((r, i) => {
+    const name = String(r[0] || '').trim().toUpperCase().replace(/\s+/g, '_'), value = String(r[1] || '').trim();
+    if (!name || !value) return;
+    const row = i + 2;
+    if (!/^[A-Z][A-Z0-9_]{2,60}$/.test(name)) { sheet.getRange(row, 3).setValue('Not saved: the name can only have letters, numbers and _'); return; }
+    props.setProperty(name, value);
+    sheet.getRange(row, 2).setValue('');
+    sheet.getRange(row, 3).setValue('Saved ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'MMM d, h:mm a') + ' (ends in …' + value.slice(-4) + ')');
+  });
+}
+
+/** Hourly: removes housekeeping entries that are no longer needed (old reminder marks, expired mutes), so Script
+ *  Properties stays small. Never touches keys or settings. */
+function cleanupProperties() {
+  const props = PropertiesService.getScriptProperties(), all = props.getProperties(), now = Date.now();
+  Object.keys(all).forEach(k => {
+    const v = all[k];
+    if (/^REM_/.test(k) && Number(k.split('_').pop()) < now - 864e5) props.deleteProperty(k);  // reminder already sent
+    else if (/^(AI_MUTE_|AI_SENDING_)/.test(k) && Number(v) < now - 36e5) props.deleteProperty(k);
+    else if (/^NEWNUM_/.test(k)) { try { if (JSON.parse(v).at < now - 7 * 864e5) props.deleteProperty(k); } catch (e) { props.deleteProperty(k); } }
+  });
+}
+
 /** What Shawna should know about a caller, from Follow Up Boss (read to herself, never out loud). */
 function vapiLookup(num) {
   try {
@@ -2855,6 +2889,7 @@ function remindUpcoming() {
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { checkClientEmails(); } catch (e) { console.log('Email alerts: ' + e.message); }
   try { processEmailAssistant(); } catch (e) { console.log('Email assistant: ' + e.message); }
+  try { applySettings(); } catch (e) { console.log('Settings: ' + e.message); }
   const now = Date.now(), props = PropertiesService.getScriptProperties();
   const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 9 * 6e4), new Date(now + 21 * 6e4));
   events.forEach(ev => {

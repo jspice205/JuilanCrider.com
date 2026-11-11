@@ -126,6 +126,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   waitSeconds 0.8. Needs VAPI_API_KEY + VAPI_ASSISTANT_ID. First texts to new numbers: if the iMessage is "Not
   Delivered" (Android/Google Voice), `bbDelivered` → resend as SMS; the working chat is saved in BB_CHAT_<number>.
   Test numbers: 2493 = Julián's Google Voice 702-763-1554, 2492 = friend; both tagged "Test - do not market".
+- Settings tab (Nov 11): Script Properties UI is read-only past 50 entries, so Julián adds keys in the sheet's "Settings"
+  tab (name in A, value in B); `applySettings` (5-min tick) saves them to Script Properties and erases the value.
+  `cleanupProperties` (hourly) deletes old REM_/AI_MUTE_/AI_SENDING_/NEWNUM_ entries.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
