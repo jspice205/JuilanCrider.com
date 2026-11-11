@@ -38,6 +38,12 @@ const SETS = {
              ['Views from home', 'Strip lights, Red Rock and mountain views are common in hillside areas like MacDonald Highlands and The Ridges.'],
              ['Resort-style backyards', 'Pools, outdoor kitchens and covered patios built for living outside most of the year.'],
              ['Newer construction', 'Much of the luxury inventory is newer: open layouts, smart-home systems and energy-efficient design.']]},
+  lakelv: {bg: 'golf.jpg', tag: 'Lifestyle · Luxury', cover: ['Lake Las Vegas', 'Living'], sub: 'A lake town 30 minutes from the Strip',
+    slides: [['A real lake in the desert', 'A private, man-made lake in Henderson where you can kayak, paddleboard or take an electric boat out at sunset.'],
+             ['Village life', 'MonteLago Village has Mediterranean-style streets with cafes, shops and dining right on the water.'],
+             ['Golf by the water', 'Reflection Bay, a Jack Nicklaus design, runs along the shoreline, and SouthShore has its own course.'],
+             ['Gated and quiet', 'Enclaves like SouthShore are guard-gated, with hillside homes looking out over the lake and mountains.'],
+             ['Close, but away', 'About 30 minutes to the Strip and the airport, but it feels like a weekend getaway every day.']]},
 };
 
 // Color palettes. Pick with PALETTE=<name>. Default "quiet" (black/white, red only on the tag and button; Julián's pick Oct 31).
