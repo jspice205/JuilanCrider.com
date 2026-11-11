@@ -2402,7 +2402,12 @@ function bossCommand(text) {
       return say('voice memo sent to ' + pend.who + '. ✅');
     }
     if (pend.kind === 'email') {
-      const r = sendFromBcolv(pend.email, pend.subject, pend.message);
+      let r;
+      if (pend.threadId) {  // reply inside their email thread, from julianc@bcolv.com
+        const html = '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + String(pend.message).split(/\n{2,}|\n/).map(par => '<p style="margin:0 0 12px">' +
+          par.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>').join('') + '<p style="margin:0">Julián</p>' + EMAIL_FOOTER + '</div>';
+        r = bcolvCall({action: 'reply', threadId: pend.threadId, text: pend.message + '\n\nJulián', html: html, draft: false});
+      } else r = sendFromBcolv(pend.email, pend.subject, pend.message);
       if (!r.ok) return say('the email did NOT go out: ' + (r.error || 'unknown error') + '.');
       fubFetch('notes', {personId: pend.personId, subject: 'Email sent', body: 'To ' + pend.email + ' from ' + (r.from || 'bcolv') + ': "' + pend.subject + '"\n\n' + pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
       return say('emailed ' + pend.who + ' from ' + (r.from || 'your bcolv email') + '. ✅');
@@ -2422,7 +2427,7 @@ Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - voicememo: he wants you to send someone a voice memo / voice note / audio message in your voice ("message" = what you'll say, written to be spoken, 15 to 40 seconds).
-- email: he wants you to email someone (write a short, warm email in his voice, plain paragraphs, no signature; it's signed automatically).
+- email: he wants you to email someone or answer their email ("reply to Ruth", "email Ruth back and say..."). Write a short, warm email in his voice, plain paragraphs, no signature (it's signed automatically). If they emailed recently it goes as a reply in that same thread. If he asks you to answer their email, read it in your recent conversation or the data first so the reply fits what they said.
 - note: save a note on a contact. task: remind him to do something about a contact.
 - emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
 - contact: add a new person to Follow Up Boss (name, phone, email).
@@ -2529,9 +2534,15 @@ Examples (all mean the same as the action shown):
     let email = a.email;
     if (!email) { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; }
     if (!email) return say((p.name || a.who) + ' has no email yet. Send me their email and I\'ll write it.');
-    const subject = humanize(a.subject || 'Quick note from Julián'), body = humanize(a.message || '');
-    props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, at: Date.now()}));
-    return say('send this email to ' + (p.name || a.who) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
+    let subject = humanize(a.subject || 'Quick note from Julián'), body = humanize(a.message || ''), threadId = '';
+    // If they emailed in the last 2 weeks (a campaign reply, a question), answer in that same email thread.
+    try {
+      const r = bcolvCall({action: 'search', query: 'from:' + email + ' newer_than:14d', max: 1});
+      const last = ((r && r.messages) || []).filter(m => !m.fromMe).sort((x, y) => y.date - x.date)[0];
+      if (last) { threadId = last.threadId; subject = /^re:/i.test(last.subject) ? last.subject : 'Re: ' + last.subject; }
+    } catch (e) {}
+    props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()}));
+    return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
   }
   if (a.action === 'voicememo') {
     if (!props.getProperty('ELEVENLABS_API_KEY') || !props.getProperty('ELEVENLABS_VOICE_ID')) return say('voice memos aren\'t connected yet. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID (Claude has the steps).');
