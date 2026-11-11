@@ -2958,14 +2958,15 @@ function vapiWebhook(e) {
   const transcript = String(m.transcript || (m.artifact && m.artifact.transcript) || '').slice(0, 6000);
   const rec = m.recordingUrl || (m.artifact && m.artifact.recordingUrl) || '';
   const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
-  let callerName = '';
+  let callerName = '', recapInfo = null;
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
       const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). Return JSON {"summary": "...", "name": "caller full name or empty"}.'},
+        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly said yes when asked if they could get a text (a recap or confirmation). appointment: the date, time and type of any appointment that was actually booked on the call, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "recap": "..."}.'},
         {role: 'user', content: transcript.slice(0, 5000)}]));
       if (!summary) summary = humanize(r.summary || '');
       callerName = String(r.name || '').trim();
+      recapInfo = {ok: r.textOk === true, appt: String(r.appointment || '').trim(), recap: humanize(r.recap || '')};
       if (/^(no|unknown|shawna|juli[aá]n)\b/i.test(callerName)) callerName = '';
     } catch (e) {}
   }
@@ -2990,6 +2991,21 @@ function vapiWebhook(e) {
   if (num && num === boss) return json({status: 'ok'});  // Julián testing: note only, no call-back task
   try { notifyJulian((callerName || 'Someone') + ' called', assistantName() + ' took a call' + (num ? ' from ' + num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : '') + ': ' + String(summary || 'no summary').slice(0, 220) + ' There\'s a call-back task in Follow Up Boss.'); } catch (e) {}
   createCallTask(person.id, assistantName() + ' took their call: ' + summary.slice(0, 140) + ' Call them back.', 'Call');
+  // Recap text after the call: only when the caller said yes to a text on the call (a call alone isn't text consent).
+  if (recapInfo && recapInfo.ok && num && (recapInfo.recap || recapInfo.appt)) {
+    try {
+      const pp = fubFetch('people/' + person.id + '?fields=id,firstName,tags', null, 'get'), tags = pp.tags || [];
+      if (tags.indexOf('Text Opt-Out') < 0) {
+        if (tags.indexOf('Text OK') < 0) fubFetch('people/' + person.id, {tags: tags.concat('Text OK')}, 'put');
+        fubFetch('notes', {personId: person.id, subject: 'Text consent', body: 'Said yes on the call with ' + assistantName() + ' to getting a text recap.'});
+        const first = realFirst(pp) || callerName.split(' ')[0] || '';
+        const msg = 'Hi' + (first ? ' ' + first : '') + ', it\'s ' + assistantName() + ', Julián\'s assistant 👋🏾 Thanks for calling! ' + (recapInfo.recap || '') +
+          (recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + ' If anything changes, just text me here.';
+        ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || callerName), 'call-recap', 'pending', 0, '', cell(msg)]);
+        ensureTextQueueTrigger();
+      }
+    } catch (e) { console.log('Call recap: ' + e.message); }
+  }
   return json({status: 'ok'});
 }
 
@@ -3083,6 +3099,7 @@ SAFETY, COMPLIANCE AND BOUNDARIES
 - If it's about an offer, a contract, a negotiation, commission, a complaint or anything urgent, say Julián will call them back today.
 - Collect only what's needed. No dashes of any kind in what you say.
 
+RECAP TEXT: near the end, ask once: "Would it be okay if I text you a quick recap${''} of our call${''}?" (mention the appointment details if one was booked). Only a clear yes counts; if they hesitate or say no, that's completely fine, don't text.
 ENDING THE CALL: briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with. Only end the call after they say goodbye or clearly want to hang up. Always close warmly with "Have a wonderful rest of your day, and we'll speak with you soon." Never end with just "goodbye."`;
 }
 
@@ -3092,7 +3109,7 @@ function syncVapiAssistant(force) {
   const props = PropertiesService.getScriptProperties(), key = props.getProperty('VAPI_API_KEY'), id = props.getProperty('VAPI_ASSISTANT_ID');
   if (!key || !id || !props.getProperty('VAPI_KEY')) return 'Add VAPI_API_KEY and VAPI_ASSISTANT_ID in Script Properties first.';
   const prompt = vapiPrompt(), url = TEXTING.webApp + '?vapi=' + props.getProperty('VAPI_KEY');
-  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, prompt + url + 'v3'));
+  const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, prompt + url + 'v4'));
   if (!force && props.getProperty('VAPI_SYNC') === hash) return 'Vapi already up to date.';
   const api = (method, body) => UrlFetchApp.fetch('https://api.vapi.ai/assistant/' + id, {method: method, muteHttpExceptions: true,
     contentType: 'application/json', headers: {Authorization: 'Bearer ' + key}, payload: body ? JSON.stringify(body) : undefined});
@@ -3271,7 +3288,7 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       const res = bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
@@ -3350,6 +3367,9 @@ function processEmailAssistant(list) {
   emails.filter(m => done.indexOf(m.id) < 0 && !m.fromMe).slice(0, 5).forEach(m => {
     done.push(m.id); props.setProperty('EMAIL_AI_DONE', JSON.stringify(done.slice(-400)));  // mark first: never answer twice
     const addr = String((String(m.from).match(/<([^>]+)>/) || [null, m.from])[1] || '').trim().toLowerCase();
+    // Nothing new from them (a copy of Julián's own email, or just a signature): skip it.
+    const newWords = String(m.body || '').replace(/juli[aá]n\s*crider|\(?702\)?[\s.-]*498[\s.-]*2571|sent from my \w+/gi, '').replace(/\s+/g, ' ').trim();
+    if (newWords.length < 3) return;
     if (!validEmail(addr) || /no-?reply|notification|mailer-daemon|postmaster|bcolv\.com|followupboss|zillow|realscout/i.test(addr)) return;
     const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,tags,stage,assignedUserId,phones&email=' + encodeURIComponent(addr), null, 'get').people || [])[0];
     if (!p || (p.assignedUserId && p.assignedUserId !== me)) return;
