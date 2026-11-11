@@ -2743,7 +2743,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
@@ -2911,7 +2911,11 @@ Examples (all mean the same as the action shown):
       if (isNew && a.action !== 'text') say('(' + a.who + ' wasn\'t in Follow Up Boss, so I added them.)');
       if (p.many) return say(name + ': which one? ' + p.many.map(x => x.name).join(', '));
       if (a.action === 'note') { fubFetch('notes', {personId: p.id, subject: 'Note from Julián', body: a.message}); return say(name + ': note saved on ' + p.name + '.'); }
-      if (a.action === 'task') { createCallTask(p.id, a.message, 'Follow Up'); return say(name + ': task added for ' + p.name + ' (due today).'); }
+      if (a.action === 'task') {  // a reminder on the day he said ("Friday", "next week"), else today
+        const wm = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})/), due = wm ? wm[1] : Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+        fubFetch('tasks', {personId: p.id, type: /\btext\b/i.test(a.message || '') ? 'Text' : /\bcall\b/i.test(a.message || '') ? 'Call' : /\bemail\b/i.test(a.message || '') ? 'Email' : 'Follow Up', name: String(a.message || 'Follow up').slice(0, 250), dueDate: due});
+        return say(name + ': reminder added for ' + p.name + ' (' + (wm ? Utilities.formatDate(Utilities.parseDate(due, 'America/Los_Angeles', 'yyyy-MM-dd'), 'America/Los_Angeles', 'EEE MMM d') : 'today') + '). ✅');
+      }
       const tags = p.tags || [];
       if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
