@@ -2501,12 +2501,14 @@ NAMES: if the contact's name is unknown, never guess or use a placeholder (never
 Return JSON only: {"important": true if Julián should know about this soon (they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty", "deal": "offer if they say they are making or made an offer; under_contract if they're under contract or in escrow; closed if they closed or got the keys; listing if they want to list or sell their home now; otherwise empty"}`;
 }
 
-function groqChat(key, model, messages) {
+function groqChat(key, model, messages, opts) {
+  opts = opts || {};
   const send = m => UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {method: 'post', contentType: 'application/json',
     muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
     // gpt-oss models think before answering and that thinking counts toward max_tokens: keep it short and leave room,
     // or the JSON gets cut off (Groq 400 "Failed to validate JSON").
-    payload: JSON.stringify(Object.assign({model: m, messages: messages, temperature: 0.7, max_tokens: 1500, response_format: {type: 'json_object'}},
+    // Groq's free plan counts the max_tokens we ask for against the per-minute budget, so ask only for what's needed.
+    payload: JSON.stringify(Object.assign({model: m, messages: messages, temperature: 0.7, max_tokens: opts.maxTokens || 900, response_format: {type: 'json_object'}},
       /gpt-oss/.test(m) ? {reasoning_effort: 'low'} : {}))});
   let res = send(model);
   if (res.getResponseCode() === 400 && /json_validate_failed|Failed to validate JSON/.test(res.getContentText())) {
@@ -2516,6 +2518,7 @@ function groqChat(key, model, messages) {
     } catch (e) {}
     res = send(model);  // otherwise just ask again once
   }
+  if (opts.noPick && (res.getResponseCode() === 404 || /model_not_found|decommissioned/.test(res.getContentText()))) throw new Error('Groq 404 model ' + model);
   if (res.getResponseCode() === 404 || /model_not_found|decommissioned/.test(res.getContentText())) {
     const wasMain = model === (PropertiesService.getScriptProperties().getProperty('GROQ_MODEL') || ASSISTANT.model);
     model = groqPickModel(key);  // Groq retires models now and then: pick the best one this account has and remember it
@@ -2523,7 +2526,8 @@ function groqChat(key, model, messages) {
     res = send(model);
   }
   if (res.getResponseCode() === 429 || res.getResponseCode() >= 500) {  // busy or rate-limited: wait a few seconds, try once more
-    const wait = Math.min(Number((res.getHeaders() || {})['retry-after'] || 4), 10);
+    const hint = Number((res.getContentText().match(/try again in ([\d.]+)s/) || [])[1] || (res.getHeaders() || {})['retry-after'] || 4);
+    const wait = Math.min(Math.ceil(hint) + 1, 20);
     Utilities.sleep(wait * 1000);
     res = send(model);
   }
@@ -2776,7 +2780,14 @@ Examples (all mean the same as the action shown):
     // Groq sometimes stumbles on a long history: retry with just the last few messages before giving up.
     // Working out what he wants runs on a fast, smaller model with its own Groq allowance (GROQ_ROUTER_MODEL), so his
     // texts rarely wait behind client replies and email briefs; the main model is the backup.
-    const ask = (m, model) => { const raw = groqChat(key, model, m);
+    const ask = (m, model) => {
+      let raw;
+      try { raw = groqChat(key, model, m, {maxTokens: 700, noPick: model !== (props.getProperty('GROQ_MODEL') || ASSISTANT.model)}); }
+      catch (e) {
+        if (!/404/.test(e.message)) throw e;
+        props.setProperty('GROQ_ROUTER_MODEL', 'llama-3.1-8b-instant');  // that model isn't on this account: use the small one
+        raw = groqChat(key, 'llama-3.1-8b-instant', m, {maxTokens: 700, noPick: true});
+      }
       try { return JSON.parse(raw); } catch (e) { const j = String(raw).match(/\{[\s\S]*\}/); if (j) return JSON.parse(j[0]); throw e; } };
     try { a = ask(msgs, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b'); }
     catch (e) {
@@ -2784,7 +2795,9 @@ Examples (all mean the same as the action shown):
       try { a = ask([msgs[0]].concat(msgs.slice(-5)), props.getProperty('GROQ_MODEL') || ASSISTANT.model); }
       catch (e2) {
         shawnaLog('error', text, 'retry: ' + String(e2.message).slice(0, 200));
-        if (!tries) say('give me a minute, my AI brain is busy right now. I\'ll answer you as soon as it\'s back.');
+        const why = /429|rate/i.test(e2.message) ? 'Groq\'s free plan hit its per-minute limit' : /413|too large/i.test(e2.message) ? 'that request was too big for Groq\'s free plan'
+          : /5\d\d/.test(e2.message) ? 'Groq is having a hiccup' : 'Groq error ' + String(e2.message).slice(0, 60);
+        if (!tries) say('give me a minute (' + why + '). I\'ll answer you as soon as it\'s back.');
         throw new Error('Groq: ' + String(e2.message).slice(0, 120));  // runBossCommand retries in a minute (up to 3 times)
       }
     }
@@ -2950,7 +2963,7 @@ Examples (all mean the same as the action shown):
     try {
       const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
         {role: 'system', content: 'You are ' + name + ', Julián\'s assistant. For each person below, tell Julián in 1 to 3 short lines what they most recently said or asked (quote short bits), across texts, emails and calls, with the day, and whether they\'re still waiting on a reply. Plain text, no dashes. Return JSON {"summary": "..."} with one bullet (•) per person.'},
-        {role: 'user', content: blocks.map(b => '### ' + b.who + '\n' + (b.tl || 'nothing in the last 2 weeks')).join('\n\n').slice(0, 12000)}]));
+        {role: 'user', content: blocks.map(b => '### ' + b.who + '\n' + (b.tl || 'nothing in the last 2 weeks')).join('\n\n').slice(0, 8000)}]));
       answer = humanize(r.summary || '');
     } catch (e) {}
     if (!answer) answer = blocks.map(b => '• ' + b.who + '\n' + (b.tl ? b.tl.split('\n').filter(l => /Them|emailed|Call with/.test(l)).slice(-3).join('\n') : 'nothing in the last 2 weeks')).join('\n\n');
@@ -3054,7 +3067,7 @@ Examples (all mean the same as the action shown):
     try {
       const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
         {role: 'system', content: 'You are ' + name + ', Julián\'s assistant. Today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE M/d h:mma') + ' in Las Vegas. Answer his question using ONLY the data below (Follow Up Boss including calls you took on the phone, his texts, his bcolv email, website and open house forms, his calendar). Be specific: names, days, short quotes, numbers. If the data doesn\'t answer it, say so and say what you checked. Short, plain, friendly, no dashes. Return JSON {"answer": "..."}.'},
-        {role: 'user', content: 'His question: "' + question + '"\n\n' + ctx.join('\n\n').slice(0, 24000)}]));
+        {role: 'user', content: 'His question: "' + question + '"\n\n' + ctx.join('\n\n').slice(0, 12000)}]));
       return say(humanize(r.answer || 'I checked everything and came up empty on that one.'));
     } catch (e) { return say('I couldn\'t pull that together just now (' + String(e.message).slice(0, 80) + '). Try again in a minute?'); }
   }
