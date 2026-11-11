@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-11-live';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-11-tags';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2065,7 +2065,7 @@ function assistantReply(person, from, text) {
     {role: 'system', content: assistantPrompt(name, assistantPersona(from))},
     {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown, never guess one)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
       (thread ? '\nThe text conversation so far (oldest first, from the phone):\n' + thread : '') +
-      '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + (function () { try { const f = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); const m = emailHistory((f.emails || []).map(e => e.value), 14); return m ? '\nTheir recent emails (oldest first):\n' + m : ''; } catch (e) { return ''; } })() +
+      '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + (function () { const c = personCampaigns(p.id); return c ? '\nCAMPAIGNS (set to go out to them):\n' + c : ''; })() + (function () { try { const f = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); const m = emailHistory((f.emails || []).map(e => e.value), 14); return m ? '\nTheir recent emails (oldest first):\n' + m : ''; } catch (e) { return ''; } })() +
       liveInfo(text) + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
@@ -2383,6 +2383,8 @@ function personTimeline(p, phone) {
       .slice(0, 10).reverse()
       .map(n => String(n.created || '').slice(5, 10) + ' ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 400));
     if (notes.length) parts.push('CALLS, VOICE MEMOS AND NOTES (Follow Up Boss):\n' + notes.join('\n'));
+    const camp = personCampaigns(full.id);
+    if (camp) parts.push('CAMPAIGNS (email drips and scheduled texts):\n' + camp);
   }
   return parts.join('\n\n');
 }
@@ -2394,6 +2396,50 @@ function personHistory(personId) {
     .map(n => String(n.created || '').slice(0, 10) + ' ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 350)).join('\n');
 }
 
+/** What's set to go out to this person (Julián, Nov 11: Shawna should see the campaigns): their Follow Up Boss action
+ *  plans (email drips, running / paused / finished) and texts waiting in the Text Queue tab. FUB's own mass email
+ *  (Campaigns) isn't in the API, so it can't be listed. */
+function personCampaigns(personId) {
+  const lines = [];
+  try {
+    const cache = CacheService.getScriptCache();
+    let names = JSON.parse(cache.get('AP_NAMES') || 'null');
+    if (!names) {
+      names = {};
+      (fubFetch('actionPlans?limit=100', null, 'get').actionPlans || []).forEach(a => names[a.id] = a.name);
+      cache.put('AP_NAMES', JSON.stringify(names), 6 * 3600);
+    }
+    (fubFetch('actionPlansPeople?personId=' + personId, null, 'get').actionPlansPeople || []).forEach(a =>
+      lines.push((names[a.actionPlanId] || 'Plan ' + a.actionPlanId) + ': ' + ({Running: 'running', Paused: 'paused', Completed: 'finished'}[a.status] || a.status) + ' (started ' + String(a.created || '').slice(0, 10) + ')'));
+  } catch (e) {}
+  try {
+    const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+    if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues()
+      .filter(r => String(r[1]) === String(personId) && r[4] === 'pending')
+      .forEach(r => lines.push('Text "' + r[3] + '" on ' + Utilities.formatDate(new Date(r[0]), 'America/Los_Angeles', 'EEE MMM d h:mm a') + ': ' + String(r[7]).slice(0, 80)));
+  } catch (e) {}
+  return lines.join('\n');
+}
+
+// Tags Shawna adds on her own when a text, email or DM tells her something (Julián, Nov 11). Partner keeps them out of
+// the buyer/seller drips (the funnel skips Partner and Has Agent).
+const SHAWNA_TAGS = {
+  moved_away: ['Moved Away', 'Out of area'], agent: ['Agent', 'Partner'], referral_partner: ['Referral Partner', 'Partner'],
+  relocation: ['Relocation'], seller: ['Likely Seller'], investor: ['Investor'], has_agent: ['Has Agent'],
+  bought_elsewhere: ['Bought Elsewhere'], renter: ['Renter'], past_client: ['past client']
+};
+function applyShawnaTags(personId, keys, where) {
+  const add = [];
+  (Array.isArray(keys) ? keys : String(keys || '').split(/\s*,\s*/)).forEach(k => (SHAWNA_TAGS[String(k).trim()] || []).forEach(t => { if (add.indexOf(t) < 0) add.push(t); }));
+  if (!add.length) return [];
+  const p = fubFetch('people/' + personId + '?fields=id,name,tags', null, 'get'), have = p.tags || [];
+  const fresh = add.filter(t => have.indexOf(t) < 0);
+  if (!fresh.length) return [];
+  fubFetch('people/' + personId, {tags: have.concat(fresh)}, 'put');
+  fubFetch('notes', {personId: personId, subject: 'Shawna tagged: ' + fresh.join(', '), body: 'From ' + where + '. Remove the tag to undo.'});
+  return fresh;
+}
+
 /** After Shawna reads a reply: save their name if we didn't have it, and act on "not right now" / "not interested". */
 function learnFromReply(p, out, where) {
   const nm = String((out && out.name) || '').trim();
@@ -2403,6 +2449,7 @@ function learnFromReply(p, out, where) {
   }
   try { applyIntent(p.id, String((out && out.intent) || ''), where); } catch (e) { console.log('Intent: ' + e.message); }
   try { if (out && DEAL_SIGNALS[out.deal]) suggestDeal(p.id, out.deal, 'from ' + where); } catch (e) { console.log('Deal: ' + e.message); }
+  try { if (out && out.tags) applyShawnaTags(p.id, out.tags, where); } catch (e) { console.log('Tags: ' + e.message); }
 }
 
 /** "Not right now" → tag Not Now: the morning funnel moves them to the slower Long-Term Nurture (about monthly) and stops
@@ -2553,7 +2600,8 @@ GOALS (gently, over time): understand what they want and when, help them feel ta
 WELL ROUNDED: you know real estate and lending inside out and explain it in plain words: loan types (conventional, FHA, VA, jumbo, ARM), pre approval, down payment, PMI, points, DTI, closing costs, earnest money, inspection, appraisal, escrow, title, HOAs, Nevada and Las Vegas specifics, the steps of buying and selling. You also chat easily about Las Vegas, sports, food, pop culture and what's going on in the world, like a well read friend. For anything current (today's rates, the market, news, scores, events) use only the LIVE INFO given and say where it's from; if there's none, say you'll confirm. Rates: share today's averages, say their own rate depends on credit, down payment and loan type, and offer to connect them with a great lender.
 RULES: never invent facts, listings, prices, availability, rates or promises. General education about loans and the process is great; no personal lending, legal or tax advice (point to their lender or CPA, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
 NAMES: if the contact's name is unknown, never guess or use a placeholder (never "No", "Name" or "there"); when it fits naturally, ask who you're talking with, once.
-Return JSON only: {"important": true if Julián should know about this soon (they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty", "deal": "offer if they say they are making or made an offer; under_contract if they're under contract or in escrow; closed if they closed or got the keys; listing if they want to list or sell their home now; otherwise empty"}`;
+Return JSON only: {"important": true if Julián should know about this soon (they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty", "deal": "offer if they say they are making or made an offer; under_contract if they're under contract or in escrow; closed if they closed or got the keys; listing if they want to list or sell their home now; otherwise empty", "tags": "comma separated, only what they clearly told you, else empty: moved_away (they moved out of Las Vegas), agent (they're a real estate agent), referral_partner (they offer to send or swap referrals), relocation (moving to Las Vegas from out of state), seller (thinking about selling their home), investor (buying rentals or investments), has_agent (working with another agent), bought_elsewhere (already bought), renter (renting, not buying), past_client (Julián helped them buy or sell before)"}
+The CAMPAIGNS section (if given) lists the emails and texts already set to go out to them: don't repeat what a campaign is about to say.`;
 }
 
 function groqChat(key, model, messages, opts) {
@@ -2681,9 +2729,11 @@ function checkClientEmails() {
   const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,lastActivity,assignedUserId', null, 'get').people || [])
     .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me));
   people.forEach(p => {
-    const em = (fubFetch('emails?personId=' + p.id + '&limit=3&fields=id,status,date', null, 'get').emails || []);
+    const em = (fubFetch('emails?personId=' + p.id + '&limit=3&fields=id,status,date,relatedPeople', null, 'get').emails || []);
     const last = em[0];
-    if (last && last.status === 'Received' && !watch[last.id] && new Date(last.date).getTime() > Date.now() - 6 * 36e5)
+    // FUB logs Julián's own bcolv emails as "Received" too; only count emails the contact actually sent.
+    const fromThem = e => (e.relatedPeople || []).some(r => r.personId === p.id && r.sentByPerson) || !(e.relatedPeople || []).length;
+    if (last && last.status === 'Received' && fromThem(last) && !watch[last.id] && new Date(last.date).getTime() > Date.now() - 6 * 36e5)
       watch[last.id] = {p: p.id, name: p.name, at: new Date(last.date).getTime(), told: 0, nudged: 0, fresh: 1};
   });
   // Replies to the drip campaigns land in Follow Up Boss and Gmail. Even if he already opened it, Shawna reads it from
@@ -2705,8 +2755,8 @@ function checkClientEmails() {
     if (hour < 7 || hour >= 22) return;
     if (!w.told) { w.told = 1; return; }  // no bare "you got an email" alert: Shawna's email brief tells him what it says
     if (!w.nudged && Date.now() - w.at > nudgeMin * 6e4) {
-      const replied = (fubFetch('emails?personId=' + w.p + '&limit=1&fields=id,status,date', null, 'get').emails || [])
-        .some(e => e.status === 'Sent' && new Date(e.date).getTime() > w.at);
+      const replied = (fubFetch('emails?personId=' + w.p + '&limit=3&fields=id,status,date,relatedPeople', null, 'get').emails || [])
+        .some(e => new Date(e.date).getTime() > w.at && (e.status === 'Sent' || (e.relatedPeople || []).some(r => r.personId === w.p && r.sentByPerson === false)));
       if (!replied) notifyJulian('Still waiting: ' + w.name, w.name + ' emailed you ' + Math.round((Date.now() - w.at) / 6e4) + ' min ago and hasn\'t heard back yet. Want me to read it to you?', link, w.name);
       w.nudged = 1;
     }
@@ -2793,7 +2843,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
@@ -2814,6 +2864,8 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - read: he wants to hear what someone actually said: their latest texts and emails ("what did Kyle say?", "read me Sandy's email", "what did these people say?"). Put the person or people in "who", comma separated (use names from your recent conversation when he says "them" or "these people").
 - unanswered: who he hasn't replied to yet (texts and emails), with what they said.
 - ask: ANY question about his business data: clients, leads, texts, emails, calls you took, website sign-ups and forms, Instagram leads, his calendar, Follow Up Boss ("who called today?", "did anyone ask about Summerlin?", "what did Joey email me?", "any new leads from the website?", "how many open house sign-ins this week?", "what's going on with the Juniper Springs guy?"). Put his question in "message", names in "who", and a Gmail search in "query" when email might help. Prefer ask over chat whenever real data could answer it.
+- tag: he wants tags added to or removed from a contact ("tag Margaret referral partner", "put Dan in the investor bucket", "take the Hot tag off Lisa", "she moved to Nashville, tag her right"). "who" = the person; "message" = tags to add, comma separated, written as Follow Up Boss tags (e.g. Referral Partner, Investor, Moved Away, Out of area, Likely Seller, Relocation, Has Agent, Agent, Partner, Not Now, Not Interested, Pause); put tags to remove after "remove:" (e.g. "Investor, remove: Hot").
+- lookup also covers "what campaigns is Dan on", "what's set to go out to Lisa", "is she getting emails".
 - research: general knowledge or anything current that isn't his own data: mortgage rates today, the Las Vegas market, how loans and the buying or selling process work, news, sports, pop culture, weather, events ("what are rates today", "how's the Vegas market", "what's an FHA loan", "who won the Raiders game", "what's free in Vegas this weekend"). Put his question in "message".
 - If you just told him someone emailed or texted and he asks "what does it say", "what's the email say", "read it" or "yes", that's read with that person in "who".
 - allow: he wants you to be able to text or answer someone who's saved in his phone contacts (friends or clients he saved), e.g. "you can talk to Kyle Henry". Names in "who", comma separated.
@@ -3014,7 +3066,7 @@ Examples (all mean the same as the action shown):
       const full = fubFetch('people/' + p.id + '?fields=id,name,stage,tags,source,phones,emails,lastActivity', null, 'get');
       const notes = (fubFetch('notes?personId=' + p.id + '&limit=3', null, 'get').notes || []).map(n => '• ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').slice(0, 120)).join('\n');
       return say(full.name + ' (' + (full.stage || 'Lead') + (full.source ? ', ' + full.source : '') + ')\n' + [((full.phones || [])[0] || {}).value, ((full.emails || [])[0] || {}).value].filter(Boolean).join(' · ') +
-        '\nTags: ' + (full.tags || []).slice(0, 8).join(', ') + (notes ? '\nLatest:\n' + notes : ''));
+        '\nTags: ' + (full.tags || []).slice(0, 8).join(', ') + (function () { const c = personCampaigns(p.id); return c ? '\nCampaigns:\n' + c.split('\n').map(x => '• ' + x).join('\n') : '\nCampaigns: none'; })() + (notes ? '\nLatest:\n' + notes : ''));
     }
     if (a.action === 'hot') {
       const ppl = fubFetch('people?limit=8&sort=-lastActivity&tags=' + encodeURIComponent('Tier A') + '&fields=id,name,lastActivity', null, 'get').people || [];
@@ -3193,6 +3245,20 @@ Examples (all mean the same as the action shown):
       (b.events || []).forEach(e => evs.push({t: e.title, s: e.start, w: 'business'}));
       evs.sort((x, y) => x.s - y.s);
       return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(new Date(x.s), 'America/Los_Angeles', 'h:mm a') + ' ' + x.t + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
+    }
+    if (a.action === 'tag') {
+      const p = findOne(a.who);
+      if (!p) return say('I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
+      if (p.many) return say('which one? ' + p.many.map(x => x.name).join(', '));
+      const m = String(a.message || ''), cut = m.split(/remove:/i);
+      const clean = x => String(x || '').split(/\s*,\s*/).map(t => t.trim()).filter(Boolean);
+      const add = clean(cut[0]), remove = clean(cut[1]).map(t => t.toLowerCase());
+      const full = fubFetch('people/' + p.id + '?fields=id,name,tags', null, 'get');
+      const tags = (full.tags || []).filter(t => remove.indexOf(t.toLowerCase()) < 0);
+      add.forEach(t => { if (!tags.some(x => x.toLowerCase() === t.toLowerCase())) tags.push(t); });
+      fubFetch('people/' + p.id, {tags: tags}, 'put');
+      fubFetch('notes', {personId: p.id, subject: 'Tags updated', body: (add.length ? 'Added: ' + add.join(', ') : '') + (remove.length ? (add.length ? '\n' : '') + 'Removed: ' + clean(cut[1]).join(', ') : '') + '\n(by ' + name + ' at Julián\'s request)'});
+      return say('done ✅ ' + full.name + (add.length ? ' tagged ' + add.join(', ') : '') + (remove.length ? (add.length ? ';' : '') + ' removed ' + clean(cut[1]).join(', ') : '') + '.');
     }
     if (a.action === 'research') {
       const q = String(a.message || text);

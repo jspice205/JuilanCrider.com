@@ -202,6 +202,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   includes today's averages (never their own rate). "Hey Shawna" (also hi/yo, shauna/shwna; not "Shana") answers
   instantly at any hour, and client replies in that thread skip pacing for 3 h (SHAWNA_ON_); if she can't, Julián is told.
   notifyJulian alerts go into BOSS_HISTORY + LAST_ALERT_WHO, so "what does the email say?" reads that person.
+- Campaigns + tags (Nov 11): `personCampaigns(id)` = FUB action plans (running/paused/finished; names cached 6 h) + pending
+  Text Queue rows; shown in personTimeline (read/ask), lookup ("what campaigns is Dan on") and client-reply context
+  (CAMPAIGNS: don't repeat what a drip is about to say). FUB mass-email Campaigns aren't in the API. Groq JSON "tags"
+  (SHAWNA_TAGS: moved_away, agent, referral_partner, relocation, seller, investor, has_agent, bought_elsewhere, renter,
+  past_client) → `applyShawnaTags` from texts/emails/DMs + note "Shawna tagged: …". Boss action `tag` (add, "remove:").
+  checkClientEmails ignores FUB "Received" copies of his own emails (relatedPeople sentByPerson false) and counts them
+  as his reply. Margaret Anjewel 1970 (moved to Nashville): Referral Partner, Partner, Moved Away.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
