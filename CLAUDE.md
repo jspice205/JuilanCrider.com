@@ -270,7 +270,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
   POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
   task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`
-  prints URL + JSON body. Free-plan fallback: ManyChat replies with juliancrider.com/?signin.
+  prints URL + JSON body. Free-plan fallback: ManyChat replies with juliancrider.com/?signin (Julián set this up Nov 11).
+  `igReply`: the webhook also returns {reply} = Shawna's answer (as Julián, IG_<handle> keeps 8 msgs) for ManyChat Pro to
+  send back (map $.reply); works without email/phone; "source": "comment" for comment-to-DM automations.
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
