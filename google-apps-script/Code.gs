@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-11-vapi';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-11-live';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1878,10 +1878,13 @@ function bbWebhook(e) {
       const sentByShawna = Number(props.getProperty('AI_SENDING_' + to) || 0) > Date.now() - 90 * 1000;
       const group = /;\+;/.test(String(((data.chats || [])[0] || {}).guid || ''));
       // "Hey Shawna" in his own text to someone = bring Shawna into that conversation (friends, saved contacts, anyone).
-      if (!sentByShawna && !group && /\bhey,?\s+shawna\b/i.test(String(data.text || ''))) {
+      if (!sentByShawna && !group && /\b(?:hey|hi|yo|ok|okay)[,!]?\s+sh(?:aw|au|w)n+a\b/i.test(String(data.text || ''))) {
         props.setProperty('SHAWNA_ON_' + to, String(Date.now()));
         props.deleteProperty('AI_MUTE_' + to);
-        try { shawnaDirectReply(to, '', String(data.text)); } catch (e) { console.log('Hey Shawna: ' + e.message); }
+        // He's watching the thread: she answers right away, and if she can't, he hears why (never silence).
+        let done = false, why = '';
+        try { done = shawnaDirectReply(to, '', String(data.text)); } catch (e) { why = String(e.message).slice(0, 100); console.log('Hey Shawna: ' + e.message); }
+        if (!done) { try { notifyJulian('Shawna here', 'I couldn\'t jump into that chat just now' + (why ? ' (' + why + ')' : '') + '. Text me what you need and I\'ll handle it.'); } catch (e) {} }
         return json({status: 'ok'});
       }
       if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
@@ -2007,6 +2010,48 @@ function assistantIntro() {
 }
 function assistantName() { return PropertiesService.getScriptProperties().getProperty('ASSISTANT_NAME') || 'Shawna'; }
 
+// LIVE INFO (Julián, Nov 11): Shawna should know today's mortgage rates, the market and what's going on in the world,
+// like a well read friend. Rates come from the same feed as the website card (Mortgage News Daily, Freddie Mac backup).
+// Anything current (news, sports, pop culture, the Vegas market, events, weather) comes from Groq's web search model
+// (GROQ_WEB_MODEL, default groq/compound-mini, on the free plan). Answers are cached for an hour.
+const RATE_Q = /\b(rates?|interest|apr|mortgage|refi|refinanc\w*|points|fha|va loan|jumbo|conventional loan|arm loan|lender)\b/i;
+const WEB_Q = /\b(market|home prices|prices in|inventory|news|who won|score|weather|concert|festival|election|economy|recession|stock market|the fed|trending|new album|movie|nba|nfl|ufc|super bowl|raiders|golden knights|aces|f1|what'?s happening|what'?s going on in|events?|things to do|free in vegas)\b/i;
+function ratesText() {
+  try {
+    const r = JSON.parse(rates().getContent());
+    if (!r.ok || !r.rates) return '';
+    const n = {f30: '30 yr fixed', f15: '15 yr fixed', fha30: '30 yr FHA', va30: '30 yr VA', jumbo30: '30 yr jumbo'};
+    return 'Average mortgage rates (' + r.source + ', ' + r.asOf + '): ' + Object.keys(r.rates).map(k => (n[k] || k) + ' ' + (r.rates[k].rate || r.rates[k]) + '%').join(', ') +
+      '. These are averages; a person\'s own rate depends on credit, down payment, loan type and points.';
+  } catch (e) { return ''; }
+}
+function webAnswer(q) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
+  q = String(q || '').trim().slice(0, 400);
+  if (!key || !q) return '';
+  const cache = CacheService.getScriptCache();
+  const ck = 'WEB_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, q.toLowerCase())).slice(0, 30);
+  const hit = cache.get(ck); if (hit !== null) return hit;
+  try {
+    const res = UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: {Authorization: 'Bearer ' + key}, payload: JSON.stringify({model: props.getProperty('GROQ_WEB_MODEL') || 'groq/compound-mini', max_tokens: 500, temperature: 0.3,
+        messages: [{role: 'system', content: 'Search the web and answer with current facts in 2 to 4 short sentences. If it is about real estate, homes or the local scene, use Las Vegas and Henderson, Nevada. Say where the numbers come from and how recent they are. Today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE MMMM d, yyyy') + '.'},
+          {role: 'user', content: q}]})});
+    if (res.getResponseCode() !== 200) { console.log('Web answer ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200)); return ''; }
+    const t = String(((JSON.parse(res.getContentText()).choices || [])[0] || {}).message.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim().slice(0, 1500);
+    cache.put(ck, t, 3600);
+    return t;
+  } catch (e) { console.log('Web answer: ' + e.message); return ''; }
+}
+/** Live facts for a text, only when it asks about rates or something current (keeps Groq's free limits for the rest). */
+function liveInfo(text, always) {
+  const parts = [];
+  if (RATE_Q.test(text)) parts.push(ratesText());
+  if (always || WEB_Q.test(text)) parts.push(webAnswer(text));
+  const out = parts.filter(Boolean).join('\n');
+  return out ? '\nLIVE INFO (current, use it if it helps and say where numbers come from):\n' + out : '';
+}
+
 function assistantReply(person, from, text) {
   const props = PropertiesService.getScriptProperties();
   const key = props.getProperty('GROQ_API_KEY'), mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
@@ -2021,7 +2066,7 @@ function assistantReply(person, from, text) {
     {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown, never guess one)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
       (thread ? '\nThe text conversation so far (oldest first, from the phone):\n' + thread : '') +
       '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + (function () { try { const f = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); const m = emailHistory((f.emails || []).map(e => e.value), 14); return m ? '\nTheir recent emails (oldest first):\n' + m : ''; } catch (e) { return ''; } })() +
-      '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
+      liveInfo(text) + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
   if (out.important || out.escalate) stat('neededYou');
@@ -2038,17 +2083,19 @@ function assistantReply(person, from, text) {
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
   const muted = Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now();  // Julián is talking with them himself
+  // He said "Hey Shawna" in this thread in the last 3 hours: answer right away, no human pacing, any mode.
+  const invited = Number(props.getProperty('SHAWNA_ON_' + from) || 0) > Date.now() - 3 * 36e5;
   const ok = reply && !out.escalate && !sensitive && n < Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12) && !muted;
   // Replies to someone who texted first may go until 10pm (ASSISTANT_END_HOUR); texts Julián starts stay 9am-9pm (TCPA).
   const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
-  if (mode === 'backup' && ok && hour >= 8 && hour < endHour) {  // hold it; send only if Julián hasn't replied in time
+  if (mode === 'backup' && ok && hour >= 8 && hour < endHour && !invited) {  // hold it; send only if Julián hasn't replied in time
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
     q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + delay * 6e4};
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
-  if (mode === 'auto' && ok && hour >= 8 && hour < endHour && props.getProperty('ASSISTANT_INSTANT') !== 'on') {
+  if (mode === 'auto' && ok && hour >= 8 && hour < endHour && !invited && props.getProperty('ASSISTANT_INSTANT') !== 'on') {
     // Like a person (Julián's own texts to Shawna are still answered instantly). If Julián texts them himself in the
     // meantime, this reply is canceled.
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
@@ -2056,7 +2103,7 @@ function assistantReply(person, from, text) {
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
-  const auto = mode === 'auto' && ok && hour >= 8 && hour < endHour;
+  const auto = (mode === 'auto' || invited) && ok && hour >= 8 && hour < endHour;
   if (!auto) {
     fubFetch('notes', {personId: person.id, subject: name + ' draft', body: (reply ? 'Suggested reply:\n' + reply : 'No reply drafted.') +
       (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});
@@ -2402,7 +2449,7 @@ function shawnaDirectReply(phone, text, invite) {
   const mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
   if (!key || mode === 'off') return false;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
-  if (hour < 8 || hour >= endHour) return false;
+  if (!invite && (hour < 8 || hour >= endHour)) return false;  // he's in the thread when he invites her: any hour
   if (!invite && Number(props.getProperty('AI_MUTE_' + phone) || 0) > Date.now()) return false;  // he's talking with them himself
   if (!invite && mode === 'draft') return false;
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + phone;
@@ -2413,9 +2460,9 @@ function shawnaDirectReply(phone, text, invite) {
     {role: 'system', content: assistantPrompt(name, invite ? 'shawna' : assistantPersona(phone)) + '\nThis person is someone Julián knows personally (not a lead in his CRM). Be warm and natural; real estate only if they bring it up or Julián asked.'},
     {role: 'user', content: (thread ? 'The text conversation so far (oldest first):\n' + thread + '\n\n' : '') +
       (invite ? 'Julián just brought you into this conversation by texting: "' + invite + '". Say a quick hi as ' + name + ', his AI assistant, and do what he asked or help with what they need.'
-        : 'They just texted: "' + text + '"') + '\n\nReply as JSON only.'}]));
+        : 'They just texted: "' + text + '"') + liveInfo(invite || text) + '\n\nReply as JSON only.'}]));
   const reply = humanize(out.reply || '');
-  if (!reply || out.escalate) return false;
+  if (!reply || (out.escalate && !invite)) return false;
   props.setProperty('AI_SENDING_' + phone, String(Date.now()));
   bbSend(phone, reply);
   props.setProperty(cnt, today + '|' + (n + 1));
@@ -2503,7 +2550,8 @@ Them: "Is the Summerlin one still available?" → "Let me confirm that for you r
 Them: "Not ready yet" → "Totally fair 🙌🏾 I'm here whenever you are. Mind if I send you a couple I think you'd love in the meantime?"
 
 GOALS (gently, over time): understand what they want and when, help them feel taken care of, and when they're ready, offer a quick call (juliancrider.com/?book), a showing (juliancrider.com/?showing) or a home value (juliancrider.com/?value).
-RULES: never invent facts, listings, prices, availability, rates or promises. No legal, tax or lending advice (point to their CPA or lender, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
+WELL ROUNDED: you know real estate and lending inside out and explain it in plain words: loan types (conventional, FHA, VA, jumbo, ARM), pre approval, down payment, PMI, points, DTI, closing costs, earnest money, inspection, appraisal, escrow, title, HOAs, Nevada and Las Vegas specifics, the steps of buying and selling. You also chat easily about Las Vegas, sports, food, pop culture and what's going on in the world, like a well read friend. For anything current (today's rates, the market, news, scores, events) use only the LIVE INFO given and say where it's from; if there's none, say you'll confirm. Rates: share today's averages, say their own rate depends on credit, down payment and loan type, and offer to connect them with a great lender.
+RULES: never invent facts, listings, prices, availability, rates or promises. General education about loans and the process is great; no personal lending, legal or tax advice (point to their lender or CPA, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
 NAMES: if the contact's name is unknown, never guess or use a placeholder (never "No", "Name" or "there"); when it fits naturally, ask who you're talking with, once.
 Return JSON only: {"important": true if Julián should know about this soon (they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty", "deal": "offer if they say they are making or made an offer; under_contract if they're under contract or in escrow; closed if they closed or got the keys; listing if they want to list or sell their home now; otherwise empty"}`;
 }
@@ -2607,13 +2655,15 @@ function processAssistantQueue() {
 // notification (free ntfy app, topic in Script Property NTFY_TOPIC) and, if he still hasn't emailed back after
 // EMAIL_NUDGE_MIN (default 60) minutes, one reminder. Push only between 7am and 10pm PT; later ones wait for morning.
 // ============================================================
-function notifyJulian(title, msg, url) {
+function notifyJulian(title, msg, url, who) {
   // Two ways to reach Julián: a text from his business number to his personal phone (ALERT_TEXT_TO, falls back to
   // TEST_TEXT_TO; a different phone, so it actually alerts him) and/or a push through the free ntfy app (NTFY_TOPIC).
   const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
   const to = props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO');
   let sent = false;
   if (to) { try { bbSend(to, title + '. ' + msg); sent = true; } catch (e) { console.log('Alert text: ' + e.message); } }
+  // Shawna remembers what she told him, so "what does the email say?" right after an alert knows who he means.
+  if (sent) { bossMemory('assistant', title + '. ' + msg); if (who) props.setProperty('LAST_ALERT_WHO', String(who)); }
   if (topic) {
     UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, muteHttpExceptions: true,
       headers: Object.assign({Title: title.replace(/[^\x20-\x7E]/g, ''), Priority: 'high', Tags: 'email'}, url ? {Click: url} : {})});
@@ -2657,7 +2707,7 @@ function checkClientEmails() {
     if (!w.nudged && Date.now() - w.at > nudgeMin * 6e4) {
       const replied = (fubFetch('emails?personId=' + w.p + '&limit=1&fields=id,status,date', null, 'get').emails || [])
         .some(e => e.status === 'Sent' && new Date(e.date).getTime() > w.at);
-      if (!replied) notifyJulian('Still waiting: ' + w.name, w.name + ' emailed you ' + Math.round((Date.now() - w.at) / 6e4) + ' min ago and hasn\'t heard back yet.', link);
+      if (!replied) notifyJulian('Still waiting: ' + w.name, w.name + ' emailed you ' + Math.round((Date.now() - w.at) / 6e4) + ' min ago and hasn\'t heard back yet. Want me to read it to you?', link, w.name);
       w.nudged = 1;
     }
   });
@@ -2743,7 +2793,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
@@ -2764,6 +2814,8 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - read: he wants to hear what someone actually said: their latest texts and emails ("what did Kyle say?", "read me Sandy's email", "what did these people say?"). Put the person or people in "who", comma separated (use names from your recent conversation when he says "them" or "these people").
 - unanswered: who he hasn't replied to yet (texts and emails), with what they said.
 - ask: ANY question about his business data: clients, leads, texts, emails, calls you took, website sign-ups and forms, Instagram leads, his calendar, Follow Up Boss ("who called today?", "did anyone ask about Summerlin?", "what did Joey email me?", "any new leads from the website?", "how many open house sign-ins this week?", "what's going on with the Juniper Springs guy?"). Put his question in "message", names in "who", and a Gmail search in "query" when email might help. Prefer ask over chat whenever real data could answer it.
+- research: general knowledge or anything current that isn't his own data: mortgage rates today, the Las Vegas market, how loans and the buying or selling process work, news, sports, pop culture, weather, events ("what are rates today", "how's the Vegas market", "what's an FHA loan", "who won the Raiders game", "what's free in Vegas this weekend"). Put his question in "message".
+- If you just told him someone emailed or texted and he asks "what does it say", "what's the email say", "read it" or "yes", that's read with that person in "who".
 - allow: he wants you to be able to text or answer someone who's saved in his phone contacts (friends or clients he saved), e.g. "you can talk to Kyle Henry". Names in "who", comma separated.
 - If he answers "yes", "sure", "please do" or similar to something you just offered, return THAT action (e.g. read) with the same people. Never answer "yes" with chat.
 SEVERAL REQUESTS IN ONE TEXT: if he asks for more than one thing ("text Lisa back, remind me to call Dan tomorrow and what's my week look like"), return {"actions": [ {one object per request, same fields as above, in the order he said them} ]} with up to 5. One request = one object as usual.
@@ -2974,7 +3026,8 @@ Examples (all mean the same as the action shown):
         (x.reply ? 'I answered "' + x.reply.slice(0, 80) + '"' : '"' + x.text.slice(0, 80) + '"')).join('\n') : 'no client texts in the last few days.');
     }
     if (a.action === 'read') {
-      const names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0, 4);
+      let names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0, 4);
+      if (!names.length && props.getProperty('LAST_ALERT_WHO')) names = [props.getProperty('LAST_ALERT_WHO')];  // "what does the email say?"
       if (!names.length) return say('whose messages should I read you?');
       const blocks = [];
       names.forEach(nm => {
@@ -3140,6 +3193,17 @@ Examples (all mean the same as the action shown):
       (b.events || []).forEach(e => evs.push({t: e.title, s: e.start, w: 'business'}));
       evs.sort((x, y) => x.s - y.s);
       return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(new Date(x.s), 'America/Los_Angeles', 'h:mm a') + ' ' + x.t + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
+    }
+    if (a.action === 'research') {
+      const q = String(a.message || text);
+      const info = liveInfo(q, true);
+      let ans = '';
+      try {
+        ans = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+          {role: 'system', content: 'You are ' + name + ', Julián\'s AI assistant. He is a Las Vegas Realtor. Answer his question like a sharp, well read friend who knows real estate and lending: 1 to 4 short sentences, plain text, no dashes. Use the LIVE INFO for anything current and say where numbers come from; never invent current numbers or news. Return JSON {"reply": "..."}.'},
+          {role: 'user', content: q + info}], {maxTokens: 700})).reply || '';
+      } catch (e) { ans = info.replace(/^\s*LIVE INFO[^\n]*\n/, ''); }
+      return say(ans || 'I couldn\'t look that up right now. Ask me again in a minute.');
     }
     if (a.action === 'claude') {
       const sh = getSS().getSheetByName(REQUESTS_TAB.name) || ensureTab(getSS(), REQUESTS_TAB);
@@ -3503,7 +3567,7 @@ SCHEDULING
 
 IF THEY ASK FOR JULIÁN: say he'll call them back shortly; confirm their name, email and the reason for the call. Don't transfer calls.
 
-INTEREST RATES AND LENDING: never quote a rate or payment. Rates change daily and depend on credit, down payment and loan type, so the right number comes from a lender. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
+INTEREST RATES AND LENDING: you can share today's averages: ${ratesText() || 'not available right now'} Never quote their own rate or payment: that depends on credit, down payment and loan type, so the right number comes from a lender. You can explain how loans and the buying or selling process work in plain words. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
 
 LANGUAGE: always answer in the language the caller is speaking right now. If they switch languages mid-call (even after speaking English), switch with them immediately, and switch back if they do. Keep the same warmth and rules in every language. If Julián will need to follow up in that language, note it in the next step.
 
