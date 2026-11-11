@@ -119,6 +119,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "Caller 702-…", never No Name. Email assistant `processEmailAssistant` (5-min tick, 7am-10pm, Shawna Mailer v3
   actions inbox/reply): unread emails from FUB contacts → reply as Julián; EMAIL_ASSISTANT draft (default, Gmail draft +
   text to Julián) / auto / off; sensitive ones only drafted. Numbers saved in his iPhone contacts stay ignored (personal).
+- Vapi sync (Nov 11): `syncVapiAssistant` (hourly from autoUpdateFromGitHub, only when changed; `updateVapiNow` by hand)
+  PATCHes the Vapi assistant: system prompt `vapiPrompt()` (built from SHAWNA_FACTS + Shawna Knowledge: one question at a
+  time, never ask for the phone number, rates → lender/Julián, Chris Voss), tool `lookup_caller` (server = web app ?vapi=,
+  vapiWebhook answers `tool-calls` with `vapiLookup`: FUB name/stage/tags/last notes), endCallMessage, startSpeakingPlan
+  waitSeconds 0.8. Needs VAPI_API_KEY + VAPI_ASSISTANT_ID. First texts to new numbers: if the iMessage is "Not
+  Delivered" (Android/Google Voice), `bbDelivered` → resend as SMS; the working chat is saved in BB_CHAT_<number>.
+  Test numbers: 2493 = Julián's Google Voice 702-763-1554, 2492 = friend; both tagged "Test - do not market".
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
