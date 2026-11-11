@@ -2560,11 +2560,15 @@ Examples (all mean the same as the action shown):
     if (!email) { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; }
     if (!email) return say((p.name || a.who) + ' has no email yet. Send me their email and I\'ll write it.');
     let subject = humanize(a.subject || 'Quick note from Julián'), body = humanize(a.message || ''), threadId = '';
-    // If they emailed in the last 2 weeks (a campaign reply, a question), answer in that same email thread.
+    // Keep the conversation in one thread: answer in the latest email thread with them from the last 60 days (opened or
+    // not, theirs or a campaign email we sent). With Shawna Mailer v5 the reply always goes to them; with an older
+    // mailer only a thread whose latest message is theirs is safe to reply in.
     try {
-      const r = bcolvCall({action: 'search', query: 'from:' + email + ' newer_than:14d', max: 1});
-      const last = ((r && r.messages) || []).filter(m => !m.fromMe).sort((x, y) => y.date - x.date)[0];
-      if (last) { threadId = last.threadId; subject = /^re:/i.test(last.subject) ? last.subject : 'Re: ' + last.subject; }
+      const v5 = mailerVersion() >= 5;
+      const r = bcolvCall({action: 'search', query: '{from:' + email + ' to:' + email + '} newer_than:60d', max: 3});
+      const msgs = ((r && r.messages) || []).sort((x, y) => y.date - x.date);
+      const pick = msgs.find(m => v5 || (!m.fromMe && !msgs.some(o => o.threadId === m.threadId && o.fromMe && o.date > m.date)));
+      if (pick) { threadId = pick.threadId; subject = /^re:/i.test(pick.subject) ? pick.subject : 'Re: ' + pick.subject; }
     } catch (e) {}
     props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()}));
     return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
