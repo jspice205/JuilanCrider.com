@@ -157,6 +157,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   retries once on 429/5xx; if both routing tries fail she says "give me a minute…" once and throws so runBossCommand retries
   (3x). Boss action `agenda` (today/week): both calendars + FUB open tasks (tasks?assignedUserId&isCompleted=false) +
   waiting texts + pending email approval.
+- Tasks from the text thread (Nov 11): agenda lists up to 10 open FUB tasks numbered (AGENDA_TASKS); "do 2" → taskstart
+  (Groq drafts the text from personTimeline → BOSS_PENDING with taskId; YES sends and checks the task off; call tasks get
+  a briefing + optional text); "done 2" / "clear the old tasks" → taskdone. `cleanupOldTasks` (daily, hourly hook)
+  completes automatic reminder tasks older than 7 days. Groq falls back to GROQ_FALLBACK (default llama-3.1-8b-instant)
+  when the main model keeps failing.
 - Boss prompt has an "understand him like a human" section: casual/urban/voice-to-text phrasings mapped to actions
   (e.g. "who I ain't hit back" → unanswered, "bet"/"run it" → yes). Add new phrasings there when he reports a miss.
 - Nov 11 (later): boss commands parse more robustly (retry with short history; "yes please" repeats the offered action).
