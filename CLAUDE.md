@@ -190,7 +190,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Shawna on the phone (plan, Nov 9): Vapi assistant (Groq model, Google Calendar tools, free Vapi number; ~$10-15/mo
   for ~90 min) answers forwarded missed calls (carrier no-answer forwarding). End-of-call report → `vapiWebhook`
   (?vapi=VAPI_KEY; `setupVoice` prints the URL) → FUB person by phone (or new, source "Phone call", tag Phone Lead) +
-  note (summary, transcript, recording) + call-back task. No texts to callers (a call isn't text consent). Greeting
+  note (summary, transcript, recording) + call-back task. Recap text (Nov 11): Shawna asks on the call "okay if I text you a
+  quick recap?"; only a clear yes (Groq textOk) → tag Text OK + consent note + Text Queue step call-recap (recap + booked
+  appointment), 9am-9pm. Otherwise no texts to callers (a call alone isn't text consent). Email briefs skip messages with
+  no new words from the client (bounced copies of his own email). Greeting
   must say the call may be recorded (Nevada all-party consent, NRS 200.620). His own calls: iPhone native recording
   (both sides hear a notice; also ask verbally) → paste summary to Claude to log; FUB Calling add-on (~$39/mo, admin) later.
 - `fub-connector/worker.js` — Follow Up Boss connector for Claude (Cloudflare Worker "fub-claude",
