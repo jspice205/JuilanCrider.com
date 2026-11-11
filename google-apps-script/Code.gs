@@ -2353,6 +2353,16 @@ ${assistantKnowledge()}
 - unanswered: who he hasn't replied to yet (texts and emails), with what they said.
 - allow: he wants you to be able to text or answer someone who's saved in his phone contacts (friends or clients he saved), e.g. "you can talk to Kyle Henry". Names in "who", comma separated.
 - If he answers "yes", "sure", "please do" or similar to something you just offered, return THAT action (e.g. read) with the same people. Never answer "yes" with chat.
+UNDERSTAND HIM LIKE A HUMAN WOULD: Julián texts fast, casual and sometimes urban, often by voice-to-text, with typos, slang and missing words. Figure out what he means, not the exact words, and pick the action. Never say you didn't understand if a reasonable person would get it; if it's truly unclear, ask one short question.
+Examples (all mean the same as the action shown):
+"who haven't I replied to" / "who I ain't hit back" / "who's waiting on me" / "who I left on read" / "anybody I need to get back to" / "who still needs a reply" → unanswered
+"what Kyle say" / "what's Kyle talkin bout" / "what he say" / "read me what Sandy sent" / "what's the word from them" / "lemme see what they said" → read
+"hit Kyle up" / "shoot Lisa a text" / "tell him I'm on the way" / "let her know 3 works" / "text bro back" → text
+"run it" / "send it" / "bet" / "yup" / "go ahead" / "do that" / "yes please" → yes to what you just offered
+"who been hittin my line" / "anybody text me" / "what came in" → texts; "who emailed" / "any emails" / "inbox" → emails
+"what I got today" / "what's on deck" / "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
+"pull up Dan" / "what's up with Dan" / "who is Dan" → lookup; "remind me to call Dan" → task; "put Dan down for Thursday at 2" → schedule
+"you can talk to Kyle" / "Kyle's cool, you can text him" / "add Kyle to your list" → allow
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
 - remember: he tells you something to remember for good (a preference, a fact about his business or a client). Put the fact in "message", written as a full sentence.
 - callme: he wants you to phone him (e.g. "call me", "give me a call"). Put anything he wants to talk about in "message".
