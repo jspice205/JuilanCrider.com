@@ -131,6 +131,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Settings tab (Nov 11): Script Properties UI is read-only past 50 entries, so Julián adds keys in the sheet's "Settings"
   tab (name in A, value in B); `applySettings` (5-min tick) saves them to Script Properties and erases the value.
   `cleanupProperties` (hourly) deletes old REM_/AI_MUTE_/AI_SENDING_/NEWNUM_ entries.
+- Boss prompt has an "understand him like a human" section: casual/urban/voice-to-text phrasings mapped to actions
+  (e.g. "who I ain't hit back" → unanswered, "bet"/"run it" → yes). Add new phrasings there when he reports a miss.
 - Nov 11 (later): boss commands parse more robustly (retry with short history; "yes please" repeats the offered action).
   New boss actions: read (latest texts via bbThread + latest unread email via mailer inbox or FUB email notes),
   unanswered (TEXT_LOG + unread inbox), allow (`allowShawna`: names → numbers from FUB or his phone contacts →
