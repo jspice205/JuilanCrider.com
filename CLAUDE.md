@@ -153,6 +153,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   search (Groq writes the query; mailer v4), Website Leads + Sign-Ins tabs, both calendars (7 days) → Groq answer.
   Alerts that matter: client texts Groq marks important/escalate → notifyJulian (once per person per 2 h, even with
   TEXT_ALERTS off); every real Vapi caller → notifyJulian with the summary.
+- Multi-requests (Nov 11): routing may return {"actions": [...]} (≤5); bossCommand runs `doAction` for each in order (each
+  answers separately; approvals get numbered). Routing maxTokens 1000.
 - groqChat(key, model, messages, {maxTokens, noPick}) (Nov 11): default max_tokens 900 (routing 700; Groq free tier counts
   requested max_tokens against tokens-per-minute), waits Groq's "try again in Xs" up to 20 s; routing model 404 →
   llama-3.1-8b-instant saved as GROQ_ROUTER_MODEL; "give me a minute (<reason>)" names the cause; ask/read context capped
