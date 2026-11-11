@@ -2640,12 +2640,15 @@ Examples (all mean the same as the action shown):
   if (a.action === 'read') {
     const names = String(a.who || '').split(/\s*(?:,|&|\band\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0, 4);
     if (!names.length) return say('whose messages should I read you?');
-    const blocks = names.map(nm => {
-      const p = findOne(nm), person = p && !p.many ? p : null;
-      let phone = '';
-      if (!person) { const c = macContact(nm); if (c) phone = bbE164(c.phone); }
-      const tl = personTimeline(person, phone);
-      return {who: (person && person.name) || nm, tl: tl};
+    const blocks = [];
+    names.forEach(nm => {
+      const p = findOne(nm);
+      // Two people with the same first name (e.g. two Ruths): read each and keep the ones with recent activity.
+      const cands = p ? (p.many ? p.many.slice(0, 4) : [p]) : [];
+      const found = cands.map(c => ({who: c.name, tl: personTimeline(c, '')})).filter(b => b.tl);
+      if (found.length) { found.forEach(b => blocks.push(b)); return; }
+      const c = macContact(nm), phone = c ? bbE164(c.phone) : '';
+      blocks.push({who: (c && c.name) || nm, tl: phone ? personTimeline(null, phone) : ''});
     });
     const mv = mailerVersion(), mailNote = mv < 4 ? '\n\n(Heads up: I can\'t read your bcolv emails yet. ' + mailerProblem(mv) + ')' : '';
     if (blocks.every(b => !b.tl)) return say('I don\'t see texts, emails or calls with ' + names.join(', ') + ' in the last 2 weeks.' + mailNote);
