@@ -2383,7 +2383,7 @@ function checkClientEmails() {
     const w = watch[id], link = 'https://app.followupboss.com/2/people/view/' + w.p;
     if (Date.now() - w.at > 2 * 864e5) { delete watch[id]; return; }
     if (hour < 7 || hour >= 22) return;
-    if (!w.told) { notifyJulian(w.name + ' emailed you', 'New email from ' + w.name + '. Tap to open them in Follow Up Boss.', link); w.told = 1; return; }
+    if (!w.told) { w.told = 1; return; }  // no bare "you got an email" alert: Shawna's email brief tells him what it says
     if (!w.nudged && Date.now() - w.at > nudgeMin * 6e4) {
       const replied = (fubFetch('emails?personId=' + w.p + '&limit=1&fields=id,status,date', null, 'get').emails || [])
         .some(e => e.status === 'Sent' && new Date(e.date).getTime() > w.at);
@@ -2416,7 +2416,7 @@ function bossCommand(text) {
   const pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   if (pend && pend.kind !== 'schedule' && /^\s*(yes|y|send|send it|go|ok|okay)\s*[.!]*\s*$/i.test(text)) {
     props.deleteProperty('BOSS_PENDING');
-    if (Date.now() - pend.at > 30 * 6e4) return say(name + ': that one expired. Ask me again.');
+    if (Date.now() - pend.at > (pend.kind === 'email' ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
     if (pend.kind === 'voice') {
       const audio = shawnaVoice(pend.message);
       props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
@@ -2453,6 +2453,7 @@ Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM
 ${assistantKnowledge()}
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - voicememo: he wants you to send someone a voice memo / voice note / audio message in your voice ("message" = what you'll say, written to be spoken, 15 to 40 seconds).
+- If you just suggested an email reply and he says how to change it ("make it shorter", "add that I'm free Thursday", "say it like this: ..."), return action email for that same person with the updated "message".
 - email: he wants you to email someone or answer their email ("reply to Ruth", "email Ruth back and say..."). Write a short, warm email in his voice, plain paragraphs, no signature (it's signed automatically). If they emailed recently it goes as a reply in that same thread. If he asks you to answer their email, read it in your recent conversation or the data first so the reply fits what they said.
 - note: save a note on a contact. task: remind him to do something about a contact.
 - emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
@@ -3358,7 +3359,7 @@ function processEmailAssistant(list) {
     let out;
     try {
       out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: assistantPrompt(name, assistantPersona(phone || '')) + '\nTHIS IS AN EMAIL REPLY, not a text: 2 to 5 short sentences, warm and plain. Start with "Hi ' + (first || 'there') + '," on its own line. No subject line and no sign-off or signature (they are added automatically). Fewer emojis than in texts (0 or 1).'},
+        {role: 'system', content: assistantPrompt(name, assistantPersona(phone || '')) + '\nTHIS IS AN EMAIL REPLY, not a text: 2 to 5 short sentences, warm and plain. Start with "Hi ' + (first || 'there') + '," on its own line. No subject line and no sign-off or signature (they are added automatically). Fewer emojis than in texts (0 or 1). Also add "summary": what they wrote, in 1 or 2 plain sentences for Julián (keep their key words, numbers, dates, addresses).'},
         {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
           (phone ? '\nTheir text conversation (oldest first):\n' + bbThread(phone) : '') + '\nFollow Up Boss history (oldest first):\n' + personHistory(p.id) +
           '\n\nThey just emailed. Subject: "' + m.subject + '"\n"' + String(m.body || '').slice(0, 2500) + '"\n\nReply as JSON only.'}]));
@@ -3367,18 +3368,25 @@ function processEmailAssistant(list) {
     const reply = humanize(out.reply || '');
     if (!reply) return;
     const sensitive = !!out.escalate || ASSISTANT.escalate.test(m.body + ' ' + m.subject) || tags.indexOf('Has Agent') >= 0;
-    const draft = mode !== 'auto' || sensitive;
-    const html = '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + reply.split(/\n{2,}|\n/).map(par => '<p style="margin:0 0 12px">' +
-      par.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>').join('') + '<p style="margin:0">Julián</p>' + EMAIL_FOOTER + '</div>';
-    const r = bcolvCall({action: 'reply', threadId: m.threadId, text: reply + '\n\nJulián', html: html, draft: draft});
-    if (!r || !r.ok) { console.log('Email assistant: reply not saved for ' + addr + ': ' + ((r && r.error) || 'no answer')); return; }
-    const who = first || addr;
-    fubFetch('notes', {personId: p.id, subject: draft ? name + ' email draft (in Gmail Drafts)' : 'Email sent: Re: ' + m.subject,
-      body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\n' + (draft ? 'Draft reply waiting in julianc@bcolv.com Drafts:\n' : 'Replied from julianc@bcolv.com:\n') + reply +
+    const who = [first, p.lastName].join(' ').trim() || addr, said = humanize(out.summary || String(m.body || '').replace(/\s+/g, ' ').slice(0, 300));
+    const subject = /^re:/i.test(m.subject) ? m.subject : 'Re: ' + m.subject;
+    const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+    if (mode === 'auto' && !sensitive) {  // EMAIL_ASSISTANT = auto: she answers, then tells him what she said
+      const html = '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + reply.split(/\n{2,}|\n/).map(par => '<p style="margin:0 0 12px">' +
+        par.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>').join('') + '<p style="margin:0">Julián</p>' + EMAIL_FOOTER + '</div>';
+      const r = bcolvCall({action: 'reply', threadId: m.threadId, text: reply + '\n\nJulián', html: html, draft: false});
+      if (!r || !r.ok) { console.log('Email assistant: reply not sent for ' + addr + ': ' + ((r && r.error) || 'no answer')); return; }
+      fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + subject, body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nReplied from julianc@bcolv.com:\n' + reply});
+      const msg = '📧 ' + who + ' emailed you: ' + said + '\n\nI answered for you:\n"' + reply + '"';
+      if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
+    } else {  // default: tell him what it says and what she'd send; YES sends it in the same thread, or he says what to change
+      props.setProperty('BOSS_PENDING', JSON.stringify({kind: 'email', personId: p.id, who: who, email: addr, subject: subject, message: reply, threadId: m.threadId, at: Date.now()}));
+      fubFetch('notes', {personId: p.id, subject: name + ' suggested reply', body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nSuggested reply (waiting for Julián):\n' + reply +
         (sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '')});
-    notifyJulian(draft ? who + ' emailed you' : name + ' answered ' + who + "'s email",
-      draft ? name + ' wrote a reply for you. It\'s in your bcolv Gmail Drafts: open it, change anything you like, and hit send.' + (sensitive ? ' Heads up: ' + (out.reason || 'this one needs you') + '.' : '')
-        : 'She replied: "' + reply.slice(0, 160) + '"');
+      const msg = '📧 ' + who + ' emailed you: ' + said + (sensitive ? '\n\n(Heads up: ' + (out.reason || 'this one needs you') + '.)' : '') +
+        '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\nReply YES to send it, or tell me what to change.';
+      if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) { console.log('Email brief: ' + e.message); return; } }
+    }
     handled++;
   });
   return handled;
