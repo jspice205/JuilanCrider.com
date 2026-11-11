@@ -109,6 +109,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
   ElevenLabs TTS, ELEVENLABS_API_KEY + ELEVENLABS_VOICE_ID = her Vapi voice; Reply YES first; text bubble then MP3; testVoiceMemo), callme
   (vapiCall: Vapi POST /call to Julián only; VAPI_API_KEY, VAPI_ASSISTANT_ID, VAPI_PHONE_NUMBER_ID; no AI calls to clients without consent).
+- Nov 11 fixes: no "No Name" contacts. Unknown numbers (not in FUB, not in his iPhone contacts) → `newNumber`: Shawna
+  replies (they texted first), asks their name once, max 3 replies; added to FUB (tag Texted In) only once Groq hears
+  their name; "New Numbers" sheet tab. `realFirst` never greets anyone as "No". Shawna reads the real text thread from the
+  Mac (`bbThread`, BlueBubbles GET chat/<guid>/message) + 15 FUB notes (`personHistory`). Replies go back on the chat
+  they texted from (BB_CHAT_<number>, so Google Voice/Android get SMS, not iMessage). Groq JSON also returns name +
+  intent: `learnFromReply` saves a missing name; `applyIntent` tags `Not Now` (funnel moves them to Long-Term Nurture, no
+  Hot/Warm) or `Not Interested` (drip paused). Vapi calls: Groq pulls the caller's name; new callers without one are
+  "Caller 702-…", never No Name. Email assistant `processEmailAssistant` (5-min tick, 7am-10pm, Shawna Mailer v3
+  actions inbox/reply): unread emails from FUB contacts → reply as Julián; EMAIL_ASSISTANT draft (default, Gmail draft +
+  text to Julián) / auto / off; sensitive ones only drafted. Numbers saved in his iPhone contacts stay ignored (personal).
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
