@@ -137,6 +137,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   like a person (AI_PENDING, `humanDelay`: read + type + think time with jitter, halved in a live back-and-forth, max 120 s,
   plus the 1-min queue tick → ~10 s to 3 min; ASSISTANT_INSTANT=on to send at once); Julián's own commands stay instant.
   `unanswered` skips threads whose last message is from Julián/Shawna, test contacts and "No name".
+- Boss action `ask` (Nov 11): answers any question from all sources at once: personTimeline for named people, FUB
+  notes feed (calls/texts/emails/notes, 40 newest) + newest contacts, BlueBubbles chat/query latest threads, Gmail
+  search (Groq writes the query; mailer v4), Website Leads + Sign-Ins tabs, both calendars (7 days) → Groq answer.
+  Alerts that matter: client texts Groq marks important/escalate → notifyJulian (once per person per 2 h, even with
+  TEXT_ALERTS off); every real Vapi caller → notifyJulian with the summary.
 - Boss prompt has an "understand him like a human" section: casual/urban/voice-to-text phrasings mapped to actions
   (e.g. "who I ain't hit back" → unanswered, "bet"/"run it" → yes). Add new phrasings there when he reports a miss.
 - Nov 11 (later): boss commands parse more robustly (retry with short history; "yes please" repeats the offered action).
