@@ -2504,8 +2504,18 @@ Return JSON only: {"important": true if Julián should know about this soon (the
 function groqChat(key, model, messages) {
   const send = m => UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions', {method: 'post', contentType: 'application/json',
     muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
-    payload: JSON.stringify({model: m, messages: messages, temperature: 0.7, max_tokens: 400, response_format: {type: 'json_object'}})});
+    // gpt-oss models think before answering and that thinking counts toward max_tokens: keep it short and leave room,
+    // or the JSON gets cut off (Groq 400 "Failed to validate JSON").
+    payload: JSON.stringify(Object.assign({model: m, messages: messages, temperature: 0.7, max_tokens: 1500, response_format: {type: 'json_object'}},
+      /gpt-oss/.test(m) ? {reasoning_effort: 'low'} : {}))});
   let res = send(model);
+  if (res.getResponseCode() === 400 && /json_validate_failed|Failed to validate JSON/.test(res.getContentText())) {
+    try {  // the model's answer is usually still in "failed_generation": use it if it holds a JSON object
+      const fg = String((JSON.parse(res.getContentText()).error || {}).failed_generation || ''), j = fg.match(/\{[\s\S]*\}/);
+      if (j) { JSON.parse(j[0]); return j[0]; }
+    } catch (e) {}
+    res = send(model);  // otherwise just ask again once
+  }
   if (res.getResponseCode() === 404 || /model_not_found|decommissioned/.test(res.getContentText())) {
     const wasMain = model === (PropertiesService.getScriptProperties().getProperty('GROQ_MODEL') || ASSISTANT.model);
     model = groqPickModel(key);  // Groq retires models now and then: pick the best one this account has and remember it
