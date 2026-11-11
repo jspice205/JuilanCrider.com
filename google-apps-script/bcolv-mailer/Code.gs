@@ -33,7 +33,19 @@ function doPost(e) {
       .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), end: e.getEndTime().getTime(), description: e.getDescription()}));
     return out({ok: true, events: evs});
   }
-  if (d.action === 'version') return out({ok: true, version: 3});  // v2: attachments · v3: read inbox + reply/draft
+  if (d.action === 'version') return out({ok: true, version: 4});  // v2 attachments · v3 inbox + reply/draft · v4 search
+  if (d.action === 'search') {  // any Gmail search (read or unread, sent or received): the last few messages of each thread
+    const me = Session.getEffectiveUser().getEmail().toLowerCase(), list = [];
+    GmailApp.search(String(d.query || ''), 0, Math.min(Number(d.max) || 8, 20)).forEach(t => {
+      t.getMessages().slice(-3).forEach(m => {
+        const body = String(m.getPlainBody() || '').split(/\r?\n(?:On .{5,120}wrote:|-{2,} ?Original Message|From: )/)[0]
+          .split(/\r?\n/).filter(l => !/^>/.test(l)).join('\n').trim().slice(0, 1500);
+        list.push({threadId: t.getId(), id: m.getId(), from: m.getFrom(), to: m.getTo(), subject: m.getSubject(), date: m.getDate().getTime(),
+          fromMe: String(m.getFrom()).toLowerCase().indexOf(me) >= 0, body: body});
+      });
+    });
+    return out({ok: true, messages: list});
+  }
   if (d.action === 'inbox') {  // recent unread emails in the inbox that he didn't send, newest first (left unread)
     const me = Session.getEffectiveUser().getEmail().toLowerCase(), list = [];
     GmailApp.search('in:inbox is:unread newer_than:' + Math.min(Number(d.days) || 2, 7) + 'd', 0, Math.min(Number(d.max) || 20, 30)).forEach(t => {
