@@ -153,6 +153,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   search (Groq writes the query; mailer v4), Website Leads + Sign-Ins tabs, both calendars (7 days) → Groq answer.
   Alerts that matter: client texts Groq marks important/escalate → notifyJulian (once per person per 2 h, even with
   TEXT_ALERTS off); every real Vapi caller → notifyJulian with the summary.
+- Boss routing model (Nov 11): GROQ_ROUTER_MODEL (default openai/gpt-oss-20b, separate Groq rate bucket); main model is the
+  retry. "give me a minute" = Groq free-tier rate limits.
 - Boss reliability (Nov 11): routing prompt is slim (no SHAWNA_FACTS; last 12 history msgs ≤250 chars); groqChat waits and
   retries once on 429/5xx; if both routing tries fail she says "give me a minute…" once and throws so runBossCommand retries
   (3x). Boss action `agenda` (today/week): both calendars + FUB open tasks (tasks?assignedUserId&isCompleted=false) +
