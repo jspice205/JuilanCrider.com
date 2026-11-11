@@ -1268,7 +1268,10 @@ function instagramWebhook(e) {
   const name = clean(b.name) || [clean(b.first_name), clean(b.last_name)].filter(Boolean).join(' ');
   const email = clean(b.email), phone = clean(b.phone).replace(/[^\d+]/g, ''), ig = clean(b.ig_username).replace(/^@/, '');
   const said = clean(b.message || b.last_input), interest = clean(b.interest);
-  if (!validEmail(email) && phone.replace(/\D/g, '').length < 10) return json({status: 'need email or phone'});
+  // Shawna answers the DM (or comment) right away; ManyChat sends her "reply" back to them (map $.reply in the
+  // External Request's response). No email/phone yet: she still answers and works toward getting one.
+  const reply = said ? igReply(ig || name || 'instagram', said, name, clean(b.source) || 'dm') : '';
+  if (!validEmail(email) && phone.replace(/\D/g, '').length < 10) return json({status: 'ok', reply: reply});
   const textOk = /^(yes|true|1)$/i.test(clean(b.text_ok));
   const parts = name.split(/\s+/), first = parts[0] || 'there';
   const tags = ['Instagram DM'].concat(textOk ? ['Text OK'] : []);
@@ -1290,7 +1293,28 @@ function instagramWebhook(e) {
     }
     if (textOk && phone) { try { queueOpenHouseTexts(id, {name: name}, 'website'); } catch (err) {} }
   }
-  return json({status: 'ok', personId: id || null});
+  return json({status: 'ok', personId: id || null, reply: reply});
+}
+
+/** Shawna's Instagram reply (DM or comment), as Julián, remembering the last few messages with that account. */
+function igReply(handle, text, name, source) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
+  if (!key) return '';
+  const k = 'IG_' + String(handle).toLowerCase().replace(/[^a-z0-9_.]/g, '').slice(0, 40);
+  const hist = JSON.parse(props.getProperty(k) || '[]');
+  let out = {};
+  try {
+    out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: assistantPrompt(assistantName(), 'julian') + '\nTHIS IS INSTAGRAM' + (source === 'comment' ? ' (a reply to their comment, sent to them by DM)' : ' DM') +
+        '. Keep it short and natural for Instagram. Answer what they said, then when it fits, offer the next step: a quick call (juliancrider.com/?book), homes or a home value, and ask for the best email or number so you can send it. Never pushy.'},
+      {role: 'user', content: (name ? 'Their name: ' + name + '\n' : '') + (hist.length ? 'Conversation so far:\n' + hist.map(h => h.r + ': ' + h.t).join('\n') + '\n' : '') +
+        'They just ' + (source === 'comment' ? 'commented' : 'messaged') + ': "' + text + '"\n\nReply as JSON only.'}]));
+  } catch (e) { console.log('Instagram reply: ' + e.message); }
+  const reply = humanize(out.reply || '');
+  hist.push({r: 'Them', t: String(text).slice(0, 200)}); if (reply) hist.push({r: 'Julián', t: reply.slice(0, 200)});
+  props.setProperty(k, JSON.stringify(hist.slice(-8)));
+  if (reply) stat('igReplies');
+  return reply;
 }
 
 /** Run once: makes the Instagram key and prints what to paste into ManyChat's External Request. */
@@ -1299,7 +1323,8 @@ function setupInstagram() {
   if (!props.getProperty('IG_KEY')) props.setProperty('IG_KEY', 'ig-' + Utilities.getUuid().slice(0, 8));
   const url = ScriptApp.getService().getUrl() + '?ig=' + props.getProperty('IG_KEY');
   console.log('ManyChat → External Request → POST to:\n' + url + '\n\nBody (JSON), using ManyChat\'s "Add Full Contact Data"/fields:\n' +
-    '{"name": "{{full_name}}", "email": "{{email}}", "phone": "{{phone}}", "ig_username": "{{ig_username}}", "message": "{{last_input_text}}", "interest": "{{interest}}"}\n\n' +
+    '{"name": "{{full_name}}", "email": "{{email}}", "phone": "{{phone}}", "ig_username": "{{ig_username}}", "message": "{{last_input_text}}", "interest": "{{interest}}", "source": "dm"}\n\n' +
+    'In Response mapping, map $.reply to a custom field (e.g. shawna_reply) and send it as the next message. For comment automations use "source": "comment" and {{last_comment_text}} or the comment field.\n\n' +
     'Only add "text_ok": "yes" if your flow asked "Is it OK if I text you?" and they said yes.');
 }
 
