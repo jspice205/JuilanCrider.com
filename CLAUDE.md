@@ -153,7 +153,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   search (Groq writes the query; mailer v4), Website Leads + Sign-Ins tabs, both calendars (7 days) → Groq answer.
   Alerts that matter: client texts Groq marks important/escalate → notifyJulian (once per person per 2 h, even with
   TEXT_ALERTS off); every real Vapi caller → notifyJulian with the summary.
-- groqChat (Nov 11): max_tokens 1500 + reasoning_effort low for gpt-oss (thinking counts toward tokens; 400 cut off JSON);
+- groqChat(key, model, messages, {maxTokens, noPick}) (Nov 11): default max_tokens 900 (routing 700; Groq free tier counts
+  requested max_tokens against tokens-per-minute), waits Groq's "try again in Xs" up to 20 s; routing model 404 →
+  llama-3.1-8b-instant saved as GROQ_ROUTER_MODEL; "give me a minute (<reason>)" names the cause; ask/read context capped
+  at 12k/8k chars. Earlier: reasoning_effort low for gpt-oss (thinking counts toward tokens; 400 cut off JSON);
   on 400 json_validate_failed it uses error.failed_generation if it parses, else retries once.
 - Boss routing model (Nov 11): GROQ_ROUTER_MODEL (default openai/gpt-oss-20b, separate Groq rate bucket); main model is the
   retry. "give me a minute" = Groq free-tier rate limits.
