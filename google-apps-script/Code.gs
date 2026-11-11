@@ -2038,6 +2038,32 @@ function bbThread(phone) {
   return '';
 }
 
+/** Which Shawna Mailer version answers at BCOLV_MAILER_URL (0 = not reachable). Cached 10 minutes. */
+function mailerVersion() {
+  const c = CacheService.getScriptCache(), hit = c.get('MAILER_V');
+  if (hit) return Number(hit);
+  let v = 0;
+  try { const r = bcolvCall({action: 'version'}); v = r && r.version ? Number(r.version) : (r && r.error === 'denied' ? -1 : 1); } catch (e) {}
+  c.put('MAILER_V', String(v), 600);
+  return v;
+}
+function mailerProblem(v) {
+  return v === -1 ? 'The Shawna Mailer says the key doesn\'t match (BCOLV_MAILER_KEY).'
+    : v === 0 ? 'The Shawna Mailer isn\'t answering (check BCOLV_MAILER_URL).'
+    : 'The Shawna Mailer is still on an older version (' + v + '). In the Shawna Mailer: Deploy → Manage deployments → pencil → Version: New version → Deploy.';
+}
+
+/** Run by hand: checks that Shawna can read the bcolv inbox, and prints what she sees. */
+function testShawnaEmail() {
+  CacheService.getScriptCache().remove('MAILER_V');
+  const v = mailerVersion();
+  console.log('Shawna Mailer version: ' + v + (v >= 4 ? ' (good)' : ' — ' + mailerProblem(v)));
+  if (v >= 4) {
+    const r = bcolvCall({action: 'search', query: 'newer_than:3d -category:promotions', max: 5});
+    console.log((r.messages || []).map(m => (m.fromMe ? 'You → ' + m.to : m.from) + ' | ' + m.subject).join('\n') || 'No emails found in 3 days.');
+  }
+}
+
 /** Their emails with Julián over the last 2 weeks (read or unread, both directions), from julianc@bcolv.com via the
  *  Shawna Mailer v4. Oldest first. '' if the mailer is older or they have no email. */
 function emailHistory(emails, days) {
@@ -2521,7 +2547,6 @@ Examples (all mean the same as the action shown):
     }
     return {p: a.who ? addContact() : null, isNew: true};
   };
-  if (/^(ask|read|unanswered)$/.test(a.action)) { try { bbSend(boss, 'On it 👀 one sec.'); } catch (e) {} }  // he knows she heard him
   if (a.action === 'contact') {
     const p = addContact();
     if (!p) fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: 'Add contact: ' + text});
@@ -2622,7 +2647,8 @@ Examples (all mean the same as the action shown):
       const tl = personTimeline(person, phone);
       return {who: (person && person.name) || nm, tl: tl};
     });
-    if (blocks.every(b => !b.tl)) return say('I don\'t see texts, emails or calls with ' + names.join(', ') + ' in the last 2 weeks.');
+    const mv = mailerVersion(), mailNote = mv < 4 ? '\n\n(Heads up: I can\'t read your bcolv emails yet. ' + mailerProblem(mv) + ')' : '';
+    if (blocks.every(b => !b.tl)) return say('I don\'t see texts, emails or calls with ' + names.join(', ') + ' in the last 2 weeks.' + mailNote);
     let answer = '';
     try {
       const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
@@ -2631,7 +2657,7 @@ Examples (all mean the same as the action shown):
       answer = humanize(r.summary || '');
     } catch (e) {}
     if (!answer) answer = blocks.map(b => '• ' + b.who + '\n' + (b.tl ? b.tl.split('\n').filter(l => /Them|emailed|Call with/.test(l)).slice(-3).join('\n') : 'nothing in the last 2 weeks')).join('\n\n');
-    return say(answer + '\n\nWant me to answer any of them? Just tell me what to say.');
+    return say(answer + mailNote + '\n\nWant me to answer any of them? Just tell me what to say.');
   }
   if (a.action === 'unanswered') {
     const seen = {}, lines = [];
