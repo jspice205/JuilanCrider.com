@@ -254,7 +254,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Groq GROQ_WHISPER_MODEL, default whisper-large-v3-turbo; AUD_<guid> dedupe). From Julián/his business line: "Call
   with X.m4a" or >600 chars → call notes (name from the file name), else a spoken boss command. From clients: text
   becomes "(voice message) <words>" and flows as usual. iPhone voice bubbles are .caf; if Whisper rejects one, the client
-  text says it couldn't be played. Notes can't add transcripts or share audio automatically (no Shortcuts action).
+  text says it couldn't be played. A spoken request from Julián (BOSS_VOICE cache, 2 min) makes `say` also send a
+  voice memo of her answer (shawnaVoice, ElevenLabs) under the text. Notes can't add transcripts or share audio automatically (no Shortcuts action).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
