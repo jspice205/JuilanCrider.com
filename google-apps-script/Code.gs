@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-teamrecap';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-macwatch';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4494,7 +4494,34 @@ function syncCalendars() {
   props.setProperty('CALSYNC', json);
 }
 
+/** Every 5 min: is the texting Mac (BlueBubbles) reachable? When it's been down 10+ min, emails Julián (his own inbox, every
+ *  3 h at most) + ntfy push, since a text can't reach him while the Mac is off. Texts him once it's back (Nov 12). */
+function checkTextingMac() {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('BB_URL')) return;
+  let ok = true, why = '';
+  try { bbApi('ping'); } catch (e) { ok = false; why = String(e.message).slice(0, 200); }
+  const fails = ok ? 0 : Number(props.getProperty('BB_FAILS') || 0) + 1;
+  props.setProperty('BB_FAILS', String(fails));
+  if (ok) {
+    if (props.getProperty('BB_DOWN_SINCE')) {
+      props.deleteProperty('BB_DOWN_SINCE'); props.deleteProperty('BB_DOWN_ALERT');
+      try { bbSend(bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO')), 'I\'m back online 👋🏾 The texting Mac reconnected. If you texted me while I was down, send it again.'); } catch (e) {}
+    }
+    return;
+  }
+  if (fails < 2) return;
+  if (!props.getProperty('BB_DOWN_SINCE')) props.setProperty('BB_DOWN_SINCE', String(Date.now()));
+  if (Date.now() - Number(props.getProperty('BB_DOWN_ALERT') || 0) < 3 * 3600e3) return;
+  props.setProperty('BB_DOWN_ALERT', String(Date.now()));
+  const msg = 'Shawna can\'t reach the texting Mac, so she can\'t read or send texts right now.\n\nFix: on Mariel\'s MacBook, make sure it\'s awake and online, open BlueBubbles, and click Restart Server (or quit and reopen BlueBubbles). Shawna texts you "I\'m back online" as soon as it works.\n\nError: ' + why;
+  try { MailApp.sendEmail(NOTIFY_EMAIL, '⚠️ Shawna is offline: texting Mac not reachable', msg); } catch (e) {}
+  const topic = props.getProperty('NTFY_TOPIC');
+  if (topic) try { UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, headers: {Title: 'Shawna is offline'}, muteHttpExceptions: true}); } catch (e) {}
+}
+
 function remindUpcoming() {
+  try { checkTextingMac(); } catch (e) { console.log('Mac check: ' + e.message); }
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
   try { processPersonalEmailOutbox(); } catch (e) { console.log('Personal email: ' + e.message); }

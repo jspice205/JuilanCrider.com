@@ -306,6 +306,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   are also asked the recap question and always get the recap text (bbSend, no CRM). Shawna Log: one row per message
   (shawnaLogDone flips the "in" row to ok/error). Groq key is fine (223 calls/24h); silence = free-tier daily token cap
   on gpt-oss-120b; GEMINI_API_KEY backup saved by Julián Nov 12.
+  Mac watch (Nov 12, "Shawna not working": Shawna Log stopped getting rows = texts never reached the script):
+  `checkTextingMac` (remindUpcoming tick) pings BlueBubbles; down 10+ min → email NOTIFY_EMAIL + ntfy (every 3 h max);
+  back → texts him "I'm back online".
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
