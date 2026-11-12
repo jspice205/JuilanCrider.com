@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-personalmail';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-joeyfix2';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2872,8 +2872,30 @@ function assistantCancel(phone) {
 }
 
 /** Every minute: sends the replies Shawna was holding (backup mode) once Julián hasn't answered within the delay. */
+/** A text to Julián that must not get lost: if the texting Mac doesn't take it, it's retried every minute (6 h). */
+function bossTextSafe(msg) {
+  const props = PropertiesService.getScriptProperties(), boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  if (!boss) return false;
+  try { bbSend(boss, msg); return true; }
+  catch (e) {
+    console.log('Text to Julián failed, will retry: ' + e.message);
+    const q = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]'); q.push({m: String(msg).slice(0, 1500), at: Date.now()});
+    while (JSON.stringify(q).length > 8000) q.shift();
+    props.setProperty('BOSS_OUTBOX', JSON.stringify(q));
+    return false;
+  }
+}
+
 function processAssistantQueue() {
   const props = PropertiesService.getScriptProperties();
+  try {
+    const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 6 * 36e5);
+    if (out.length) {
+      const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || ''), left = [];
+      out.forEach((x, i) => { if (left.length) { left.push(x); return; } try { bbSend(boss, x.m); } catch (e) { left.push(x); } });
+      props.setProperty('BOSS_OUTBOX', JSON.stringify(left));
+    } else props.deleteProperty('BOSS_OUTBOX');
+  } catch (e) {}
   const retry = JSON.parse(props.getProperty('BOSS_RETRY') || '[]');
   if (retry.length) {
     const due = retry.filter(r => r.at <= Date.now()), later = retry.filter(r => r.at > Date.now());
@@ -2920,7 +2942,7 @@ function notifyJulian(title, msg, url, who) {
   const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
   const to = props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO');
   let sent = false;
-  if (to) { try { bbSend(to, title + '. ' + msg); sent = true; } catch (e) { console.log('Alert text: ' + e.message); } }
+  if (to) sent = bossTextSafe(title + '. ' + msg) || true;  // retried automatically if the Mac is asleep
   // Shawna remembers what she told him, so "what does the email say?" right after an alert knows who he means.
   if (sent) { bossMemory('assistant', title + '. ' + msg); if (who) props.setProperty('LAST_ALERT_WHO', String(who)); }
   if (topic) {
@@ -3112,7 +3134,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - If you just suggested an email reply and he says how to change it ("make it shorter", "add that I'm free Thursday", "say it like this: ..."), return action email for that same person with the updated "message".
 - email: he wants you to email someone or answer their email ("reply to Ruth", "email Ruth back and say..."). Write a short, warm email in his voice, plain paragraphs, no signature (it's signed automatically). If they emailed recently it goes as a reply in that same thread. If he asks you to answer their email, read it in your recent conversation or the data first so the reply fits what they said.
 - note: save a note on a contact. task: remind him to do something about a contact.
-- emails: who emailed him / unanswered emails. calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
+- emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
@@ -3140,8 +3162,8 @@ Examples (all mean the same as the action shown):
 "pull up Dan" / "what's up with Dan" / "who is Dan" → lookup; "remind me to call Dan" → task; "put Dan down for Thursday at 2" → schedule
 "you can talk to Kyle" / "Kyle's cool, you can text him" / "add Kyle to your list" → allow
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
-- jot: he wants something saved in one of HIS folders (his personal notebook, not a client's record): golf (swing thoughts, his game, practice, rounds), links (web links he sends you), socialpod (anything about SocialPod), personal (anything he just wants written down and remembered: "write this down", "note to self", "save this", "remember that I parked on level 3"). Put the folder in "folder" (golf, links, socialpod, personal, or a new folder name he gives like "recipes") and the note in "message", in his words.
-- notes: he wants to see or search a folder ("what are my swing thoughts", "show my golf notes", "what links did I save about mortgages", "what did I write about SocialPod"). "folder" = which one; "query" = his question if he asked one.
+- jot: he wants something saved in one of HIS folders (his personal notebook, not a client's record): meetings (notes from his weekly meetings with Joey or the team), listings (properties: coming available / coming soon, being renovated, active, pending, sold; one property per jot, e.g. "123 Main St coming soon in December"), golf (swing thoughts, his game, practice, rounds), links (web links he sends you), socialpod (anything about SocialPod), personal (anything he just wants written down and remembered: "write this down", "note to self", "save this", "remember that I parked on level 3"). Put the folder in "folder" (golf, links, socialpod, personal, or a new folder name he gives like "recipes") and the note in "message", in his words.
+- notes: he wants to see or search a folder ("what listings are coming available", "which ones are we renovating", "what did Joey and I cover last meeting", "what are my swing thoughts", "show my golf notes", "what links did I save about mortgages", "what did I write about SocialPod"). "folder" = which one; "query" = his question if he asked one.
 - remember: a business fact or preference for YOU to use when you work (how he likes things done, a fact about his business or a client). Put the fact in "message", written as a full sentence. Personal reminders and notes are jot, not remember.
 - callme: he wants you to phone him (e.g. "call me", "give me a call"). Put anything he wants to talk about in "message".
 - Never use dashes in anything you write.
@@ -3158,6 +3180,8 @@ Examples (all mean the same as the action shown):
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
   else if (/^\s*(save\s+(this|that)\s*(link)?\s*[:\-]?\s*)?https?:\/\/\S+\s*$/i.test(text)) a = {action: 'jot', folder: 'links', message: text};
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
+  else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
+  else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
   else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(note to self|personal( note)?|jot( this| that)?( down)?|write (this|that) down)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'personal', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(done|finished|complete|check off)\s*#?\d+([\s,&]+(and\s+)?#?\d+)*\s*[.!]*\s*$/i.test(text)) a = {action: 'taskdone', message: text.replace(/^\D+/, '')};  // "done 5": no AI needed
@@ -3566,9 +3590,23 @@ Examples (all mean the same as the action shown):
       const r = vapiCall(boss, a.message || '');
       return say(r.ok ? 'calling you now 📞' : 'I couldn\'t start the call: ' + r.error);
     }
-    if (a.action === 'emails') {
-      const w = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}'), list = Object.keys(w).map(k => w[k]).sort((x, y) => y.at - x.at).slice(0, 6);
-      return say(name + ': ' + (list.length ? 'recent emails from clients:\n' + list.map(x => '• ' + x.name + ' (' + Utilities.formatDate(new Date(x.at), 'America/Los_Angeles', 'EEE h:mm a') + ')').join('\n') : 'no new client emails in the last 2 days.'));
+    if (a.action === 'emails') {  // who wrote to him and what they said: one line each, no system mail, nothing he sent
+      let msgs = [];
+      try {
+        const r = bcolvCall({action: 'search', query: 'in:inbox newer_than:' + (/week|7/i.test(text) ? '7d' : '2d') + ' -from:me', max: 15});
+        msgs = ((r && r.messages) || []).filter(x => !x.fromMe && !/mailer-daemon|postmaster|no-?reply|notification|followupboss|google\.com|calendar/i.test(x.from) &&
+          !/delivery status|undeliverable|auto.?reply|out of office/i.test(x.subject || ''));
+      } catch (e) {}
+      const seen = {}; msgs = msgs.sort((x, y) => y.date - x.date).filter(x => { const k = String(x.from).toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; }).slice(0, 8);
+      if (!msgs.length) return say('no new emails from people in the last ' + (/week|7/i.test(text) ? 'week' : '2 days') + '.');
+      let lines = msgs.map(x => ({who: String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from, at: x.date, body: String(x.body || '').replace(/\s+/g, ' ').slice(0, 500)}));
+      try {
+        const sum = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+          {role: 'system', content: 'For each email, write what the person said in at most 12 plain words (no dashes). Return JSON {"s": ["...", "..."]} in the same order.'},
+          {role: 'user', content: lines.map((l, i) => (i + 1) + '. ' + l.who + ': ' + l.body).join('\n')}], {maxTokens: 600, noPick: true})).s || [];
+        lines = lines.map((l, i) => Object.assign(l, {said: sum[i] || ''}));
+      } catch (e) {}
+      return say('📧 emails:\n' + lines.map(l => '• ' + l.who + ' (' + Utilities.formatDate(new Date(l.at), 'America/Los_Angeles', 'EEE h:mm a') + '): ' + (l.said || l.body.slice(0, 90))).join('\n'));
     }
     if (a.action === 'calendar') return say(calendarText(agendaRange(String(a.message || '') + ' ' + text)));
     if (a.action === 'callnotes') {
@@ -3689,11 +3727,14 @@ const NOTE_FOLDERS = {
   golf: {name: 'Golf Notes', color: '#188038', headers: ['When', 'Note']},
   links: {name: 'Links', color: '#1A73E8', headers: ['When', 'Link', 'Title', 'Note']},
   socialpod: {name: 'SocialPod Notes', color: '#9334E6', headers: ['When', 'Note']},
-  personal: {name: 'Personal Notes', color: '#5F6368', headers: ['When', 'Note']}
+  personal: {name: 'Personal Notes', color: '#5F6368', headers: ['When', 'Note']},
+  meetings: {name: 'Meeting Notes', color: '#0B8043', headers: ['When', 'Note']},
+  listings: {name: 'Listings', color: '#B3261E', headers: ['When', 'Address', 'Status', 'Notes']}
 };
 function noteFolder(folder) {
   const k = String(folder || 'personal').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
-    .replace(/^social ?pod.*/, 'socialpod').replace(/^(golf|swing).*/, 'golf').replace(/^(links?|websites?|urls?)$/, 'links').replace(/^(personal|me|self|notes?)$/, 'personal');
+    .replace(/^social ?pod.*/, 'socialpod').replace(/^(golf|swing).*/, 'golf').replace(/^(links?|websites?|urls?)$/, 'links').replace(/^(personal|me|self|notes?)$/, 'personal')
+    .replace(/^(meetings?|meeting notes?|team meetings?|joey).*/, 'meetings').replace(/^(listings?|properties|inventory|coming soon|renovat\w*).*/, 'listings');
   if (NOTE_FOLDERS[k]) return NOTE_FOLDERS[k];
   const nm = k.replace(/\b\w/g, c => c.toUpperCase()).slice(0, 30) + ' Notes';
   return {name: nm, color: '#E37400', headers: ['When', 'Note']};
@@ -3701,6 +3742,20 @@ function noteFolder(folder) {
 /** Saves a note (or a link) into one of his folders. Returns a short confirmation. */
 function jotNote(folder, text) {
   const f = noteFolder(folder), sh = ensureTab(getSS(), f), when = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d/yyyy h:mm a');
+  if (f.name === 'Listings') {  // "123 Main St coming soon", "456 Oak renovating", "123 Main is active now"
+    const st = /renovat|rehab|fixing|construction|remodel/i.test(text) ? 'Renovating' : /coming|soon|upcoming|available soon|pocket|off.?market/i.test(text) ? 'Coming soon'
+      : /\bactive\b|listed|went live|on the market/i.test(text) ? 'Active' : /pending|under contract|escrow/i.test(text) ? 'Pending' : /sold|closed/i.test(text) ? 'Sold' : 'Coming soon';
+    const addr = (String(text).match(/\d{2,6}\s+[A-Za-z0-9 .'#-]{3,60}?(?=,|\s+(?:is|are|was|coming|renovat\w*|active|pending|sold|listed|status|in|by|for|done|will|should|needs?|going)\b|$)/i) || [''])[0].trim();
+    if (addr && sh.getLastRow() > 1) {  // already on the list: update its status
+      const vals = sh.getRange(2, 2, sh.getLastRow() - 1, 1).getDisplayValues();
+      for (let i = 0; i < vals.length; i++) if (vals[i][0] && vals[i][0].toLowerCase().indexOf(addr.toLowerCase().split(' ').slice(0, 2).join(' ')) === 0) {
+        sh.getRange(i + 2, 3).setValue(st); sh.getRange(i + 2, 4).setValue(cell(String(text).trim())); sh.getRange(i + 2, 1).setValue(when);
+        return 'updated ' + vals[i][0] + ' → ' + st + ' 🏠';
+      }
+    }
+    sh.appendRow([when, cell(addr || String(text).trim().slice(0, 80)), st, cell(String(text).trim())]);
+    return 'added to Listings (' + st + ') 🏠';
+  }
   if (f.name === 'Links') {
     const urls = String(text).match(/https?:\/\/[^\s<>"]+/g) || [];
     const note = String(text).replace(/https?:\/\/[^\s<>"]+/g, '').replace(/^\s*(save|saved|link|links?)\s*(this|that)?\s*(link)?\s*[:\-]?\s*/i, '').trim();
@@ -3927,6 +3982,15 @@ function vapiWebhook(e) {
     return json({results: (m.toolCallList || []).map(c => ({toolCallId: c.id, result: vapiLookup(caller)}))});
   }
   if (m.type !== 'end-of-call-report') return json({status: 'ok'});
+  try { return vapiEndOfCall(m, props); }
+  catch (err) {
+    console.log('Vapi call: ' + err.message);
+    const cnum = bbE164((((m.call || {}).customer) || {}).number || '');
+    try { notifyJulian('📞 A call came in', 'Shawna took a call' + (cnum ? ' from ' + cnum.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : '') + ' but I couldn\'t log it (' + String(err.message).slice(0, 90) + '). ' + String((m.analysis && m.analysis.summary) || m.summary || '').slice(0, 200)); } catch (e) {}
+    return json({status: 'error'});
+  }
+}
+function vapiEndOfCall(m, props) {
   const call = m.call || {}, num = bbE164(((call.customer || {}).number) || '');
   let summary = (m.analysis && m.analysis.summary) || m.summary || '';
   const transcript = String(m.transcript || (m.artifact && m.artifact.transcript) || '').slice(0, 6000);
@@ -3936,7 +4000,7 @@ function vapiWebhook(e) {
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
       const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly said yes when asked if they could get a text (a recap or confirmation). appointment: the date, time and type of any appointment that was actually booked on the call, else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
+        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly agreed to get a text: they said yes when asked, OR they asked to be texted themselves ("just text me", "text me the details"). appointment: the date, time and type of any appointment that was actually booked on the call, else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
         {role: 'user', content: transcript.slice(0, 5000)}]));
       if (!summary) summary = humanize(r.summary || '');
       callerName = String(r.name || '').trim();
@@ -4101,7 +4165,9 @@ IDENTITY AND STYLE
 
 PRIMARY GOAL: understand why they're calling, help them, qualify genuine buyers and sellers, collect contact details, and offer a call or showing with Julián.
 
-CONTACT DETAILS (one item at a time): their full name first (if you don't already have it), then what they're looking for, then their email. You already have their phone number from caller ID: never ask for it; instead confirm it once near the end ("Is the number you're calling from the best way to reach you?"). Read back the email and any scheduling details to confirm.
+CONTACT DETAILS (one item at a time): their full name first (if you don't already have it), then what they're looking for. Email is OPTIONAL: ask for it once, and only if they want things by email. If they say "just text me" or prefer text, never ask for email again: say "Perfect, I'll text you at this number" and move on. You already have their phone number from caller ID: never ask for it; confirm it once near the end.
+NEVER GET STUCK: ask for any detail (email, address, spelling) at most twice. If you still don't have it clearly, say "No problem, Julián will confirm that with you by text" and move on. Never repeat the same question three times.
+ADDRESSES: repeat it back once in plain words ("4775 West Teco Avenue, is that right?"). If they say it's wrong, ask them to say just the street name slowly, or to spell it. If it's still unclear, note it as "address to confirm" and keep going. Numbers: say each digit clearly.
 
 BUYERS (one at a time, conversationally, skip anything they already told you): what's prompting the move, when they'd like to move, areas or neighborhoods, price range, whether they're pre-approved or paying cash, whether they're working with a real estate agent, and where they live now. Don't interrogate.
 SELLERS (one at a time): the property address and their selling timeline, then their name and email if you don't have them. Julián can do a private home valuation (no listing agreement, nothing made public).
@@ -4126,7 +4192,7 @@ SAFETY, COMPLIANCE AND BOUNDARIES
 - If it's about an offer, a contract, a negotiation, commission, a complaint or anything urgent, say Julián will call them back today.
 - Collect only what's needed. No dashes of any kind in what you say.
 
-RECAP TEXT: near the end, ask once: "Would it be okay if I text you a quick recap${''} of our call${''}?" (mention the appointment details if one was booked). Only a clear yes counts; if they hesitate or say no, that's completely fine, don't text.
+RECAP TEXT: if they already asked to be texted, that's a yes, don't ask again. Otherwise, near the end, ask once: "Would it be okay if I text you a quick recap${''} of our call${''}?" (mention the appointment details if one was booked). Only a clear yes counts; if they hesitate or say no, that's completely fine, don't text.
 ENDING THE CALL: briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with. Only end the call after they say goodbye or clearly want to hang up. Always close warmly with "Have a wonderful rest of your day, and we'll speak with you soon." Never end with just "goodbye."`;
 }
 
@@ -4468,7 +4534,9 @@ function processEmailAssistant(list) {
     // Nothing new from them (a copy of Julián's own email, or just a signature): skip it.
     const newWords = String(m.body || '').replace(/juli[aá]n\s*crider|\(?702\)?[\s.-]*498[\s.-]*2571|sent from my \w+/gi, '').replace(/\s+/g, ' ').trim();
     if (newWords.length < 3) return;
-    if (!validEmail(addr) || /no-?reply|notification|mailer-daemon|postmaster|bcolv\.com|followupboss|zillow|realscout/i.test(addr)) return;
+    if (!validEmail(addr) || /no-?reply|notification|mailer-daemon|postmaster|bcolv\.com|followupboss|zillow|realscout|^info@|^support@|^hello@/i.test(addr)) return;
+    // Automatic replies are not people writing back (Nov 12: a cigar shop's "we will contact you in the order received").
+    if (/auto.?reply|automatic reply|out of (the )?office|thank you for (contacting|your (email|message|inquiry))|we (will|'ll) (contact|get back to) you|in the order (it|your email) was received|do not reply|this mailbox is not monitored/i.test(m.subject + ' ' + m.body)) return;
     const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,tags,stage,assignedUserId,phones&email=' + encodeURIComponent(addr), null, 'get').people || [])[0];
     if (!p || (p.assignedUserId && p.assignedUserId !== me)) return;
     const tags = p.tags || [];
@@ -4496,7 +4564,7 @@ function processEmailAssistant(list) {
       if (!r || !r.ok) { console.log('Email assistant: reply not sent for ' + addr + ': ' + ((r && r.error) || 'no answer')); return; }
       fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + subject, body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nReplied from julianc@bcolv.com:\n' + reply});
       const msg = '📧 ' + who + ' emailed you: ' + said + '\n\nI answered for you:\n"' + reply + '"';
-      if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
+      if (boss) { bossTextSafe(msg); bossMemory('assistant', msg); }
     } else {  // default: tell him what it says and what she'd send; YES sends it in the same thread, or he says what to change
       const pn = addPending({kind: 'email', personId: p.id, who: who, email: addr, subject: subject, message: reply, threadId: m.threadId, at: Date.now()});
       stat('emailsIn');
@@ -4504,7 +4572,7 @@ function processEmailAssistant(list) {
         (sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '')});
       const msg = '📧 ' + who + ' emailed you: ' + said + (sensitive ? '\n\n(Heads up: ' + (out.reason || 'this one needs you') + '.)' : '') +
         '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\n' + yesHint(pn) + ' to send it, or tell me what to change.';
-      if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) { console.log('Email brief: ' + e.message); return; } }
+      if (boss) { bossTextSafe(msg); bossMemory('assistant', msg); }
     }
     handled++;
   });
