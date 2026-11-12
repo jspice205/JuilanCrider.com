@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-threads';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-histlog';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1904,7 +1904,11 @@ function bbWebhook(e) {
       if (!sentByShawna && !group && to !== boss1 && /^\+1\d{10}$/.test(to)) {
         try {
           const fp = (fubFetch('people?limit=1&fields=id&phone=' + to.slice(2), null, 'get').people || [])[0];
-          if (fp) { rememberJulianText(to, data.text); detectMeeting(to, fp.id, data.text); }
+          if (fp) {
+            // Julián, Nov 12: his side of the conversation goes into Follow Up Boss too, so the history is complete.
+            try { fubFetch('notes', {personId: fp.id, subject: 'Text from Julián', body: String(data.text).slice(0, 2000)}); } catch (e) {}
+            rememberJulianText(to, data.text); detectMeeting(to, fp.id, data.text);
+          }
         } catch (e) { console.log('His text: ' + e.message); }
       }
     }
