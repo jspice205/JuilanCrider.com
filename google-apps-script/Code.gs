@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-calltext';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-vapiguard';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4256,12 +4256,15 @@ function syncVapiAssistant(force) {
   if (!key || !id || !props.getProperty('VAPI_KEY')) return 'Add VAPI_API_KEY and VAPI_ASSISTANT_ID in Script Properties first.';
   const prompt = vapiPrompt(), url = TEXTING.webApp + '?vapi=' + props.getProperty('VAPI_KEY');
   const hash = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, prompt + url + 'v4'));
-  if (!force && props.getProperty('VAPI_SYNC') === hash) return 'Vapi already up to date.';
   const api = (method, body) => UrlFetchApp.fetch('https://api.vapi.ai/assistant/' + id, {method: method, muteHttpExceptions: true,
     contentType: 'application/json', headers: {Authorization: 'Bearer ' + key}, payload: body ? JSON.stringify(body) : undefined});
   const cur = api('get');
   if (cur.getResponseCode() >= 300) throw new Error('Vapi ' + cur.getResponseCode() + ': ' + cur.getContentText().slice(0, 200));
   const a = JSON.parse(cur.getContentText()), model = Object.assign({}, a.model || {});
+  // Up to date only if Vapi really has today's prompt and the caller lookup: someone publishing an old dashboard draft
+  // (or changing the model) is put right within the hour. The model/provider he picks in Vapi is always kept.
+  const live = ((model.messages || [])[0] || {}).content === prompt && (model.tools || []).some(t => t.function && t.function.name === 'lookup_caller');
+  if (!force && live && props.getProperty('VAPI_SYNC') === hash) return 'Vapi already up to date.';
   model.messages = [{role: 'system', content: prompt}];
   model.tools = (model.tools || []).filter(t => !(t.function && t.function.name === 'lookup_caller')).concat([{
     type: 'function', async: false, server: {url: url}, messages: [],
