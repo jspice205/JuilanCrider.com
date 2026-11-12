@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-11-sawcall';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-11-fast';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1870,6 +1870,18 @@ function bbWebhook(e) {
     if (/^https?:\/\//.test(url)) props.setProperty('BB_URL', url);
     return json({status: 'ok'});
   }
+  // Julián texting his own business number (the "Send call to Shawna" shortcut on the business iPhone sends 2571 → 2571):
+  // call notes go to Shawna; anything else to himself is ignored. A note-to-self can arrive twice (sent + received).
+  if (ev.type === 'new-message' && data.text) {
+    const self = bbE164(String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim()) === TEXTING.myNumber;
+    if (self) {
+      if (CALL_NOTES_RE.test(String(data.text))) {
+        const c = CacheService.getScriptCache(), k = 'SELF_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(data.text).slice(0, 2000))).slice(0, 24);
+        if (!c.get(k)) { c.put(k, '1', 600); runBossCommand(stashCallNotes(String(data.text)), 0); }
+      }
+      return json({status: 'ok'});
+    }
+  }
   if (ev.type === 'new-message' && data.isFromMe) {  // Julián (or Shawna) texted: cancel any reply Shawna was holding
     const raw = String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim();
     const to = bbE164(raw) || (/@/.test(raw) ? raw.toLowerCase() : '');
@@ -2088,14 +2100,14 @@ function assistantReply(person, from, text) {
   const ok = reply && !out.escalate && !sensitive && n < Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12) && !muted;
   // Replies to someone who texted first may go until 10pm (ASSISTANT_END_HOUR); texts Julián starts stay 9am-9pm (TCPA).
   const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
-  if (mode === 'backup' && ok && hour >= 8 && hour < endHour && !invited) {  // hold it; send only if Julián hasn't replied in time
+  if (mode === 'backup' && ok && hour >= 8 && hour < endHour && !invited && props.getProperty('ASSISTANT_FAST') === 'off') {  // hold it; send only if Julián hasn't replied in time
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
     q[from] = {personId: person.id, reply: reply, next: out.next || '', due: Date.now() + delay * 6e4};
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
-  if (mode === 'auto' && ok && hour >= 8 && hour < endHour && !invited && props.getProperty('ASSISTANT_INSTANT') !== 'on') {
+  if (mode === 'auto' && ok && hour >= 8 && hour < endHour && !invited && props.getProperty('ASSISTANT_INSTANT') !== 'on' && props.getProperty('ASSISTANT_FAST') === 'off') {
     // Like a person (Julián's own texts to Shawna are still answered instantly). If Julián texts them himself in the
     // meantime, this reply is canceled.
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
@@ -2103,7 +2115,13 @@ function assistantReply(person, from, text) {
     props.setProperty('AI_PENDING', JSON.stringify(q));
     return true;
   }
-  const auto = (mode === 'auto' || invited) && ok && hour >= 8 && hour < endHour;
+  const auto = (mode === 'auto' || (mode === 'backup' && props.getProperty('ASSISTANT_FAST') !== 'off') || invited) && ok && hour >= 8 && hour < endHour;
+  // Julián, Nov 11: answer within about 10 seconds. A short human pause (3 to 8 s, shorter for short replies), then send,
+  // unless he jumped into the thread himself in the meantime.
+  if (auto && !invited && props.getProperty('ASSISTANT_INSTANT') !== 'on') {
+    Utilities.sleep(Math.round(Math.min(8, 3 + String(reply).length / 60 + Math.random() * 2) * 1000));
+    if (Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now()) return false;
+  }
   if (!auto) {
     fubFetch('notes', {personId: person.id, subject: name + ' draft', body: (reply ? 'Suggested reply:\n' + reply : 'No reply drafted.') +
       (out.escalate || sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '') + (out.next ? '\nNext step: ' + out.next : '')});
@@ -2128,7 +2146,7 @@ function humanDelay(theirText, reply, phone) {
   const lastOut = Number(PropertiesService.getScriptProperties().getProperty('AI_LAST_OUT_' + phone) || 0);
   const pace = Date.now() - lastOut < 3 * 6e4 ? 0.5 : 1;             // they answered within 3 min: keep the rhythm going
   const jitter = 0.7 + Math.random() * 0.6;
-  return Math.round(Math.min((read + type + think) * pace * jitter, 120));
+  return Math.round(Math.min((read + type + think) * pace * jitter, 10));  // Julián, Nov 11: never longer than 10 s
 }
 
 /** Today's (or this week's) calendar, numbered to-dos and what's waiting on Julián. Numbered tasks are remembered so he
@@ -3726,7 +3744,7 @@ SCHEDULING
 - First check calendar availability and offer a couple of options. Confirm the exact date, time, time zone, type of appointment, their name, email and the property or topic before creating the event.
 - Never say an appointment is booked unless the calendar tool succeeded. If scheduling can't be completed, get their preferred times and say Julián will follow up to confirm. They can also book themselves at juliancrider.com/?book.
 
-IF THEY ASK FOR JULIÁN: say he'll call them back shortly; confirm their name, email and the reason for the call. Don't transfer calls.
+IF THEY ASK FOR JULIÁN: say he'll call them back shortly; confirm their name, email and the reason for the call. Don't transfer calls. Then, in the meantime, offer to help yourself: "While you wait for Julián, I'm happy to answer any questions." Answer anything you can (how buying or selling works, loans in general, neighborhoods, today's average rates, how Julián works), so they leave the call with what they needed.
 
 INTEREST RATES AND LENDING: you can share today's averages: ${ratesText() || 'not available right now'} Never quote their own rate or payment: that depends on credit, down payment and loan type, so the right number comes from a lender. You can explain how loans and the buying or selling process work in plain words. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
 
