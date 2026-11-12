@@ -269,6 +269,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Own numbers (Nov 12): `isOwnNumber` (business 2571, personal 1382, Google Voice 1554, ALERT/TEST_TEXT_TO, OWN_NUMBERS)
   never count as "waiting on you" (textLog skips them; agenda/unanswered filter them); his own reply to someone marks
   their waiting texts read (`textLogAnswered`); approvals addressed to the business number itself are dropped.
+  "done N"/"do N" (Nov 12): handled without the router (regex fast path). Numbers come from his text; each is checked
+  against open FUB tasks; a number not on the current list (already done, or a stale list) → Shawna shows the real
+  open list, renumbered, instead of "which ones?". A view with no tasks never wipes AGENDA_TASKS.
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.

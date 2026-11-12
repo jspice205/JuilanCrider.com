@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-ownnums';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-donefix';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2349,7 +2349,7 @@ function todoText(range) {
     const old = tasks.filter(t => String(t.dueDate || '').slice(0, 10) < today).length;
     const list = tasks.slice(0, 10), names = {};
     list.forEach(t => { if (t.personId && !(t.personId in names)) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); names[t.personId] = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) { names[t.personId] = ''; } } });
-    props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, due: String(t.dueDate || '').slice(0, 10), name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
+    if (list.length) props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, due: String(t.dueDate || '').slice(0, 10), name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
     const label = range === 'week' ? 'this week' : range === 'tomorrow' ? 'tomorrow' : 'today';
     if (list.length) lines.push('✅ to do ' + label + ' (' + tasks.length + (old ? ', ' + old + ' past due' : '') + '):\n' +
       list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80) +
@@ -3154,6 +3154,8 @@ Examples (all mean the same as the action shown):
   if (!cnKey && cnWait && Date.now() - cnWait.at < 30 * 6e4 && text.length < 80 && !/\?/.test(text)) { cnKey = cnWait.key; cnWho = text.trim(); }
   if (cnKey) props.deleteProperty('CALLNOTES_WAIT');
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
+  else if (/^\s*(done|finished|complete|check off)\s*#?\d+([\s,&]+(and\s+)?#?\d+)*\s*[.!]*\s*$/i.test(text)) a = {action: 'taskdone', message: text.replace(/^\D+/, '')};  // "done 5": no AI needed
+  else if (/^\s*(do|start)\s*#?\d+\s*[.!]*\s*$/i.test(text)) a = {action: 'taskstart', message: text.replace(/^\D+/, '')};
   else if (cnKey) {
     const full = CacheService.getScriptCache().get(cnKey) || text;
     const d = callNotesParse(full);
@@ -3425,8 +3427,22 @@ Examples (all mean the same as the action shown):
   }
   if (a.action === 'taskdone' || a.action === 'taskstart') {
       const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
-      const saved = JSON.parse(props.getProperty('AGENDA_TASKS') || '[]'), arg = String(a.message || '').toLowerCase();
-      const nums = (arg.match(/\d+/g) || []).map(Number).filter(n => n >= 1 && n <= saved.length);
+      let saved = JSON.parse(props.getProperty('AGENDA_TASKS') || '[]');
+      const arg = String(a.message || '').toLowerCase();
+      const asked = ((arg.match(/\d+/g) || (/^\s*(done|do|finish|start|complete)\b/i.test(text) ? text.match(/\d+/g) : null)) || []).map(Number).filter(n => n >= 1 && n < 50);
+      // Still check each task is open; a number that's not on the list he's looking at → show him today's real list.
+      const stillOpen = (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=100&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || []);
+      const openIds = stillOpen.map(t => t.id);
+      saved = saved.filter(t => openIds.indexOf(t.id) >= 0 || asked.length);
+      if (asked.length && asked.some(n => n > saved.length || openIds.indexOf((saved[n - 1] || {}).id) < 0)) {
+        if (!stillOpen.length) return say('you\'re all clear: no open tasks in Follow Up Boss. ✅');
+        const fresh = stillOpen.slice(0, 10).map(t => ({id: t.id, personId: t.personId, due: String(t.dueDate || '').slice(0, 10), name: String(t.name || '').slice(0, 200), who: ''}));
+        fresh.forEach(t => { if (t.personId) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); t.who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {} } });
+        props.setProperty('AGENDA_TASKS', JSON.stringify(fresh));
+        return say('that number isn\'t on your list anymore (it may already be done). Here\'s what\'s open now:\n' +
+          fresh.map((t, i) => (i + 1) + '. ' + (t.who ? t.who + ': ' : '') + t.name.replace(/^\w+: /, '').slice(0, 70) + (t.due ? ' (' + t.due.slice(5) + ')' : '')).join('\n') + '\n\nText "done 1" (or the right number).');
+      }
+      const nums = asked.filter(n => n <= saved.length);
       let picks = nums.map(n => saved[n - 1]);
       if (!picks.length && a.who) picks = saved.filter(t => String(t.who + ' ' + t.name).toLowerCase().indexOf(String(a.who).toLowerCase().split(' ')[0]) >= 0).slice(0, 1);
       if (a.action === 'taskdone') {
