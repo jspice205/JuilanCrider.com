@@ -250,6 +250,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (AI_LASTME_) and never pitches calls/real estate; bbSend sends one message at a time per person (BUSY_ cache) so
   bubbles don't cross. Call notes: the shortcut can send "call notes <Notes title>\n<body>" after "Add Transcript to Note";
   "Call with X" titles become the name, phone-number titles the phone; the same notes twice are processed once (CNDONE_).
+  Audio (Nov 12): bbWebhook transcribes audio attachments (`transcribeAudio`: BlueBubbles attachment/<guid>/download →
+  Groq GROQ_WHISPER_MODEL, default whisper-large-v3-turbo; AUD_<guid> dedupe). From Julián/his business line: "Call
+  with X.m4a" or >600 chars → call notes (name from the file name), else a spoken boss command. From clients: text
+  becomes "(voice message) <words>" and flows as usual. iPhone voice bubbles are .caf; if Whisper rejects one, the client
+  text says it couldn't be played. Notes can't add transcripts or share audio automatically (no Shortcuts action).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.

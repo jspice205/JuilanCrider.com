@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-showing';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-audio';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1727,6 +1727,26 @@ function bbApi(path, body) {
 }
 
 /** Sends one iMessage (falls back to a green SMS for non-iPhones, if Text Message Forwarding is on). */
+/** Downloads an audio attachment from the texting Mac and turns it into text (Groq Whisper, free plan). */
+function transcribeAudio(att) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
+  if (!key || !att || !att.guid) return '';
+  const url = props.getProperty('BB_URL').replace(/\/+$/, '') + '/api/v1/attachment/' + encodeURIComponent(att.guid) + '/download?password=' + encodeURIComponent(props.getProperty('BB_PASSWORD'));
+  let res;
+  for (let i = 0; i < 3; i++) {  // a brand-new attachment can take a few seconds to finish arriving on the Mac
+    res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+    if (res.getResponseCode() < 300 && res.getBlob().getBytes().length > 1000) break;
+    Utilities.sleep(4000);
+  }
+  if (res.getResponseCode() >= 300) throw new Error('download ' + res.getResponseCode());
+  const name = String(att.transferName || 'audio.m4a').replace(/\.caf$/i, '.m4a');
+  const blob = res.getBlob().setName(name);
+  const r = UrlFetchApp.fetch('https://api.groq.com/openai/v1/audio/transcriptions', {method: 'post', muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
+    payload: {file: blob, model: props.getProperty('GROQ_WHISPER_MODEL') || 'whisper-large-v3-turbo', response_format: 'json'}});
+  if (r.getResponseCode() >= 300) throw new Error('Groq audio ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 200));
+  return String(JSON.parse(r.getContentText()).text || '').trim();
+}
+
 function bbSend(phone, text) {
   // One send at a time per person, so two of Shawna's messages never cross and arrive out of order (Nov 12).
   const busyKey = 'BUSY_' + String(phone).replace(/\D/g, '').slice(-10), cache = CacheService.getScriptCache();
@@ -1888,6 +1908,29 @@ function bbWebhook(e) {
     const url = typeof data === 'string' ? data : data.url || data.serverAddress || '';
     if (/^https?:\/\//.test(url)) props.setProperty('BB_URL', url);
     return json({status: 'ok'});
+  }
+  // AUDIO (Julián, Nov 12): Shawna listens. Voice messages and audio files (a call recording shared from Notes) are turned
+  // into text with Groq's free speech-to-text and handled like a text. From Julián (or his own business line): call
+  // notes, or a spoken request if it's short. From anyone else: their message, answered as usual.
+  if (ev.type === 'new-message') {
+    const att = (data.attachments || []).filter(a => /^audio\//i.test(a.mimeType || '') || /\.(m4a|mp3|wav|caf|aac|amr|ogg|opus|mp4)$/i.test(a.transferName || ''))[0];
+    const addr = bbE164(String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim());
+    const bossA = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || ''), selfA = addr === TEXTING.myNumber;
+    if (att && (!data.isFromMe || selfA)) {
+      const c = CacheService.getScriptCache(), dk = 'AUD_' + String(att.guid || att.transferName).slice(0, 80);
+      if (c.get(dk)) return json({status: 'ok'});  // the same audio can arrive twice (sent + received copies)
+      c.put(dk, '1', 6 * 3600);
+      let heard = '';
+      try { heard = transcribeAudio(att); } catch (err) { console.log('Audio: ' + err.message); }
+      if (addr === bossA || selfA) {
+        if (!heard) { try { notifyJulian('🎤 Shawna', 'I got your audio but couldn\'t listen to it (' + (att.transferName || 'audio') + '). Try sharing it as an m4a, or copy the transcript instead.'); } catch (err) {} return json({status: 'ok'}); }
+        const who = (String(att.transferName || '').match(/^call (?:with|from) (.+?)\.\w+$/i) || [])[1] || '';
+        const isCall = !!who || /^call/i.test(att.transferName || '') || heard.length > 600;
+        runBossCommand(stashCallNotes(isCall ? 'call notes ' + who + '\n' + heard : heard), 0);
+        return json({status: 'ok'});
+      }
+      data.text = heard ? '(voice message) ' + heard : '(they sent a voice message I could not play)';
+    }
   }
   // Julián texting his own business number (the "Send call to Shawna" shortcut on the business iPhone sends 2571 → 2571):
   // call notes go to Shawna; anything else to himself is ignored. A note-to-self can arrive twice (sent + received).
