@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-fullupdate';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-noprompts';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2197,7 +2197,7 @@ function detectMeeting(phone, personId, lastText) {
   }
   const n = addPending({kind: 'invite', personId: personId, who: who, phone: phone, title: humanize(r.title || 'Meeting with Julián'), start: start.getTime(), end: end.getTime(), location: r.location || ''});
   notifyJulian('📅 ' + who, (dup ? 'You already have ' : 'I put ') + humanize(r.title || 'your meeting') + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") +
-    (dup ? ' on your calendar.' : ' on your calendar from your texts.') + ' Want me to send ' + (p.firstName || who) + ' a tap-to-add calendar invite? ' + yesHint(n) + '.', '', who);
+    (dup ? ' on your calendar.' : ' on your calendar from your texts.') + ' Want me to send ' + (p.firstName || who) + ' a tap-to-add calendar invite? ' + yesHint(n), '', who);
 }
 
 /** Shawna writes Julián's reply to a client's text thread (he asked her to: "reply to Lisa", "handle it"). */
@@ -2355,12 +2355,12 @@ function todoText(range) {
     if (list.length) lines.push('✅ to do ' + label + ' (' + tasks.length + (old ? ', ' + old + ' past due' : '') + '):\n' +
       list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80) +
         (String(t.dueDate || '').slice(0, 10) > today ? ' (' + fmt(Utilities.parseDate(String(t.dueDate).slice(0, 10), 'America/Los_Angeles', 'yyyy-MM-dd'), 'EEE') + ')' : '')).join('\n') +
-      '\n\n"do 2" to start one, "done 2" to check it off' + (old ? ', "clear all" for everything past due' : '') + '.');
+      '');
     else lines.push('✅ nothing on your to-do list ' + label + '.');
   } catch (e) { lines.push('✅ I couldn\'t open your tasks just now.'); }
   try {
     const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && !x.read && !isOwnNumber(x.phone) && Date.now() - x.at < 2 * 864e5).length;
-    if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you ("who haven\'t I answered").');
+    if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you.');
     try {
       const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
       if (sh && sh.getLastRow() > 1) {
@@ -2369,7 +2369,7 @@ function todoText(range) {
       }
     } catch (e) {}
     const q = pendingQueue();
-    if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '\nReply "YES 2" or "NO 2" (or "no all").');
+    if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '');
   } catch (e) {}
   return lines.join('\n\n');
 }
@@ -2414,7 +2414,7 @@ function whatsNewText() {
       !/delivery status|undeliverable|auto.?reply|out of office/i.test(x.subject || ''))
       .sort((x, y) => y.date - x.date).filter(x => { const k = String(x.from).toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; }).slice(0, 6);
     if (mails.length) out.push('📧 unread emails:\n' + mails.map(x => '• ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + ': ' + String(x.subject || '(no subject)').slice(0, 70)).join('\n') +
-      '\n("emails" for what they said)');
+      '');
   } catch (e) {}
   return out.length ? out.join('\n\n') : '🔔 nothing new came in since your last update.';
 }
@@ -2447,7 +2447,9 @@ function pendingLabel(x) {
   return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
     : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
 }
-function yesHint(n) { return pendingQueue().length > 1 ? 'Reply YES ' + n : 'Reply YES'; }
+// No reply instructions in her texts (Julián, Nov 12: "this isn't 2020"): she asks like a person; "yes", "send it", "go" work.
+// With several approvals waiting, just the number so "yes to 2" is possible.
+function yesHint(n) { return pendingQueue().length > 1 ? '(#' + n + ')' : ''; }
 
 // ---------- Weekly numbers (for the Friday scorecard) ----------
 function weekKey() { return 'STAT_' + Utilities.formatDate(new Date(), 'America/Los_Angeles', "YYYY-'W'ww"); }
@@ -2471,7 +2473,7 @@ function suggestDeal(personId, signal, why) {
   const n = addPending({kind: 'deal', personId: personId, who: who, signal: signal, stageName: sg.label});
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   const msg = '🏠 Sounds like ' + who + ' ' + {offer: 'is making an offer', under_contract: 'is under contract', closed: 'closed', listing: 'wants to list'}[signal] +
-    (why ? ' (' + String(why).slice(0, 120) + ')' : '') + '. Want me to move their deal to ' + sg.label + ' in Follow Up Boss? ' + yesHint(n) + '.';
+    (why ? ' (' + String(why).slice(0, 120) + ')' : '') + '. Want me to move their deal to ' + sg.label + ' in Follow Up Boss? ' + yesHint(n);
   if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
 }
 function moveDeal(pend) {
@@ -3106,7 +3108,7 @@ function bossCommand(text, tries) {
   // A pending "send this text?" waiting for YES / NO
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   const queue = pendingQueue();
-  const ym = text.match(/^\s*(?:yes|y|yeah|yep|yup|send|send it|go|go ahead|ok|okay|bet|run it|do it|approved?)\s*(?:#|number|no\.)?\s*(\d)?\s*[.!👍🏾👍]*\s*$/i);
+  const ym = text.match(/^\s*(?:yes|y|yeah|yep|yup|sure|send|send it|go|go ahead|ok|okay|bet|run it|do it|do that|sounds good|perfect|approved?)(?:\s+please)?\s*(?:to|for)?\s*(?:#|number|no\.)?\s*(\d)?\s*[.!👍🏾👍]*\s*$/i);
   // "no all" / "cancel all": clear every approval that's waiting.
   if (/^\s*(no|cancel|clear|nah)\s+(them\s+)?all\s*(approvals?)?\s*[.!]*\s*$/i.test(text) && /^\s*(no|nah|cancel)|approval/i.test(text)) {
     const qn = pendingQueue().length; props.deleteProperty('BOSS_QUEUE'); props.deleteProperty('BOSS_PENDING');
@@ -3178,7 +3180,7 @@ function bossCommand(text, tries) {
       ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(pend.sendAt), pend.personId, cell(pend.who), 'scheduled', 'pending', 0, '', cell(pend.message)]);
       ensureTextQueueTrigger();
       fubFetch('notes', {personId: pend.personId, subject: 'Text scheduled', body: 'For ' + Utilities.formatDate(new Date(pend.sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + ':\n' + pend.message});
-      return say('scheduled ✅ ' + pend.who + ' gets it ' + Utilities.formatDate(new Date(pend.sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + '. Text "cancel the text to ' + String(pend.who).split(' ')[0] + '" to stop it.');
+      return say('scheduled ✅ ' + pend.who + ' gets it ' + Utilities.formatDate(new Date(pend.sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + '. Just tell me if you want to cancel it.');
     }
     props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
@@ -3386,7 +3388,7 @@ Examples (all mean the same as the action shown):
         if (pick) { threadId = pick.threadId; subject = /^re:/i.test(pick.subject) ? pick.subject : 'Re: ' + pick.subject; }
       } catch (e) {}
       addPending({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()});
-      return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body + '\n\nReply YES to send or NO to cancel.');
+      return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body);
     }
     if (a.action === 'voicememo') {
       if (!props.getProperty('ELEVENLABS_API_KEY') || !props.getProperty('ELEVENLABS_VOICE_ID')) return say('voice memos aren\'t connected yet. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID (Claude has the steps).');
@@ -3395,7 +3397,7 @@ Examples (all mean the same as the action shown):
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
       if (!phone) return say((p.name || a.who) + ' has no mobile number yet. Send me their number.');
       addPending({kind: 'voice', personId: p.id, who: p.name || a.who, phone: phone, message: humanize(a.message), at: Date.now()});
-      return say('send ' + (p.name || a.who) + ' a voice memo saying:\n\n"' + humanize(a.message) + '"\n\nReply YES to send or NO to cancel.');
+      return say('send ' + (p.name || a.who) + ' a voice memo saying:\n\n"' + humanize(a.message) + '"');
     }
     if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
       let {p, isNew} = resolvePerson();
@@ -3428,7 +3430,7 @@ Examples (all mean the same as the action shown):
         if (!a.message) return say('I couldn\'t write that one just now. Tell me what to say and I\'ll send it.');
       }
       const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
-      return say(name + ': ' + (sendAt ? 'schedule this for ' + p.name + ' on ' + whenTxt : 'send this to ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\n' + yesHint(n) + ' or NO to cancel.');
+      return say(name + ': ' + (sendAt ? 'schedule this for ' + p.name + ' on ' + whenTxt : 'send this to ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"' + (yesHint(n) ? '\n' + yesHint(n) : ''));
     }
     if (a.action === 'schedule') {
       const m = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
@@ -3546,7 +3548,7 @@ Examples (all mean the same as the action shown):
         fresh.forEach(t => { if (t.personId) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); t.who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {} } });
         props.setProperty('AGENDA_TASKS', JSON.stringify(fresh));
         return say('that number isn\'t on your list anymore (it may already be done). Here\'s what\'s open now:\n' +
-          fresh.map((t, i) => (i + 1) + '. ' + (t.who ? t.who + ': ' : '') + t.name.replace(/^\w+: /, '').slice(0, 70) + (t.due ? ' (' + t.due.slice(5) + ')' : '')).join('\n') + '\n\nText "done 1" (or the right number).');
+          fresh.map((t, i) => (i + 1) + '. ' + (t.who ? t.who + ': ' : '') + t.name.replace(/^\w+: /, '').slice(0, 70) + (t.due ? ' (' + t.due.slice(5) + ')' : '')).join('\n') + '\n\nWhich one did you mean?');
       }
       const nums = asked.filter(n => n <= saved.length);
       let picks = nums.map(n => saved[n - 1]);
@@ -3573,14 +3575,14 @@ Examples (all mean the same as the action shown):
           const lt = JSON.parse(props.getProperty('LAST_TASK') || 'null');
           if (lt && Date.now() - lt.at < 12 * 36e5) picks = [{id: lt.id}];
         }
-        if (!picks.length) return say('which ones? Text "done" with the numbers from my list, like "done 2" (or "clear all" for everything past due).');
+        if (!picks.length) return say('which ones are done?');
         let n = 0; picks.forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); n++; } catch (e) {} });
         return say('checked off ' + n + ' task' + (n === 1 ? '' : 's') + '. ✅');
       }
       const t = picks[0];
       if (t) props.setProperty('LAST_TASK', JSON.stringify({id: t.id, at: Date.now()}));
-      if (!t) return say('which one? Text "do" with the number from my list, like "do 2". Ask "what do I need to do today" to see the list.');
-      if (!t.personId) return say('that one isn\'t tied to a person: "' + t.name + '". Text "done ' + (saved.indexOf(t) + 1) + '" when it\'s handled.');
+      if (!t) return say('which one do you want to start?');
+      if (!t.personId) return say('that one isn\'t tied to a person: "' + t.name + '". Let me know when it\'s handled.');
       const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName,tags,phones,emails', null, 'get'), who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name;
       const phone = (pp.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0], tl = personTimeline(pp, phone);
       const isCall = /^call/i.test(t.name);
@@ -3591,12 +3593,12 @@ Examples (all mean the same as the action shown):
         const alt = humanize(r.text || '');
         if (alt && phone && (pp.tags || []).indexOf('Text Opt-Out') < 0) addPending({personId: pp.id, who: who, phone: phone, message: alt, at: Date.now(), taskId: t.id});
         return say('📞 ' + who + (phone ? ' ' + phone.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') : '') + '\n' + humanize(r.reply || '') +
-          (alt && phone ? '\n\nOr I can text them:\n"' + alt + '"\nReply YES to send it.' : '') + '\n\nText "done ' + (saved.indexOf(t) + 1) + '" after you talk.');
+          (alt && phone ? '\n\nOr I can text them:\n"' + alt + '"\nWant me to send it?' : '') + '\n\nLet me know when you\'ve talked and I\'ll check it off.');
       }
       const msg = humanize(r.reply || '');
-      if (!phone || !msg) return say('I couldn\'t draft that one (no number for ' + who + '). Text "done ' + (saved.indexOf(t) + 1) + '" when it\'s handled.');
+      if (!phone || !msg) return say('I couldn\'t draft that one (no number for ' + who + '). Let me know when it\'s handled.');
       addPending({personId: pp.id, who: who, phone: phone, message: msg, at: Date.now(), taskId: t.id});
-      return say('here\'s what I\'d text ' + who + ':\n\n"' + msg + '"\n\nReply YES to send it (I\'ll check the task off), or tell me what to change.');
+      return say('here\'s what I\'d text ' + who + ':\n\n"' + msg + '"\n\nWant me to send it? I\'ll check the task off.');
     }
     if (a.action === 'ask') {
       const question = a.message || text, ctx = [], clip = (x, n) => String(x || '').replace(/\s+/g, ' ').slice(0, n);
@@ -3716,15 +3718,14 @@ Examples (all mean the same as the action shown):
       const optOut = (p.tags || []).indexOf('Text Opt-Out') >= 0;
       if (d.text && phone && !optOut) {
         const n = addPending({personId: p.id, who: who, phone: phone, message: humanize(d.text), at: Date.now(), long: true});
-        out.push('\n💬 follow-up text (' + yesHint(n) + '):\n"' + humanize(d.text) + '"');
+        out.push('\n💬 want me to text them this?' + (yesHint(n) ? ' ' + yesHint(n) : '') + '\n"' + humanize(d.text) + '"');
       }
       let email = a.email;
       if (!email) { try { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; } catch (e) {} }
       if (d.emailBody && email && props.getProperty('BCOLV_MAILER_URL')) {
         const n = addPending({kind: 'email', personId: p.id, who: who, email: email, subject: humanize(d.emailSubject || 'Great talking with you'), message: humanize(d.emailBody), at: Date.now()});
-        out.push('\n📧 recap email (' + yesHint(n) + '):\nSubject: ' + humanize(d.emailSubject || 'Great talking with you') + '\n' + humanize(d.emailBody));
+        out.push('\n📧 and email them this recap?' + (yesHint(n) ? ' ' + yesHint(n) : '') + '\nSubject: ' + humanize(d.emailSubject || 'Great talking with you') + '\n' + humanize(d.emailBody));
       }
-      if (pendingQueue().length > 1) out.push('\nReply YES 1, YES 2… for each one, or tell me what to change.');
       return say(out.join('\n'));
     }
     if (a.action === 'tag') {
@@ -4201,7 +4202,7 @@ function vapiEndOfCall(m, props) {
         stat('booked');
       } else {
         const n = addPending({kind: 'event', personId: person.id, who: who2, title: title, start: start.getTime(), minutes: mins, phone: num});
-        notifyJulian('📅 Check this booking', assistantName() + ' told ' + who2 + ' they\'re set for ' + recapInfo.appt + ', but I don\'t see it on your calendar. Want me to add it? ' + yesHint(n) + '.');
+        notifyJulian('📅 Check this booking', assistantName() + ' told ' + who2 + ' they\'re set for ' + recapInfo.appt + ', but I don\'t see it on your calendar. Want me to add it? ' + yesHint(n));
       }
     }
     if (recapInfo && DEAL_SIGNALS[recapInfo.deal]) suggestDeal(person.id, recapInfo.deal, 'said on a call');
@@ -4754,7 +4755,7 @@ function processEmailAssistant(list) {
       fubFetch('notes', {personId: p.id, subject: name + ' suggested reply', body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nSuggested reply (waiting for Julián):\n' + reply +
         (sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '')});
       const msg = '📧 ' + who + ' emailed you: ' + said + (sensitive ? '\n\n(Heads up: ' + (out.reason || 'this one needs you') + '.)' : '') +
-        '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\n' + yesHint(pn) + ' to send it, or tell me what to change.';
+        '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\nWant me to send it? ' + yesHint(pn);
       if (boss) { bossTextSafe(msg); bossMemory('assistant', msg); }
     }
     handled++;
