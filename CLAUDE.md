@@ -302,6 +302,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   showings/dinners for Julián: what, day, time, place; no buyer questions, no email, no recap text). After a team call the
   requested appointment (summary appointment/appointmentISO now include requests) goes straight on his personal calendar
   and he gets "📞 <name> called" + summary + "📅 Added to your calendar". Nothing in FUB.
+  Team extras (Nov 12): TEAM_EXTRA in Code.gs = Kayleigh 702-985-4247 + Lily (Joey's assistant) 925-395-7855. Team callers
+  are also asked the recap question and always get the recap text (bbSend, no CRM). Shawna Log: one row per message
+  (shawnaLogDone flips the "in" row to ok/error). Groq key is fine (223 calls/24h); silence = free-tier daily token cap
+  on gpt-oss-120b; GEMINI_API_KEY backup saved by Julián Nov 12.
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
