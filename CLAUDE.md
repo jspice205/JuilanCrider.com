@@ -104,6 +104,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   status Received, plus one nudge after EMAIL_NUDGE_MIN (60) with no Sent reply; 7am-10pm. notifyJulian also texts his
   personal phone (ALERT_TEXT_TO, else TEST_TEXT_TO) from the business number, and tells him when Shawna answered for him. FUB hides email bodies,
   so answering emails would need a script inside the bcolv Google account.
+- Backup brain (Nov 12, "my Groq died"): when groqChat still fails after its retries/fallback, `backupBrain` asks Google
+  Gemini (OpenAI-compatible endpoint, GEMINI_API_KEY from aistudio.google.com via the Settings tab, GEMINI_MODEL default
+  gemini-2.5-flash). "give me a minute" now names a rejected key (401) or a used-up daily allowance.
 - Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
   (assistantKnowledge); humanize() strips dashes from everything she writes. Boss actions also: schedule (personal = his gmail
   calendar or business = bcolv calendar via the Shawna Mailer (bcolvCall action event/events; Boeckle's Workspace
