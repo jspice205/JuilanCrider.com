@@ -237,6 +237,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   router-invented emails/phones are scrubbed unless he typed them. `liveInfo` opens links (`pageText`, cached 1 h).
   His own texts to FUB contacts are logged as notes "Text from Julián" (Nov 12, his ask). Umar Tomlin 703 = his uncle:
   Trash + Deceased (Nov 12). Lisa Dragos: Onyx Crest walkthrough with Tom, Sat Nov 14 9:30am (FUB appointment 3102).
+  Calendar sync (Nov 12): `syncCalendars` (remindUpcoming tick, every 15 min) copies the next 30 days of bcolv calendar
+  events (mailer action events) and his FUB appointments onto his personal Google Calendar ("[synced by Shawna]" in the
+  description; CALSYNC map; skips ones already there; removes copies when the source moves/cancels). Synced copies get no
+  15-min client reminder texts.
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
