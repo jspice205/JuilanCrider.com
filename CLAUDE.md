@@ -272,6 +272,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "done N"/"do N" (Nov 12): handled without the router (regex fast path). Numbers come from his text; each is checked
   against open FUB tasks; a number not on the current list (already done, or a stale list) → Shawna shows the real
   open list, renumbered, instead of "which ones?". A view with no tasks never wipes AGENDA_TASKS.
+  Folders (Nov 12): Julián's personal notebooks as sheet tabs (NOTE_FOLDERS: Golf Notes, Links [When, Link, Title,
+  Note; title from og:title/<title>], SocialPod Notes, Personal Notes; any other name → "<Name> Notes"). Boss actions
+  `jot` (save) and `notes` (read latest 8 or answer a question over the folder with Groq). Fast paths: a bare link →
+  Links; "golf:/swing thought:", "socialpod:", "note to self:/personal:/jot:/write this down:" prefixes. `remember` stays
+  for business facts Shawna uses (Shawna Knowledge tab).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
