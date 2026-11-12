@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-audio';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-voicereply';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1926,7 +1926,9 @@ function bbWebhook(e) {
         if (!heard) { try { notifyJulian('🎤 Shawna', 'I got your audio but couldn\'t listen to it (' + (att.transferName || 'audio') + '). Try sharing it as an m4a, or copy the transcript instead.'); } catch (err) {} return json({status: 'ok'}); }
         const who = (String(att.transferName || '').match(/^call (?:with|from) (.+?)\.\w+$/i) || [])[1] || '';
         const isCall = !!who || /^call/i.test(att.transferName || '') || heard.length > 600;
+        if (!isCall) c.put('BOSS_VOICE', '1', 120);  // a spoken request: Shawna answers with a voice memo too
         runBossCommand(stashCallNotes(isCall ? 'call notes ' + who + '\n' + heard : heard), 0);
+        c.remove('BOSS_VOICE');
         return json({status: 'ok'});
       }
       data.text = heard ? '(voice message) ' + heard : '(they sent a voice message I could not play)';
@@ -2964,7 +2966,15 @@ const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['
 function bossCommand(text, tries) {
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
-  const say = msg => { const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t); return bbSend(boss, t); };
+  const say = msg => {
+    const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t);
+    const r = bbSend(boss, t);
+    // He talked to her with a voice message: she answers with a voice memo too (her ElevenLabs voice), after the text.
+    if (CacheService.getScriptCache().get('BOSS_VOICE') && props.getProperty('ELEVENLABS_API_KEY') && t.length < 700) {
+      try { Utilities.sleep(800); bbPostAttachment(boss, r && r.service, shawnaVoice(t.replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, '').replace(/\n+/g, '. '))); } catch (e) { console.log('Voice reply: ' + e.message); }
+    }
+    return r;
+  };
   bossMemory('user', text);
   // A pending "send this text?" waiting for YES / NO
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
