@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-voiceonly';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-ownnums';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1964,7 +1964,7 @@ function bbWebhook(e) {
         return json({status: 'ok'});
       }
       if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
-      if (!sentByShawna) props.setProperty('AI_LASTME_' + to, String(Date.now()));
+      if (!sentByShawna) { props.setProperty('AI_LASTME_' + to, String(Date.now())); textLogAnswered(to); }
       const boss1 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
       if (!sentByShawna && !group && to !== boss1 && /^\+1\d{10}$/.test(to)) {
         try {
@@ -2358,7 +2358,7 @@ function todoText(range) {
     else lines.push('✅ nothing on your to-do list ' + label + '.');
   } catch (e) { lines.push('✅ I couldn\'t open your tasks just now.'); }
   try {
-    const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && !x.read && Date.now() - x.at < 2 * 864e5).length;
+    const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && !x.read && !isOwnNumber(x.phone) && Date.now() - x.at < 2 * 864e5).length;
     if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you ("who haven\'t I answered").');
     try {
       const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
@@ -2381,7 +2381,7 @@ function agendaText(week) {
 
 // ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
 function pendingQueue() {
-  return JSON.parse(PropertiesService.getScriptProperties().getProperty('BOSS_QUEUE') || '[]').filter(x => Date.now() - x.at < 6 * 36e5);
+  return JSON.parse(PropertiesService.getScriptProperties().getProperty('BOSS_QUEUE') || '[]').filter(x => Date.now() - x.at < 6 * 36e5 && !(x.phone && bbE164(x.phone) === TEXTING.myNumber));
 }
 function addPending(item) {
   const props = PropertiesService.getScriptProperties();
@@ -3396,7 +3396,7 @@ Examples (all mean the same as the action shown):
     }
     if (a.action === 'unanswered') {
       const seen = {}, lines = [];
-      JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => Date.now() - x.at < 7 * 864e5).reverse().forEach(x => {
+      JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => Date.now() - x.at < 7 * 864e5 && !x.read && !isOwnNumber(x.phone)).reverse().forEach(x => {
         const ph = x.phone || '', k = ph || x.who;
         if (seen[k] || lines.length >= 8) return; seen[k] = 1;
         let who = x.who;
@@ -3700,7 +3700,24 @@ function bossMemory(role, text) {
 }
 
 /** Recent client texts and Shawna's replies (last 30, 3 days), so Julián can ask "who texted me?". */
+/** Julián's own numbers (business line, personal phone, test phone, plus OWN_NUMBERS): never "waiting on you". */
+function isOwnNumber(ph) {
+  const n = bbE164(ph || ''); if (!n) return false;
+  const p = PropertiesService.getScriptProperties();
+  return [TEXTING.myNumber, p.getProperty('ALERT_TEXT_TO'), p.getProperty('TEST_TEXT_TO'), '+17028751382', '+17024982571', '+17027631554']
+    .concat(String(p.getProperty('OWN_NUMBERS') || '').split(',')).map(x => bbE164(x || '')).indexOf(n) >= 0;
+}
+/** He answered someone himself: their texts stop counting as waiting on him. */
+function textLogAnswered(ph) {
+  try {
+    const props = PropertiesService.getScriptProperties(), n = bbE164(ph || ''), log = JSON.parse(props.getProperty('TEXT_LOG') || '[]');
+    let ch = false; log.forEach(x => { if (bbE164(x.phone || '') === n && !x.read && !x.reply) { x.read = 1; ch = true; } });
+    if (ch) props.setProperty('TEXT_LOG', JSON.stringify(log));
+  } catch (e) {}
+}
+
 function textLog(entry) {
+  if (entry && isOwnNumber(entry.phone)) return;
   try {
     const props = PropertiesService.getScriptProperties();
     const log = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => Date.now() - x.at < 3 * 864e5);
