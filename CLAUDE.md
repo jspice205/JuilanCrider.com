@@ -294,6 +294,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   in FUB; a matched/created contact that isn't Julián's (`isMine`: assignedUserId ≠ me or unreadable) gets a text only, no
   note/task; new phone leads are created with assignedUserId = Julián; createCallTask always assigns Julián. FUB users:
   Joey 1 (702-300-4349), Julián 2, Tana 3 (702-622-5232).
+  Team assistant (Nov 12, Julián: Shawna is his assistant for the team too): `teamDirectory` {phone: name} (FUB users except
+  Julián + TEAM_NUMBERS "7025551234 Joey, …"); vapiLookup tells Shawna "TEAM MEMBER: <name>" (take meetings/open houses/
+  showings/dinners for Julián: what, day, time, place; no buyer questions, no email, no recap text). After a team call the
+  requested appointment (summary appointment/appointmentISO now include requests) goes straight on his personal calendar
+  and he gets "📞 <name> called" + summary + "📅 Added to your calendar". Nothing in FUB.
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
