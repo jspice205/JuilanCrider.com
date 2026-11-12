@@ -279,6 +279,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   `jot` (save) and `notes` (read latest 8 or answer a question over the folder with Groq). Fast paths: a bare link →
   Links; "golf:/swing thought:", "socialpod:", "note to self:/personal:/jot:/write this down:" prefixes. `remember` stays
   for business facts Shawna uses (Shawna Knowledge tab).
+  Nov 12 (Joey test call): vapiWebhook → `vapiEndOfCall`; any error still texts Julián "📞 A call came in" + Vapi's summary.
+  Vapi prompt: email optional (asked once; "just text me" = never ask again, that's text consent), NEVER GET STUCK (any
+  detail at most twice, then "Julián will confirm by text"), addresses read back once then spelled/"address to confirm".
+  Summary textOk also true when the caller asked to be texted. `bossTextSafe`: texts to Julián that fail (Mac asleep)
+  go to BOSS_OUTBOX and processAssistantQueue retries every minute for 6 h (notifyJulian + email briefs use it). Email
+  assistant skips automatic replies (out of office, "thank you for contacting us", info@/support@); Victor Cohen 731's
+  wrong Partner tags removed. Boss `emails`: one line per person (inbox, last 2 days or week, no system mail, nothing he
+  sent) with a ≤12-word summary. Folders: Meeting Notes (weekly meetings with Joey) and Listings [When, Address, Status
+  (Coming soon / Renovating / Active / Pending / Sold), Notes]; jotting an address already listed updates its status;
+  prefixes "meeting:" and "listing:/coming soon:/renovating:".
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
