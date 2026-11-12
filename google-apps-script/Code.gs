@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-recapalways';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-teamrecap';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3816,11 +3816,11 @@ function runBossCommand(text, tries) {
   const lock = LockService.getScriptLock();
   try { lock.waitLock(20000); } catch (e) {}  // one of his messages at a time, so they don't trip over each other
   try {
-    shawnaLog('in', text, tries ? 'retry ' + tries : '');
+    var logRow = shawnaLog('in', text, tries ? 'retry ' + tries : '');
     bossCommand(text, tries);
-    shawnaLog('ok', text, '');
+    shawnaLogDone(logRow, 'ok', text, tries ? 'retry ' + tries : '');
   } catch (err) {
-    shawnaLog('error', text, err.message);
+    shawnaLogDone(logRow, 'error', text, err.message);
     const props = PropertiesService.getScriptProperties(), q = JSON.parse(props.getProperty('BOSS_RETRY') || '[]');
     if (tries < 3) { q.push({text: text, tries: tries + 1, at: Date.now() + 60000}); props.setProperty('BOSS_RETRY', JSON.stringify(q)); }
     else {
@@ -3834,9 +3834,22 @@ function runBossCommand(text, tries) {
 function shawnaLog(kind, text, detail) {
   try {
     const ss = getSS(), sh = ss.getSheetByName('Shawna Log') || ensureTab(ss, {name: 'Shawna Log', color: '#6B4FBB', headers: ['When', 'What', 'Message', 'Detail']});
-    sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm:ss a'), kind, cell(text.slice(0, 300)), cell(String(detail || '').slice(0, 300))]);
     if (sh.getLastRow() > 600) sh.deleteRows(2, 100);
+    sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm:ss a'), kind, cell(text.slice(0, 300)), cell(String(detail || '').slice(0, 300))]);
+    return sh.getLastRow();
+  } catch (e) { return 0; }
+}
+/** Marks the message's own "in" row done (one row per message instead of an "in" row plus an "ok" row). */
+function shawnaLogDone(row, kind, text, detail) {
+  try {
+    const sh = getSS().getSheetByName('Shawna Log');
+    if (row && sh && String(sh.getRange(row, 3).getValue()) === cell(text.slice(0, 300))) {
+      sh.getRange(row, 2).setValue(kind);
+      if (detail) sh.getRange(row, 4).setValue(cell(String(detail).slice(0, 300)));
+      return;
+    }
   } catch (e) {}
+  shawnaLog(kind, text, detail);
 }
 
 /** Shawna's short-term memory of her texts with Julián (last 16 messages, about the last day of back and forth). */
@@ -4014,18 +4027,20 @@ function vapiWebhook(e) {
   }
 }
 /** Phone numbers of everyone on the Follow Up Boss account (Joey, Tana…), cached 6 h. Calls from them are team calls. */
+// Team members who aren't Follow Up Boss users (Julián, Nov 12): Kayleigh on the team, Lily = Joey's assistant.
+const TEAM_EXTRA = '7029854247 Kayleigh, 9253957855 Lily';
 function teamNumbers() { return Object.keys(teamDirectory()); }
 /** {phone: name} for the team: Follow Up Boss users (not Julián) + TEAM_NUMBERS ("7025551234 Joey, 7025559876 Tana" or bare numbers). */
 function teamDirectory() {
-  const c = CacheService.getScriptCache(), hit = c.get('TEAM_DIR');
+  const c = CacheService.getScriptCache(), hit = c.get('TEAM_DIR2');
   if (hit) return JSON.parse(hit);
   const dir = {};
   try { (fubFetch('users?limit=50', null, 'get').users || []).forEach(u => { if (u.id === 2) return; [u.phone, u.mobilePhone, u.cellPhone].forEach(x => { const n = bbE164(x || ''); if (n) dir[n] = u.name; }); }); } catch (e) {}
-  String(PropertiesService.getScriptProperties().getProperty('TEAM_NUMBERS') || '').split(',').forEach(x => {
+  (TEAM_EXTRA + ',' + (PropertiesService.getScriptProperties().getProperty('TEAM_NUMBERS') || '')).split(',').forEach(x => {
     const n = bbE164((String(x).match(/[\d()+.\s-]{10,}/) || [''])[0]); if (!n) return;
     dir[n] = String(x).replace(/[\d()+.-]/g, '').trim() || dir[n] || 'a team member';
   });
-  c.put('TEAM_DIR', JSON.stringify(dir), 6 * 3600);
+  c.put('TEAM_DIR2', JSON.stringify(dir), 6 * 3600);
   return dir;
 }
 /** True only if this Follow Up Boss contact belongs to Julián (never write calls into Joey's or Tana's contacts). */
@@ -4071,7 +4086,17 @@ function vapiEndOfCall(m, props) {
         added = '\n📅 Added to your calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + '.';
       } catch (e) { added = '\n(I couldn\'t add it to your calendar: ' + String(e.message).slice(0, 80) + ')'; }
     }
-    notifyJulian('📞 ' + mate + ' called', String(summary || 'no summary').slice(0, 400) + added + (rec ? '\nRecording: ' + rec : ''), '', mate);
+    // Teammates always get the recap text (colleagues who called; Julián, Nov 12). Never logged in anyone's CRM.
+    let sentRecap = '';
+    if (recapInfo && (recapInfo.recap || recapInfo.appt)) {
+      try {
+        const first = String(mate).split(/[\s(]/)[0];
+        bbSend(num, 'Hi ' + first + ', it\'s ' + assistantName() + ', Julián\'s assistant 👋🏾 Thanks for calling! ' + (recapInfo.recap || '') +
+          (recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + ' I let Julián know.');
+        sentRecap = '\n💬 Recap texted to ' + first + '.';
+      } catch (e) { sentRecap = '\n(The recap text to ' + mate + ' didn\'t go: ' + String(e.message).slice(0, 60) + ')'; }
+    }
+    notifyJulian('📞 ' + mate + ' called', String(summary || 'no summary').slice(0, 400) + added + sentRecap + (rec ? '\nRecording: ' + rec : ''), '', mate);
     return json({status: 'team'});
   }
   let person = null;
@@ -4212,7 +4237,7 @@ function vapiLookup(num) {
     const props = PropertiesService.getScriptProperties();
     if (num === bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '')) return 'This is Julián himself calling to test you. Be relaxed and natural.';
     const mate = teamDirectory()[num];
-    if (mate) return 'TEAM MEMBER: ' + mate + ', on Julián\'s team (The DeBenedetto Team). Greet them by first name like a colleague. You are Julián\'s assistant: take whatever they need for Julián, like setting a team meeting, an open house, a showing, a dinner or a call. Get what it is, the day, the time and the place, read it back once, and tell them you\'ll put it on Julián\'s calendar and let him know right away. Don\'t qualify them as a buyer or seller, don\'t ask for email, don\'t offer the recap text.';
+    if (mate) return 'TEAM MEMBER: ' + mate + ', on Julián\'s team (The DeBenedetto Team). Greet them by first name like a colleague. You are Julián\'s assistant: take whatever they need for Julián, like setting a team meeting, an open house, a showing, a dinner or a call. Get what it is, the day, the time and the place, read it back once, and tell them you\'ll put it on Julián\'s calendar and let him know right away. Don\'t qualify them as a buyer or seller, don\'t ask for email. Before goodbye, ask the RECAP TEXT question like with anyone else (they get the recap by text).';
     const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,stage,tags,price&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
     if (!p) return 'New caller, not in Julián\'s contacts. Ask their name early.';
     const first = realFirst(p), tags = (p.tags || []).filter(t => /buyer|seller|relocation|luxury|open house|past client|hot|warm|agent|not now|pre-?approved/i.test(t));
@@ -4252,7 +4277,7 @@ SCHEDULING
 - First check calendar availability and offer a couple of options. Confirm the exact date, time, time zone, type of appointment, their name, email and the property or topic before creating the event.
 - Never say an appointment is booked unless the calendar tool succeeded. If scheduling can't be completed, get their preferred times and say Julián will follow up to confirm. They can also book themselves at juliancrider.com/?book.
 
-TEAM MEMBERS (the lookup says TEAM MEMBER, e.g. Joey or Tana): you are Julián's assistant for them too. Take the request (team meeting, open house, showing, dinner, call), get what, day, time and place, read it back once, and say "I'll put it on Julián's calendar and let him know right now." No buyer questions, no email.
+TEAM MEMBERS (the lookup says TEAM MEMBER, e.g. Joey or Tana): you are Julián's assistant for them too. Take the request (team meeting, open house, showing, dinner, call), get what, day, time and place, read it back once, and say "I'll put it on Julián's calendar and let him know right now." No buyer questions, no email. Then ask the RECAP TEXT question.
 IF THEY ASK FOR JULIÁN: say he'll call them back shortly; confirm their name, email and the reason for the call. Don't transfer calls. Then, in the meantime, offer to help yourself: "While you wait for Julián, I'm happy to answer any questions." Answer anything you can (how buying or selling works, loans in general, neighborhoods, today's average rates, how Julián works), so they leave the call with what they needed.
 
 INTEREST RATES AND LENDING: you can share today's averages: ${ratesText() || 'not available right now'} Never quote their own rate or payment: that depends on credit, down payment and loan type, so the right number comes from a lender. You can explain how loans and the buying or selling process work in plain words. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
@@ -4267,7 +4292,7 @@ SAFETY, COMPLIANCE AND BOUNDARIES
 - If it's about an offer, a contract, a negotiation, commission, a complaint or anything urgent, say Julián will call them back today.
 - Collect only what's needed. No dashes of any kind in what you say.
 
-RECAP TEXT (REQUIRED ON EVERY CALL, never skip it, except with a TEAM MEMBER): before you say goodbye, always ask: "Before you go, would it be okay if I text you a quick recap of our call?" (add "with your appointment details" if one was booked). Ask it even on short calls, even if they only left a message for Julián or asked for someone else, and even if the call wandered. If they already asked to be texted, that's a yes: just say "I'll text you a quick recap." The recap goes by text to the number they're calling from: never ask for their email or number for the recap. Only a clear yes counts; if they hesitate or say no, that's completely fine.
+RECAP TEXT (REQUIRED ON EVERY CALL, team members included, never skip it): before you say goodbye, always ask: "Before you go, would it be okay if I text you a quick recap of our call?" (add "with your appointment details" if one was booked). Ask it even on short calls, even if they only left a message for Julián or asked for someone else, and even if the call wandered. If they already asked to be texted, that's a yes: just say "I'll text you a quick recap." The recap goes by text to the number they're calling from: never ask for their email or number for the recap. Only a clear yes counts; if they hesitate or say no, that's completely fine.
 ENDING THE CALL: first ask the RECAP TEXT question if you haven't yet (it is required). Then briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with. Only end the call after they say goodbye or clearly want to hang up. Always close warmly with "Have a wonderful rest of your day, and we'll speak with you soon." Never end with just "goodbye."`;
 }
 
