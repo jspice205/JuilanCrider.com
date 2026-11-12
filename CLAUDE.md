@@ -262,6 +262,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   uses both (agendaText). "clear all"/"read all"/"delete all"/"clear everything" → past-due + today's tasks completed and
   waiting texts marked read (TEXT_LOG read flag); future tasks only one at a time; "no all"/"cancel all" empties the
   approvals queue; pendingLabel never says "undefined".
+  Voice in → voice only out (Nov 12): with BOSS_VOICE, `say` sends just the voice memo (text if ElevenLabs fails) and
+  keeps LAST_VOICE_TEXT; "transcript" / "text me that" / "text me back your voice memo" sends the written version.
+  Already done: "I already called Dan" / "Lisa's handled" → taskdone for that person (their tasks due today or earlier,
+  else their next one, even if not on the numbered list); "that's done" → LAST_TASK (the one "do N" started).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
