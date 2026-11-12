@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-todo';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-voiceonly';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2993,14 +2993,23 @@ function bossCommand(text, tries) {
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
   const say = msg => {
     const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t);
-    const r = bbSend(boss, t);
-    // He talked to her with a voice message: she answers with a voice memo too (her ElevenLabs voice), after the text.
-    if (CacheService.getScriptCache().get('BOSS_VOICE') && props.getProperty('ELEVENLABS_API_KEY') && t.length < 700) {
-      try { Utilities.sleep(800); bbPostAttachment(boss, r && r.service, shawnaVoice(t.replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, '').replace(/\n+/g, '. '))); } catch (e) { console.log('Voice reply: ' + e.message); }
+    // He talked to her with a voice message: she answers with a voice memo only (Julián, Nov 12). The written version is
+    // kept, so "transcript" / "text me that" sends it. If the voice can't be made, the text goes instead.
+    if (CacheService.getScriptCache().get('BOSS_VOICE') && props.getProperty('ELEVENLABS_API_KEY') && t.length < 900) {
+      try {
+        bbPostAttachment(boss, '', shawnaVoice(t.replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, '').replace(/\n+/g, '. ')));
+        props.setProperty('LAST_VOICE_TEXT', JSON.stringify({t: t, at: Date.now()}));
+        return {service: 'iMessage'};
+      } catch (e) { console.log('Voice reply: ' + e.message); }
     }
-    return r;
+    return bbSend(boss, t);
   };
   bossMemory('user', text);
+  // "transcript" / "text me that" after a voice-memo answer: the written version.
+  if (/^\s*(transcript|text( me)?( it| that| back)?( your)?( voice ?memo)?( back)?|type it( out)?|send (me )?the text|in text)\s*[.!?]*\s*$/i.test(text)) {
+    const lv = JSON.parse(props.getProperty('LAST_VOICE_TEXT') || 'null');
+    if (lv && Date.now() - lv.at < 12 * 36e5) return bbSend(boss, lv.t);
+  }
   // A pending "send this text?" waiting for YES / NO
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   const queue = pendingQueue();
@@ -3094,7 +3103,7 @@ Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his TO-DO list only (tasks, follow-ups, who's waiting on him): "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
 - unschedule: cancel a text he scheduled for later ("cancel the text to Lisa", "don't send Dan that message Friday"). Put the person in "who".
-- taskdone: he says tasks are done or wants them cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "clear the old tasks", "clear them all"). "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
+- taskdone: he says something is already done or wants tasks cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "I already texted Lisa back", "Dan's handled", "already took care of that", "that's done", "clear the old tasks", "clear them all"). Whenever he says he already did something, it's taskdone (with "who" if he names a person), never a new task or text. "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
 - taskstart: he wants to work a task from your to-do list ("do 2", "let's knock out number 3", "start the Sonia one", "handle 1"). "message": the number; "who": the person if he names one.
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
 - If he wants YOU to answer someone ("reply to Lisa", "you handle it", "answer her", "what should I say back", "write her back"), return action text with "draft": true and put any instructions he gave in "message" (or leave it empty); you will write the reply from the real conversation. If you just told him a client TEXTED, replying means a TEXT, never an email. Use email only when he says email or they emailed.
@@ -3428,11 +3437,26 @@ Examples (all mean the same as the action shown):
         }
         const future = picks.filter(t => t.due && t.due > today0);
         if (future.length > 1) picks = picks.filter(t => !(t.due && t.due > today0)).concat(future.slice(0, 1));  // future ones: one at a time
-        if (!picks.length) return say('which ones? Text "done" with the numbers from my list, like "done 2" (or "clear the old tasks").');
+        if (!picks.length && a.who) {  // "I already called Dan" / "Lisa's handled": that person's open tasks due today or earlier (else their next one)
+          const pw = findOne(a.who);
+          if (pw && pw.many) return say('which ' + a.who + '? ' + pw.many.map(x => x.name).join(', '));
+          if (pw) {
+            const open = (fubFetch('tasks?personId=' + pw.id + '&isCompleted=false&limit=20&sort=dueDate&fields=id,name,dueDate', null, 'get').tasks || []).map(t => ({id: t.id, name: t.name, due: String(t.dueDate || '').slice(0, 10)}));
+            picks = open.filter(t => t.due <= today0);
+            if (!picks.length && open.length) picks = open.slice(0, 1);
+            if (!picks.length) return say('I don\'t see an open task for ' + pw.name + '. Nothing to check off.');
+          }
+        }
+        if (!picks.length) {  // "done" / "that's done" right after she started one
+          const lt = JSON.parse(props.getProperty('LAST_TASK') || 'null');
+          if (lt && Date.now() - lt.at < 12 * 36e5) picks = [{id: lt.id}];
+        }
+        if (!picks.length) return say('which ones? Text "done" with the numbers from my list, like "done 2" (or "clear all" for everything past due).');
         let n = 0; picks.forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); n++; } catch (e) {} });
         return say('checked off ' + n + ' task' + (n === 1 ? '' : 's') + '. ✅');
       }
       const t = picks[0];
+      if (t) props.setProperty('LAST_TASK', JSON.stringify({id: t.id, at: Date.now()}));
       if (!t) return say('which one? Text "do" with the number from my list, like "do 2". Ask "what do I need to do today" to see the list.');
       if (!t.personId) return say('that one isn\'t tied to a person: "' + t.name + '". Text "done ' + (saved.indexOf(t) + 1) + '" when it\'s handled.');
       const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName,tags,phones,emails', null, 'get'), who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name;
