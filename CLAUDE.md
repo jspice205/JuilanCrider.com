@@ -316,6 +316,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   No prompts (Nov 12, Julián: "this isn't 2020"): Shawna's texts to him carry no reply instructions ("Reply YES",
   "do 2"/"done 2", "Text X to…"); she asks like a person ("Want me to send it?"); yesHint = "(#n)" only when several
   approvals wait. YES regex also takes sure/sounds good/perfect/do that/"yes please"/"yes to 2".
+  Email replies in the update (Nov 12: Ika Frogel 2029 replied 7:47am to the Re-Intro, missed while the Mac was down):
+  whatsNewText also lists FUB "Received" emails (sentByPerson) from people active since the last update, skipping
+  auto-replies (<2 min after a Sent one; Victor Cohen 731's 9:06 reply was 6 s after the Legacy email = auto-reply).
+  BOSS_OUTBOX keeps retrying alerts for 24 h.
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
