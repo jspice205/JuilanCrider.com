@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-voiceask';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-followthrough';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3291,6 +3291,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - allow: he wants you to be able to text or answer someone who's saved in his phone contacts (friends or clients he saved), e.g. "you can talk to Kyle Henry". Names in "who", comma separated.
 - If he answers "yes", "sure", "please do" or similar to something you just offered, return THAT action (e.g. read) with the same people. Never answer "yes" with chat.
 SEVERAL REQUESTS IN ONE TEXT: if he asks for more than one thing ("text Lisa back, remind me to call Dan tomorrow and what's my week look like"), return {"actions": [ {one object per request, same fields as above, in the order he said them} ]} with up to 5. One request = one object as usual.
+FOLLOW THE CONVERSATION LIKE A PERSON: read the recent messages before deciding. If he refers to someone you just talked about ("Ika", "him", "her", "that email", "reply back"), put that person's FULL name in "who" and keep the same topic (a reply to their email is an email action with that thread). Never ask for something he or you already said in the recent messages (a name, an email address, a number, which person). If you asked "which one?" and he answers with a name, do the original request for that person.
 BE A REAL ASSISTANT: understand every message the way a smart human assistant would, whatever the wording, slang, typos or voice-to-text. Never get stuck and never say you can't. If no action matches exactly, pick the one that gets him closest: ask (answer anything from his calendar, texts, emails, calls, Follow Up Boss, website), text or email (do it for him), agenda (his day or week), or claude (anything that needs something new built). If you need one missing detail, ask one short question in "reply" with action chat. If he asks for several things at once, do the most important one and say in "reply" what you'll do next.
 UNDERSTAND HIM LIKE A HUMAN WOULD: Julián texts fast, casual and sometimes urban, often by voice-to-text, with typos, slang and missing words. Figure out what he means, not the exact words, and pick the action. Never say you didn't understand if a reasonable person would get it; if it's truly unclear, ask one short question.
 Examples (all mean the same as the action shown):
@@ -3318,7 +3319,25 @@ Examples (all mean the same as the action shown):
   const cnWait = JSON.parse(props.getProperty('CALLNOTES_WAIT') || 'null');
   if (!cnKey && cnWait && Date.now() - cnWait.at < 30 * 6e4 && text.length < 80 && !/\?/.test(text)) { cnKey = cnWait.key; cnWho = text.trim(); }
   if (cnKey) props.deleteProperty('CALLNOTES_WAIT');
+  // She asked "which Ika do you mean, Ika Frogel or Tamika O'neal?": his short answer picks one and the same request
+  // carries on, so he never has to repeat it (Nov 12).
+  let pickA = null;
+  const pickW = JSON.parse(props.getProperty('PICK_WAIT') || 'null');
+  if (!calPick && pickW && Date.now() - pickW.at < 30 * 6e4 && text.length < 140) {
+    const low = text.toLowerCase(), clean = w => String(w).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const nm = (low.match(/\b(first|1st|one|second|2nd|two|third|3rd|three)\b|^\s*#?([1-5])\s*$/) || []);
+    const idx = nm[2] ? Number(nm[2]) - 1 : nm[1] ? ({first: 0, '1st': 0, one: 0, second: 1, '2nd': 1, two: 1, third: 2, '3rd': 2, three: 2})[nm[1]] : -1;
+    let hit = idx >= 0 ? pickW.opts[idx] : null;
+    if (!hit) {
+      const words = low.split(/[^a-z0-9']+/).map(clean).filter(w => w.length > 1);
+      const m = pickW.opts.map(o => ({o: o, n: String(o.name).split(/\s+/).map(clean).filter(w => w.length > 1 && words.indexOf(w) >= 0).length})).filter(x => x.n);
+      const best = m.sort((x, y) => y.n - x.n);
+      if (best.length && (best.length === 1 || best[0].n > best[1].n)) hit = best[0].o;
+    }
+    if (hit) { pickA = Object.assign(pickW.a, {who: hit.name, personId: hit.id}); props.deleteProperty('PICK_WAIT'); }
+  }
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
+  else if (pickA) a = pickA;
   else if (/^\s*(save\s+(this|that)\s*(link)?\s*[:\-]?\s*)?https?:\/\/\S+\s*$/i.test(text)) a = {action: 'jot', folder: 'links', message: text};
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -3369,7 +3388,7 @@ Examples (all mean the same as the action shown):
     }
   }
   // The router sometimes invents an email (lisa.dragos@example.com) or phone: keep only ones he actually typed.
-  if (!cnKey && !calPick && a) {
+  if (!cnKey && !calPick && !pickA && a) {
     const digits = text.replace(/\D/g, ''), low = text.toLowerCase();
     (Array.isArray(a.actions) ? a.actions : [a]).forEach(x => {
       if (!x) return;
@@ -3379,7 +3398,24 @@ Examples (all mean the same as the action shown):
   }
   // Several requests in one text ("text Lisa, remind me to call Dan and what's my week look like"): do each in order.
   const doAction = a => {
+    // "email him", "text her back", or no name at all right after talking about someone: that person (Nov 12).
+    const lpp = JSON.parse(props.getProperty('LAST_PERSON') || 'null');
+    if (lpp && Date.now() - lpp.at < 3 * 36e5 && (/^(him|her|them|they|he|she|that person|same person)$/i.test(String(a.who || '').trim()) ||
+        (!a.who && !a.phone && /^(email|text|voicememo|note|task|tag|lookup|read|taskdone)$/.test(a.action || '')))) { a.who = lpp.name; a.personId = lpp.id; }
+    const askWhich = many => {
+      const opts = many.slice(0, 5).map(x => ({id: x.id, name: x.name}));
+      props.setProperty('PICK_WAIT', JSON.stringify({a: a, opts: opts, at: Date.now()}));
+      const names = opts.map(o => o.name);
+      return say('which ' + (a.who ? String(a.who).split(' ')[0] : 'one') + ' do you mean, ' + (names.length > 1 ? names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1] : names[0]) + '?');
+    };
     const findOne = who => {
+      const fields = 'id,name,firstName,lastName,tags,phones,created';
+      if (a.personId && String(who || '') === String(a.who || '')) { try { return fubFetch('people/' + a.personId + '?fields=' + fields, null, 'get'); } catch (e) {} }
+      const r = findOneRaw(who);
+      if (r && !r.many) props.setProperty('LAST_PERSON', JSON.stringify({id: r.id, name: r.name, at: Date.now()}));
+      return r;
+    };
+    const findOneRaw = who => {
       const q = String(who || '').trim(), get = term => fubFetch('people?limit=8&fields=id,name,firstName,lastName,tags,phones,created&q=' + encodeURIComponent(term), null, 'get').people || [];
       let ppl = q ? get(q) : [];
       if (!ppl.length && q.split(/\s+/).length > 1) {  // "Lily Montenegro" → search the last name, keep first names that start the same
@@ -3388,6 +3424,17 @@ Examples (all mean the same as the action shown):
       }
       const exact = ppl.filter(p => (p.name || '').toLowerCase() === q.toLowerCase());
       if (exact.length) return exact.sort((x, y) => String(x.created).localeCompare(String(y.created)))[0];  // oldest = the real one
+      // "Ika" means a name that starts with Ika, not Tamika: keep whole-word matches when there are any.
+      if (ppl.length > 1) {
+        const qw = q.toLowerCase().split(/\s+/).filter(Boolean);
+        const whole = ppl.filter(p => qw.every(w => String(p.name || '').toLowerCase().split(/[\s'-]+/).some(n => n.indexOf(w) === 0)));
+        if (whole.length) ppl = whole;
+      }
+      if (ppl.length > 1) {  // the person they were just talking about
+        const lp = JSON.parse(props.getProperty('LAST_PERSON') || 'null');
+        const hit = lp && Date.now() - lp.at < 3 * 36e5 && ppl.filter(x => x.id === lp.id)[0];
+        if (hit) return hit;
+      }
       if (ppl.length > 1) {  // "Lisa" right after "Lisa needs you": the Lisa she just told him about
         const la = JSON.parse(props.getProperty('LAST_ALERT_ID') || 'null');
         const hit = la && Date.now() - la.at < 12 * 36e5 && ppl.filter(x => x.id === la.id)[0];
@@ -3440,7 +3487,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'email') {
       if (!PropertiesService.getScriptProperties().getProperty('BCOLV_MAILER_URL')) return say('email isn\'t connected yet. Set up the bcolv mailer first (Claude has the steps).');
       const {p} = resolvePerson();
-      if (!p || p.many) return say(p && p.many ? 'which one? ' + p.many.map(x => x.name).join(', ') : 'who should I email? Send me their name and email.');
+      if (!p || p.many) return p && p.many ? askWhich(p.many) : say('who should I email?');
       let email = a.email;
       if (!email) { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; }
       if (!email) return say((p.name || a.who) + ' has no email yet. Send me their email and I\'ll write it.');
@@ -3461,7 +3508,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'voicememo') {
       if (!props.getProperty('ELEVENLABS_API_KEY') || !props.getProperty('ELEVENLABS_VOICE_ID')) return say('voice memos aren\'t connected yet. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID (Claude has the steps).');
       const {p} = resolvePerson();
-      if (!p || p.many) return say(p && p.many ? 'which one? ' + p.many.map(x => x.name).join(', ') : 'who should get the voice memo? Send me their name and number.');
+      if (!p || p.many) return p && p.many ? askWhich(p.many) : say('who should get the voice memo?');
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
       if (!phone) return say((p.name || a.who) + ' has no mobile number yet. Send me their number.');
       addPending({kind: 'voice', personId: p.id, who: p.name || a.who, phone: phone, message: humanize(a.message), at: Date.now()});
@@ -3474,7 +3521,7 @@ Examples (all mean the same as the action shown):
         return say('I couldn\'t find or add "' + (a.who || '?') + '", so I passed it to Claude.');
       }
       if (isNew && a.action !== 'text') say('(' + a.who + ' wasn\'t in Follow Up Boss, so I added them.)');
-      if (p.many) return say(name + ': which one? ' + p.many.map(x => x.name).join(', '));
+      if (p.many) return askWhich(p.many);
       if (a.action === 'note') { fubFetch('notes', {personId: p.id, subject: 'Note from Julián', body: a.message}); return say(name + ': note saved on ' + p.name + '.'); }
       if (a.action === 'task') {  // a reminder on the day he said ("Friday", "next week"), else today
         const wm = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})/), due = wm ? wm[1] : Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
@@ -3527,7 +3574,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'lookup') {
       const p = findOne(a.who);
       if (!p) return say('I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
-      if (p.many) return say('which one? ' + p.many.map(x => x.name).join(', '));
+      if (p.many) return askWhich(p.many);
       const full = fubFetch('people/' + p.id + '?fields=id,name,stage,tags,source,phones,emails,lastActivity', null, 'get');
       const notes = (fubFetch('notes?personId=' + p.id + '&limit=3', null, 'get').notes || []).map(n => '• ' + (n.subject ? n.subject + ': ' : '') + String(n.body || '').replace(/<[^>]+>/g, ' ').slice(0, 120)).join('\n');
       return say(full.name + ' (' + (full.stage || 'Lead') + (full.source ? ', ' + full.source : '') + ')\n' + [((full.phones || [])[0] || {}).value, ((full.emails || [])[0] || {}).value].filter(Boolean).join(' · ') +
@@ -3799,7 +3846,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'tag') {
       const p = findOne(a.who);
       if (!p) return say('I couldn\'t find "' + (a.who || '?') + '" in Follow Up Boss.');
-      if (p.many) return say('which one? ' + p.many.map(x => x.name).join(', '));
+      if (p.many) return askWhich(p.many);
       const m = String(a.message || ''), cut = m.split(/remove:/i);
       const clean = x => String(x || '').split(/\s*,\s*/).map(t => t.trim()).filter(Boolean);
       const add = clean(cut[0]), remove = clean(cut[1]).map(t => t.toLowerCase());
