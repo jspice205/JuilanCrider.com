@@ -289,6 +289,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   sent) with a ≤12-word summary. Folders: Meeting Notes (weekly meetings with Joey) and Listings [When, Address, Status
   (Coming soon / Renovating / Active / Pending / Sold), Notes]; jotting an address already listed updates its status;
   prefixes "meeting:" and "listing:/coming soon:/renovating:".
+  Team calls (Nov 12, Joey's test call landed in Joey's FUB and no alert came): vapiEndOfCall → callers whose number is a
+  FUB user's (`teamNumbers`: users API phones + TEAM_NUMBERS setting, cached 6 h) get only a "📞 Team call" text, nothing
+  in FUB; a matched/created contact that isn't Julián's (`isMine`: assignedUserId ≠ me or unreadable) gets a text only, no
+  note/task; new phone leads are created with assignedUserId = Julián; createCallTask always assigns Julián. FUB users:
+  Joey 1 (702-300-4349), Julián 2, Tana 3 (702-622-5232).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.

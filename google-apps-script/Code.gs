@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-joeyfix2';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-teamcalls';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -483,7 +483,8 @@ function fubSource(tabName, d) { return tabName === 'Sign-Ins' && !/Signed up: o
 function createCallTask(personId, reason, type) {
   type = type || 'Call';  // 'Email' for contacts whose phone isn't DNC-checked
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
-  return fubFetch('tasks', {personId: personId, type: type, name: (type + ': ' + reason).slice(0, 250), dueDate: today});
+  const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+  return fubFetch('tasks', {personId: personId, assignedUserId: me, type: type, name: (type + ': ' + reason).slice(0, 250), dueDate: today});
 }
 
 function fubPerson(tabName, d) {
@@ -3990,6 +3991,25 @@ function vapiWebhook(e) {
     return json({status: 'error'});
   }
 }
+/** Phone numbers of everyone on the Follow Up Boss account (Joey, Tana…), cached 6 h. Calls from them are team calls. */
+function teamNumbers() {
+  const c = CacheService.getScriptCache(), hit = c.get('TEAM_NUMS');
+  if (hit) return JSON.parse(hit);
+  let nums = [];
+  try { (fubFetch('users?limit=50', null, 'get').users || []).forEach(u => [u.phone, u.mobilePhone, u.cellPhone, u.workPhone].forEach(x => { const n = bbE164(x || ''); if (n) nums.push(n); })); } catch (e) {}
+  nums = nums.concat(String(PropertiesService.getScriptProperties().getProperty('TEAM_NUMBERS') || '').split(',').map(x => bbE164(x || '')).filter(Boolean));
+  c.put('TEAM_NUMS', JSON.stringify(nums), 6 * 3600);
+  return nums;
+}
+/** True only if this Follow Up Boss contact belongs to Julián (never write calls into Joey's or Tana's contacts). */
+function isMine(personId) {
+  try {
+    const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+    const p = fubFetch('people/' + personId + '?fields=id,assignedUserId', null, 'get');
+    return !p.assignedUserId || p.assignedUserId === me;
+  } catch (e) { return false; }  // can't even read it: it's someone else's
+}
+
 function vapiEndOfCall(m, props) {
   const call = m.call || {}, num = bbE164(((call.customer || {}).number) || '');
   let summary = (m.analysis && m.analysis.summary) || m.summary || '';
@@ -4009,6 +4029,11 @@ function vapiEndOfCall(m, props) {
     } catch (e) {}
   }
   const boss0 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  const fmtNum = n => n ? n.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'an unknown number';
+  if (num && num !== boss0 && teamNumbers().indexOf(num) >= 0) {  // Joey / Tana: a team call, never a lead in anyone's CRM
+    notifyJulian('📞 Team call: ' + (callerName || fmtNum(num)), String(summary || 'no summary').slice(0, 400) + (rec ? '\nRecording: ' + rec : '') + '\n(Team member, so nothing was added to Follow Up Boss.)');
+    return json({status: 'team'});
+  }
   let person = null;
   if (num) person = (fubFetch('people?limit=1&fields=id,firstName,lastName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
   const wasKnown = !!person;
@@ -4020,10 +4045,16 @@ function vapiEndOfCall(m, props) {
     // Never a "No Name" contact: their name if they gave it, else "Caller" + their number so the call-back task makes sense.
     const parts = callerName ? callerName.split(/\s+/) : ['Caller', num ? num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : ''];
     const r = fubFetch('events', {source: 'Phone call', system: 'juliancrider.com', type: 'Inquiry',
-      message: 'Called and talked with ' + assistantName() + ': ' + summary, person: {firstName: parts[0], lastName: parts.slice(1).join(' '), phones: num ? [{value: num}] : [], tags: ['Phone Lead']}});
+      message: 'Called and talked with ' + assistantName() + ': ' + summary, person: {firstName: parts[0], lastName: parts.slice(1).join(' '), phones: num ? [{value: num}] : [], tags: ['Phone Lead'],
+        assignedUserId: Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id}});
     person = (r.personId && {id: r.personId}) || r.person || (num && (fubFetch('people?limit=1&fields=id,firstName&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0]);
   }
-  if (!person) return json({status: 'no person'});
+  if (!person) { notifyJulian('📞 ' + (callerName || fmtNum(num)) + ' called', String(summary || 'no summary').slice(0, 400)); return json({status: 'no person'}); }
+  if (!isMine(person.id)) {  // their contact belongs to Joey or Tana: tell Julián, don't write in their record
+    notifyJulian('📞 ' + (callerName || fmtNum(num)) + ' called', String(summary || 'no summary').slice(0, 400) + (rec ? '\nRecording: ' + rec : '') +
+      '\n(They\'re in another agent\'s Follow Up Boss, so I didn\'t log it there.)');
+    return json({status: 'not mine'});
+  }
   fubFetch('notes', {personId: person.id, subject: 'Call with ' + assistantName() + (mins ? ' (' + mins + ')' : ''),
     body: (summary || 'No summary.') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
