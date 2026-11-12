@@ -328,6 +328,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   → wantVoice; alone it re-sends LAST_SAY as a voice memo, with a request it does it and answers by voice. "Send Lisa a
   voice memo" still = voicememo action. Auto-replies (<45 s after a Sent email, `isAutoReplyEmail`, AUTOREPLY_<id>)
   no longer count as "replied by email" in activityScore.
+  Follow-through (Nov 12, "which one? Ika Frogel, Tamika O'neal" then "who should I email?"): findOne keeps whole-word name
+  matches (Ika ≠ Tamika), prefers LAST_PERSON (set whenever one person is resolved, 3 h); pronouns/missing who on person
+  actions = LAST_PERSON; `askWhich` stores PICK_WAIT (action + options, 30 min) so a short answer ("Ika Frogel", "the
+  first one", "2") re-runs the original request with personId; router prompt "FOLLOW THE CONVERSATION LIKE A PERSON".
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
