@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-voicereply';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-todo';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2314,34 +2314,52 @@ function humanDelay(theirText, reply, phone) {
 
 /** Today's (or this week's) calendar, numbered to-dos and what's waiting on Julián. Numbered tasks are remembered so he
  *  can text "do 2" / "done 2". Used by the agenda command and the morning briefing. */
-function agendaText(week) {
-  const props = PropertiesService.getScriptProperties(), lines = [];
-  const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
-  if (week) end.setDate(end.getDate() + 6);
-  const fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f);
-  try {
-    const evs = [];
-    CalendarApp.getDefaultCalendar().getEvents(now, end).forEach(e => evs.push({t: e.getTitle(), s: e.getStartTime().getTime()}));
-    ((bcolvCall({action: 'events', from: now.toISOString(), to: end.toISOString()}) || {}).events || []).forEach(e => evs.push({t: e.title + ' (business)', s: e.start}));
-    evs.sort((x, y) => x.s - y.s);
-    lines.push('📅 ' + (evs.length ? (week ? 'this week' : 'today') + ':\n' + evs.slice(0, 12).map(x => '• ' + fmt(x.s, week ? 'EEE h:mm a' : 'h:mm a') + ' ' + x.t).join('\n') : 'nothing on your calendars ' + (week ? 'this week' : 'for the rest of today') + '.'));
-  } catch (e) {}
+/** "today" | "tomorrow" | "week" from what he said. */
+function agendaRange(t) { t = String(t || ''); return /week|7 days|next few days/i.test(t) ? 'week' : /tomorrow|next day|tmrw|tmr/i.test(t) ? 'tomorrow' : 'today'; }
+function rangeBounds(range) {
+  const now = new Date(), day = d => Utilities.parseDate(Utilities.formatDate(d, 'America/Los_Angeles', 'yyyy-MM-dd') + ' 00:00', 'America/Los_Angeles', 'yyyy-MM-dd HH:mm');
+  const start = range === 'tomorrow' ? new Date(day(now).getTime() + 864e5) : now;
+  const end = new Date(day(now).getTime() + (range === 'week' ? 7 : range === 'tomorrow' ? 2 : 1) * 864e5 - 1);
+  return {start: start, end: end};
+}
+
+/** His calendars only (Julián, Nov 12: calendar and to-dos are different things). Personal + bcolv business, with
+ *  the copies Shawna syncs onto the personal calendar left out so nothing shows twice. */
+function calendarText(range) {
+  const {start, end} = rangeBounds(range), fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f), evs = [], seen = {};
+  const add = (t, s, biz) => { const k = String(t).toLowerCase().replace(/\W+/g, '') + '|' + Math.round(s / 6e4); if (seen[k]) return; seen[k] = 1; evs.push({t: t, s: s, biz: biz}); };
+  try { CalendarApp.getDefaultCalendar().getEvents(start, end).forEach(e => { if (!/\[synced by Shawna\]/.test(e.getDescription() || '')) add(e.getTitle(), e.getStartTime().getTime(), false); }); } catch (e) {}
+  try { ((bcolvCall({action: 'events', from: start.toISOString(), to: end.toISOString()}) || {}).events || []).forEach(e => add(e.title, e.start, true)); } catch (e) {}
+  evs.sort((x, y) => x.s - y.s);
+  const label = range === 'week' ? 'this week' : range === 'tomorrow' ? 'tomorrow' : 'today';
+  if (!evs.length) return '📅 nothing on your calendars ' + label + '.';
+  return '📅 ' + label + ':\n' + evs.slice(0, 15).map(x => '• ' + fmt(x.s, range === 'week' ? 'EEE h:mm a' : 'h:mm a') + ' ' + x.t + (x.biz ? ' (business)' : '')).join('\n');
+}
+
+/** His to-do list only: Follow Up Boss tasks due today (overdue included), tomorrow, or this week, plus texts waiting
+ *  on him and approvals. Numbered so he can text "do 2" / "done 2". */
+function todoText(range) {
+  const props = PropertiesService.getScriptProperties(), lines = [], {end} = rangeBounds(range);
+  const fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f), today = fmt(new Date(), 'yyyy-MM-dd');
+  const tomorrow = fmt(new Date(Date.now() + 864e5), 'yyyy-MM-dd'), last = fmt(end, 'yyyy-MM-dd');
   try {
     const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
-    const due = fmt(end, 'yyyy-MM-dd');
-    const tasks = (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=40&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || []).filter(t => String(t.dueDate || '') <= due);
-    const old = tasks.filter(t => (Date.now() - new Date(t.dueDate)) / 864e5 >= 4).length;
+    const all = fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=60&sort=dueDate&fields=id,name,dueDate,personId', null, 'get').tasks || [];
+    const tasks = all.filter(t => { const d = String(t.dueDate || '').slice(0, 10); return range === 'tomorrow' ? d === tomorrow : d <= last; });
+    const old = tasks.filter(t => String(t.dueDate || '').slice(0, 10) < today).length;
     const list = tasks.slice(0, 10), names = {};
     list.forEach(t => { if (t.personId && !(t.personId in names)) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); names[t.personId] = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) { names[t.personId] = ''; } } });
-    props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
-    if (list.length) lines.push('✅ to do (' + tasks.length + ' open' + (old ? ', ' + old + ' older than 3 days' : '') + '):\n' +
-      list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80)).join('\n') +
-      '\n\nText "do 2" and I\'ll start it, or "done 2" to check it off.');
-    else lines.push('✅ no open tasks in Follow Up Boss.');
-  } catch (e) {}
+    props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, due: String(t.dueDate || '').slice(0, 10), name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
+    const label = range === 'week' ? 'this week' : range === 'tomorrow' ? 'tomorrow' : 'today';
+    if (list.length) lines.push('✅ to do ' + label + ' (' + tasks.length + (old ? ', ' + old + ' past due' : '') + '):\n' +
+      list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80) +
+        (String(t.dueDate || '').slice(0, 10) > today ? ' (' + fmt(Utilities.parseDate(String(t.dueDate).slice(0, 10), 'America/Los_Angeles', 'yyyy-MM-dd'), 'EEE') + ')' : '')).join('\n') +
+      '\n\n"do 2" to start one, "done 2" to check it off' + (old ? ', "clear all" for everything past due' : '') + '.');
+    else lines.push('✅ nothing on your to-do list ' + label + '.');
+  } catch (e) { lines.push('✅ I couldn\'t open your tasks just now.'); }
   try {
-    const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && Date.now() - x.at < 2 * 864e5).length;
-    if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you (ask "who haven\'t I responded to").');
+    const waiting = JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => !x.reply && !x.read && Date.now() - x.at < 2 * 864e5).length;
+    if (waiting) lines.push('💬 ' + waiting + ' text' + (waiting > 1 ? 's' : '') + ' may be waiting on you ("who haven\'t I answered").');
     try {
       const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
       if (sh && sh.getLastRow() > 1) {
@@ -2350,9 +2368,15 @@ function agendaText(week) {
       }
     } catch (e) {}
     const q = pendingQueue();
-    if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '\nReply "YES 2" (or NO 2) for a specific one.');
+    if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '\nReply "YES 2" or "NO 2" (or "no all").');
   } catch (e) {}
-  return lines.join('\n\n') || 'you\'re clear. Nothing on the calendar and no open tasks.';
+  return lines.join('\n\n');
+}
+
+/** Morning briefing: today's calendar, then today's to-dos. */
+function agendaText(week) {
+  const range = week ? 'week' : 'today';
+  return calendarText(range) + '\n\n' + todoText(range);
 }
 
 // ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
@@ -2370,6 +2394,7 @@ function addPending(item) {
   return item.n;
 }
 function pendingLabel(x) {
+  if (!x.who || /^(undefined|unknown|null)$/i.test(String(x.who))) x = Object.assign({}, x, {who: x.phone ? String(x.phone).replace(/^\+1/, '') : 'someone'});
   return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
     : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
 }
@@ -2980,6 +3005,23 @@ function bossCommand(text, tries) {
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   const queue = pendingQueue();
   const ym = text.match(/^\s*(?:yes|y|yeah|yep|yup|send|send it|go|go ahead|ok|okay|bet|run it|do it|approved?)\s*(?:#|number|no\.)?\s*(\d)?\s*[.!👍🏾👍]*\s*$/i);
+  // "no all" / "cancel all": clear every approval that's waiting.
+  if (/^\s*(no|cancel|clear|nah)\s+(them\s+)?all\s*(approvals?)?\s*[.!]*\s*$/i.test(text) && /^\s*(no|nah|cancel)|approval/i.test(text)) {
+    const qn = pendingQueue().length; props.deleteProperty('BOSS_QUEUE'); props.deleteProperty('BOSS_PENDING');
+    return say('cleared ' + qn + ' waiting approval' + (qn === 1 ? '' : 's') + '. Nothing was sent.');
+  }
+  // "clear all" / "read all" / "delete all" / "clear everything": past-due and today's tasks checked off, waiting texts
+  // marked read, expired approvals removed. Future tasks stay (those go one at a time: "done 3").
+  if (/^\s*(clear|delete|read|done|mark)\s+(them\s+|it\s+)?(all|everything)(\s+(done|read|tasks?|messages?|texts?))?\s*[.!]*\s*$/i.test(text)) {
+    let tn = 0, mn = 0;
+    try {
+      const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, t0 = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+      (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=100&fields=id,dueDate', null, 'get').tasks || [])
+        .filter(t => String(t.dueDate || '').slice(0, 10) <= t0).forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); tn++; } catch (e) {} });
+    } catch (e) {}
+    try { const log = JSON.parse(props.getProperty('TEXT_LOG') || '[]'); log.forEach(x => { if (!x.reply && !x.read) { x.read = 1; mn++; } }); props.setProperty('TEXT_LOG', JSON.stringify(log)); } catch (e) {}
+    return say('done ✅ ' + tn + ' past-due task' + (tn === 1 ? '' : 's') + ' checked off and ' + mn + ' waiting text' + (mn === 1 ? '' : 's') + ' marked read. Future tasks are still there; clear those one at a time ("done 3").');
+  }
   const nm = text.match(/^\s*(?:no|n|nah|cancel|stop|don.?t)\s*(?:#|number)?\s*(\d)?(?:\s*[.!]*\s*$|\b)/i);
   const picked = (ym && ym[1]) || (nm && nm[1]);
   if (picked) pend = queue.filter(x => x.n === Number(picked))[0] || null;
@@ -3050,7 +3092,7 @@ function bossCommand(text, tries) {
 {"action":"tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
-- agenda: what he needs to do / what's on his plate / how his day or week looks ("anything else I need to do today?", "how's my week look?", "what's on deck", "what do I got going on"). Put "today" or "week" in "message".
+- agenda: his TO-DO list only (tasks, follow-ups, who's waiting on him): "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
 - unschedule: cancel a text he scheduled for later ("cancel the text to Lisa", "don't send Dan that message Friday"). Put the person in "who".
 - taskdone: he says tasks are done or wants them cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "clear the old tasks", "clear them all"). "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
 - taskstart: he wants to work a task from your to-do list ("do 2", "let's knock out number 3", "start the Sonia one", "handle 1"). "message": the number; "who": the person if he names one.
@@ -3061,7 +3103,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - If you just suggested an email reply and he says how to change it ("make it shorter", "add that I'm free Thursday", "say it like this: ..."), return action email for that same person with the updated "message".
 - email: he wants you to email someone or answer their email ("reply to Ruth", "email Ruth back and say..."). Write a short, warm email in his voice, plain paragraphs, no signature (it's signed automatically). If they emailed recently it goes as a reply in that same thread. If he asks you to answer their email, read it in your recent conversation or the data first so the reply fits what they said.
 - note: save a note on a contact. task: remind him to do something about a contact.
-- emails: who emailed him / unanswered emails. calendar: what's on his schedule today.
+- emails: who emailed him / unanswered emails. calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
@@ -3085,7 +3127,7 @@ Examples (all mean the same as the action shown):
 "hit Kyle up" / "shoot Lisa a text" / "tell him I'm on the way" / "let her know 3 works" / "text bro back" → text
 "run it" / "send it" / "bet" / "yup" / "go ahead" / "do that" / "yes please" → yes to what you just offered
 "who been hittin my line" / "anybody text me" / "what came in" → texts; "who emailed" / "any emails" / "inbox" → emails
-"anything else I need to do" / "what I got today" / "what's on deck" / "how's my week look" → agenda; "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
+"anything else I need to do" / "what I got today" / "what's on deck" / "what's on my plate" → agenda (to-dos); "what's on my calendar" / "how's my week look" / "what's my schedule tomorrow" / "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
 "pull up Dan" / "what's up with Dan" / "who is Dan" → lookup; "remind me to call Dan" → task; "put Dan down for Thursday at 2" → schedule
 "you can talk to Kyle" / "Kyle's cool, you can text him" / "add Kyle to your list" → allow
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
@@ -3362,7 +3404,7 @@ Examples (all mean the same as the action shown):
       ((r && r.emails) || []).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
       return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
     }
-    if (a.action === 'agenda') return say(agendaText(/week|7|days/i.test(String(a.message || '') + ' ' + text)));
+    if (a.action === 'agenda') return say(todoText(agendaRange(String(a.message || '') + ' ' + text)));
     if (a.action === 'unschedule') {
     const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
     if (!sh || sh.getLastRow() < 2) return say('nothing is scheduled.');
@@ -3379,10 +3421,13 @@ Examples (all mean the same as the action shown):
       let picks = nums.map(n => saved[n - 1]);
       if (!picks.length && a.who) picks = saved.filter(t => String(t.who + ' ' + t.name).toLowerCase().indexOf(String(a.who).toLowerCase().split(' ')[0]) >= 0).slice(0, 1);
       if (a.action === 'taskdone') {
-        if (!picks.length && /old|all/.test(arg)) {
+        const today0 = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
+        if (!picks.length && /old|all|past|everything/.test(arg)) {  // "clear all": everything due today or earlier, never future ones
           const open = fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=100&fields=id,dueDate', null, 'get').tasks || [];
-          picks = open.filter(t => /all/.test(arg) || (Date.now() - new Date(t.dueDate)) / 864e5 > 7);
+          picks = open.filter(t => String(t.dueDate || '').slice(0, 10) <= today0);
         }
+        const future = picks.filter(t => t.due && t.due > today0);
+        if (future.length > 1) picks = picks.filter(t => !(t.due && t.due > today0)).concat(future.slice(0, 1));  // future ones: one at a time
         if (!picks.length) return say('which ones? Text "done" with the numbers from my list, like "done 2" (or "clear the old tasks").');
         let n = 0; picks.forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); n++; } catch (e) {} });
         return say('checked off ' + n + ' task' + (n === 1 ? '' : 's') + '. ✅');
@@ -3477,15 +3522,7 @@ Examples (all mean the same as the action shown):
       const w = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}'), list = Object.keys(w).map(k => w[k]).sort((x, y) => y.at - x.at).slice(0, 6);
       return say(name + ': ' + (list.length ? 'recent emails from clients:\n' + list.map(x => '• ' + x.name + ' (' + Utilities.formatDate(new Date(x.at), 'America/Los_Angeles', 'EEE h:mm a') + ')').join('\n') : 'no new client emails in the last 2 days.'));
     }
-    if (a.action === 'calendar') {
-      const now = new Date(), end = new Date(now); end.setHours(23, 59, 59);
-      const evs = [];
-      CalendarApp.getDefaultCalendar().getEvents(now, end).forEach(e => evs.push({t: e.getTitle(), s: e.getStartTime().getTime(), w: 'personal'}));
-      const b = bcolvCall({action: 'events', from: now.toISOString(), to: end.toISOString()});
-      (b.events || []).forEach(e => evs.push({t: e.title, s: e.start, w: 'business'}));
-      evs.sort((x, y) => x.s - y.s);
-      return say(evs.length ? 'the rest of today:\n' + evs.map(x => '• ' + Utilities.formatDate(new Date(x.s), 'America/Los_Angeles', 'h:mm a') + ' ' + x.t + (x.w === 'business' ? ' (business)' : '')).join('\n') : 'nothing else on your calendars today.');
-    }
+    if (a.action === 'calendar') return say(calendarText(agendaRange(String(a.message || '') + ' ' + text)));
     if (a.action === 'callnotes') {
       const d = a.data || {};
       if (!a.who && !a.phone) {

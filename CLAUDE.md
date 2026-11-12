@@ -256,6 +256,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   becomes "(voice message) <words>" and flows as usual. iPhone voice bubbles are .caf; if Whisper rejects one, the client
   text says it couldn't be played. A spoken request from Julián (BOSS_VOICE cache, 2 min) makes `say` also send a
   voice memo of her answer (shawnaVoice, ElevenLabs) under the text. Notes can't add transcripts or share audio automatically (no Shortcuts action).
+  To-dos vs calendar (Nov 12): boss `agenda` = `todoText(range)` (FUB tasks due today incl. past due / tomorrow / week,
+  waiting texts, scheduled texts, approvals; AGENDA_TASKS keeps due dates); `calendar` = `calendarText(range)` (personal +
+  bcolv, Shawna's synced copies skipped, de-duplicated). `agendaRange`: today unless "tomorrow"/"week". morningBriefing
+  uses both (agendaText). "clear all"/"read all"/"delete all"/"clear everything" → past-due + today's tasks completed and
+  waiting texts marked read (TEXT_LOG read flag); future tasks only one at a time; "no all"/"cancel all" empties the
+  approvals queue; pendingLabel never says "undefined".
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
