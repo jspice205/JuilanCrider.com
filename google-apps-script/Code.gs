@@ -129,11 +129,20 @@ function doPost(e) {
     // ── Showing requests: send the buyer a confirmation right away ──
     if (tabName === 'Website Leads' && /showing/i.test(data.type || '') && validEmail(data.email)) {
       let signUrl = '';
-      // The one-home agreement needs an address; without one, Julián sends it once they pick a home.
-      if (data.property && agreementSettings().live && !/Working with agent: Yes, with a signed/.test(data.notes || '')) {
-        try { signUrl = createAgreement(data); } catch (err) { console.error('Agreement not created', err); }
+      // Julián, Nov 12: send the one-home agreement + Duties Owed right away, even without an address. Without one, it's a
+      // review copy (the home is filled in, and it can be signed, once they pick one with Julián).
+      if (agreementSettings().live && !/Working with agent: Yes, with a signed/.test(data.notes || '')) {
+        try { signUrl = createAgreement(data.property ? data : Object.assign({}, data, {property: AGREEMENT_TBD})); } catch (err) { console.error('Agreement not created', err); }
       }
       try { confirmShowing(data, signUrl); } catch (err) { console.error('Buyer confirmation failed', err); }
+    }
+    // ── Shawna texts Julián about every website lead right away (Nov 12) ──
+    if (tabName === 'Website Leads' || /juliancrider\.com/.test(data.notes || '')) {
+      try {
+        const bits = [data.phone, data.email, data.property && 'Home: ' + data.property, data.timeline && 'When: ' + data.timeline,
+          String(data.notes || '').split(' | ').filter(x => /Requested time|Preferred time|Pre-approved|Working with agent|Price range|Lives in/.test(x) && !/: *$/.test(x)).join(', ')].filter(Boolean);
+        notifyJulian('🌐 ' + (data.type || tabName) + ': ' + (data.name || 'someone'), 'from juliancrider.com. ' + bits.join(' · '), '', data.name || '');
+      } catch (err) { console.log('Lead alert: ' + err.message); }
     }
     // ── Every website lead and every open house sign-in goes to Follow Up Boss ──
     if (tabName === 'Website Leads' || tabName === 'Sign-Ins') {
@@ -148,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-calsync';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-showing';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -267,6 +276,7 @@ function bookSlot(d) {
         (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.'));
     } catch (e) { console.log('Calendar invite not sent: ' + e.message); }
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
+  try { notifyJulian('📅 Booked on your site: ' + String(d.name || '').trim(), m.label + ', ' + label + (d.property ? ' at ' + d.property : '') + '. ' + (d.phone || '') + '. It\'s on your calendar.', '', String(d.name || '').trim()); } catch (e) {}
   return {status: 'success', label: label, link: link};
 }
 
@@ -1465,7 +1475,7 @@ function confirmShowing(d, signUrl) {
     ? `<p>Thanks for your interest in ${d.property ? `<b>${esc(d.property)}</b>` : 'seeing homes'}. Since you have a signed agreement with another agent, they should schedule this tour for you, and they'll be able to get you in quickly.</p>
        <p>If anything changes, or you have questions about the home or the neighborhood, I'm always happy to help.</p>`
     : !d.property ? `<p>Thanks for reaching out about seeing homes${when ? ` (${when})` : ''}. I'll be in touch shortly to hear what you're looking for, then line up the homes worth seeing.</p>
-       <p>Before any tour, Nevada requires a short written buyer agreement. Once we pick a home, I'll send a non-exclusive one that covers only that home. It takes about a minute to sign.</p>`
+       <p>Before any tour, Nevada requires a short written buyer agreement. Mine is non-exclusive and covers only the one home you tour, so you're free to work with anyone else. ${signUrl ? `<a href="${signUrl}">Here it is to look over</a>, along with the Nevada Duties Owed form. Once we pick the home, I'll fill it in and you can sign in about a minute.` : 'Once we pick a home, I\'ll send it to sign. It takes about a minute.'}</p>`
     : `<p>Thanks for requesting a showing of <b>${esc(d.property)}</b>${when ? ` (${when})` : ''}. I'll confirm a time with you shortly.</p>
        <p style="margin:18px 0 6px"><b>What happens next</b></p>
        <ol style="margin:0 0 14px 18px;padding:0">
@@ -1511,6 +1521,7 @@ function agreementSettings() {
     brokerage: g('BROKERAGE', 'Boeckle & Co.'), brokerName: g('BROKER_NAME', 'Landon Boeckle'), brokerLicense: g('BROKER_LICENSE', 'B.1001882')};
 }
 
+const AGREEMENT_TBD = 'To be confirmed with Julián (the home you choose to tour)';
 function createAgreement(d) {
   const s = agreementSettings(), id = Utilities.getUuid();
   ensureTab(getSS(), AGREEMENT_TAB).appendRow([new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'}), id, d.name, d.email, d.phone, d.property,
@@ -1534,7 +1545,7 @@ function getAgreement(id) {
   const a = findAgreement(id);
   if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
   const s = agreementSettings();
-  return json({ok: true, live: s.live, status: a.data.status, buyer: a.data.buyer, property: a.data.property, html: agreementHtml(a.data, s), duties: dutiesHtml(a.data, s, '')});
+  return json({ok: true, live: s.live, status: a.data.status, buyer: a.data.buyer, property: a.data.property, reviewOnly: a.data.property === AGREEMENT_TBD, html: agreementHtml(a.data, s), duties: dutiesHtml(a.data, s, '')});
 }
 
 // The agreement wording (shared by the signing page and the signed PDF).
@@ -1578,6 +1589,7 @@ function signAgreement(d) {
   const a = findAgreement(String(d.id || ''));
   if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
   if (a.data.status === 'Signed') return json({ok: true, already: true});
+  if (a.data.property === AGREEMENT_TBD) return json({ok: false, error: 'Julián will add the home address first, then send you the link to sign.'});
   const name = String(d.typedName || '').trim(), sig = String(d.signature || '');
   if (name.length < 2 || d.consent !== true) return json({ok: false, error: 'Please type your full name and check all the boxes.'});
   if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sig) || sig.length > 400000) return json({ok: false, error: 'Please draw your signature in the box.'});
@@ -1716,6 +1728,13 @@ function bbApi(path, body) {
 
 /** Sends one iMessage (falls back to a green SMS for non-iPhones, if Text Message Forwarding is on). */
 function bbSend(phone, text) {
+  // One send at a time per person, so two of Shawna's messages never cross and arrive out of order (Nov 12).
+  const busyKey = 'BUSY_' + String(phone).replace(/\D/g, '').slice(-10), cache = CacheService.getScriptCache();
+  for (let i = 0; i < 4 && cache.get(busyKey); i++) Utilities.sleep(2500);
+  cache.put(busyKey, '1', 12);
+  try { return bbSendNow(phone, text); } finally { try { cache.remove(busyKey); } catch (e) {} }
+}
+function bbSendNow(phone, text) {
   // iPhone users sometimes text from their Apple ID email instead of their number: reply to that address too.
   const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
   if (!to) throw new Error('Not a US mobile number: ' + phone);
@@ -1900,6 +1919,7 @@ function bbWebhook(e) {
         return json({status: 'ok'});
       }
       if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
+      if (!sentByShawna) props.setProperty('AI_LASTME_' + to, String(Date.now()));
       const boss1 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
       if (!sentByShawna && !group && to !== boss1 && /^\+1\d{10}$/.test(to)) {
         try {
@@ -1939,7 +1959,7 @@ function bbWebhook(e) {
     // Saved in his phone = personal, left alone. But if Shawna was already talking with them before he saved the number
     // (a new lead he met and saved), she keeps going.
     // Contacts he allowed (texted "you can talk to Kyle") or brought in with "Hey Shawna": she answers, no CRM entry needed.
-    if (props.getProperty('SHAWNA_ON_' + from) || JSON.parse(props.getProperty('SHAWNA_ALLOW') || '[]').indexOf(from) >= 0) {
+    if (Number(props.getProperty('SHAWNA_ON_' + from) || 0) > Date.now() - 3 * 36e5 || JSON.parse(props.getProperty('SHAWNA_ALLOW') || '[]').indexOf(from) >= 0) {
       try { shawnaDirectReply(from, String(data.text).slice(0, 1000), ''); } catch (e) { console.log('Allowed contact: ' + e.message); }
       return json({status: 'ok'});
     }
@@ -2614,13 +2634,15 @@ function shawnaDirectReply(phone, text, invite) {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
   if (!invite && (hour < 8 || hour >= endHour)) return false;  // he's in the thread when he invites her: any hour
   if (!invite && Number(props.getProperty('AI_MUTE_' + phone) || 0) > Date.now()) return false;  // he's talking with them himself
+  // Friends and family: if Julián texted them in the last 6 hours it's his conversation, so Shawna stays out (Nov 12).
+  if (!invite && Number(props.getProperty('AI_LASTME_' + phone) || 0) > Date.now() - 6 * 36e5) return false;
   if (!invite && mode === 'draft') return false;
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + phone;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
   if (n >= Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12)) return false;
   const name = assistantName(), thread = bbThread(phone);
   const out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-    {role: 'system', content: assistantPrompt(name, invite ? 'shawna' : assistantPersona(phone)) + '\nThis person is someone Julián knows personally (not a lead in his CRM). Be warm and natural; real estate only if they bring it up or Julián asked.'},
+    {role: 'system', content: assistantPrompt(name, invite ? 'shawna' : assistantPersona(phone)) + '\nThis person is someone Julián knows personally (a friend, family or colleague, not a lead). Be warm and natural, like a helpful friend. Never pitch a call, a meeting, real estate or Julián\'s services, and never ask to "hop on a call"; real estate only if they bring it up or Julián asked. If their message was meant for Julián, keep it short and say you\'ll pass it along. Never greet anyone as "Unknown".'},
     {role: 'user', content: (thread ? 'The text conversation so far (oldest first):\n' + thread + '\n\n' : '') +
       (invite ? 'Julián just brought you into this conversation by texting: "' + invite + '". Say a quick hi as ' + name + ', his AI assistant, and do what he asked or help with what they need.'
         : 'They just texted: "' + text + '"') + liveInfo(invite || text) + '\n\nReply as JSON only.'}]));
@@ -2936,8 +2958,9 @@ function bossCommand(text, tries) {
     if (pend.kind === 'voice') {
       const audio = shawnaVoice(pend.message);
       props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
-      const first = String(pend.who || '').split(' ')[0];
-      const r = bbSend(pend.phone, 'Hi' + (first ? ' ' + first : '') + ', it\'s Shawna, Julián\'s assistant. Here\'s a quick voice note 👇🏾');
+      let first = String(pend.who || '').split(' ')[0];
+      if (/^(unknown|no|name|caller|contact|there|\+?\d)/i.test(first)) first = '';  // never "Hi Unknown"
+      const r = bbSend(pend.phone, 'Hi' + (first ? ' ' + first : '') + ', it\'s Shawna, Julián\'s assistant. Here\'s a quick voice note.');
       Utilities.sleep(1500);
       bbPostAttachment(pend.phone, r && r.service, audio);
       fubFetch('notes', {personId: pend.personId, subject: 'Voice memo sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
@@ -3030,8 +3053,12 @@ Examples (all mean the same as the action shown):
   else if (cnKey) {
     const full = CacheService.getScriptCache().get(cnKey) || text;
     const d = callNotesParse(full);
-    const head = (String(full).split('\n')[0].match(CALL_NOTES_RE) ? String(full).split('\n')[0].replace(CALL_NOTES_RE, '').replace(/^[\s:,-]*(with|from)?\s*/i, '').split(/[:.!?–—]|\s-\s/)[0].trim() : '');
-    a = {action: 'callnotes', who: cnWho || (head && head.length < 40 ? head : '') || d.who || '', phone: d.phone || '', email: d.email || '', data: d, key: cnKey, full: String(full).slice(0, 8000)};
+    const head = (String(full).split('\n')[0].match(CALL_NOTES_RE) ? String(full).split('\n')[0].replace(CALL_NOTES_RE, '').replace(/^[\s:,-]*(with|from)?\s*/i, '').replace(/^call\s+(with|from)\s+/i, '').split(/[:.!?–—]|\s-\s/)[0].trim() : '');
+    const headPhone = /^[+\d\s().-]{10,}$/.test(head) ? head : '';
+    const dk = 'CNDONE_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(full).slice(0, 3000))).slice(0, 24);
+    if (!cnWho && CacheService.getScriptCache().get(dk)) return;  // the same call sent twice (automation + by hand): once is enough
+    CacheService.getScriptCache().put(dk, '1', 6 * 3600);
+    a = {action: 'callnotes', who: cnWho || (head && !headPhone && head.length < 40 ? head : '') || d.who || '', phone: headPhone || d.phone || '', email: d.email || '', data: d, key: cnKey, full: String(full).slice(0, 8000)};
   }
   else {
     const history = JSON.parse(props.getProperty('BOSS_HISTORY') || '[]').slice(0, -1).slice(-12)  // earlier messages, not this one
