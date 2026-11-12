@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-teamassist';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-calltext';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4120,19 +4120,20 @@ function vapiEndOfCall(m, props) {
         ensureTextQueueTrigger();
       }
     } catch (e) { console.log('Call recap: ' + e.message); }
-  } else if (wasKnown && num) {
-    // Julián, Nov 11: someone he already knows called and Shawna picked up: a quick "saw you just called" from his number.
-    // Only contacts who agreed to texts (Text OK, not opted out); sent 9am-9pm by the Text Queue, about a minute after.
+  } else if (num) {
+    // Julián, Nov 12: everyone who calls gets ONE text after the call (they called us; informational, with STOP), from his
+    // number, ~1 minute after hanging up (9am-9pm; later calls get it in the morning). Never for opted-out numbers.
     try {
       const pp = fubFetch('people/' + person.id + '?fields=id,firstName,lastName,tags', null, 'get'), tags = pp.tags || [];
-      if (tags.indexOf('Text OK') >= 0 && tags.indexOf('Text Opt-Out') < 0 && !tags.some(t => /^Test\b/i.test(t))) {
-        const first = realFirst(pp) || '';
-        const msg = 'Hey' + (first ? ' ' + first : '') + ', it\'s Julián. Saw you just called and I couldn\'t pick up 👋🏾 ' +
-          (transcript.length > 300 ? 'Shawna passed along your message. ' : '') + 'What\'s a good time for me to call you back?';
-        ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || pp.firstName || ''), 'call-followup', 'pending', 0, '', cell(msg)]);
+      if (tags.indexOf('Text Opt-Out') < 0 && !tags.some(t => /^Test\b/i.test(t))) {
+        const first = realFirst(pp) || (callerName && !/^caller\b/i.test(callerName) ? callerName.split(' ')[0] : '');
+        const gist = recapInfo && recapInfo.recap ? ' ' + recapInfo.recap : ' I passed your message to Julián and he\'ll get back to you soon.';
+        const msg = 'Hi' + (first ? ' ' + first : '') + ', it\'s ' + assistantName() + ', Julián\'s assistant. Thanks for calling!' + gist +
+          (recapInfo && recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + ' Text me here anytime. (Reply STOP to opt out.)';
+        ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || pp.firstName || ''), 'call-thanks', 'pending', 0, '', cell(msg)]);
         ensureTextQueueTrigger();
       }
-    } catch (e) { console.log('Saw you called: ' + e.message); }
+    } catch (e) { console.log('Call thank-you: ' + e.message); }
   }
   return json({status: 'ok'});
 }
@@ -4504,9 +4505,9 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|scheduled)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
-      const res = step === 'scheduled' ? sendApprovedText(id, text) : bbTextPerson(id, text);
+      const res = step === 'scheduled' || step === 'call-thanks' ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
