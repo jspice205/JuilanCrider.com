@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-backupbrain';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-recapalways';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4267,8 +4267,8 @@ SAFETY, COMPLIANCE AND BOUNDARIES
 - If it's about an offer, a contract, a negotiation, commission, a complaint or anything urgent, say Julián will call them back today.
 - Collect only what's needed. No dashes of any kind in what you say.
 
-RECAP TEXT: if they already asked to be texted, that's a yes, don't ask again. Otherwise, near the end, ask once: "Would it be okay if I text you a quick recap${''} of our call${''}?" (mention the appointment details if one was booked). Only a clear yes counts; if they hesitate or say no, that's completely fine, don't text.
-ENDING THE CALL: briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with. Only end the call after they say goodbye or clearly want to hang up. Always close warmly with "Have a wonderful rest of your day, and we'll speak with you soon." Never end with just "goodbye."`;
+RECAP TEXT (REQUIRED ON EVERY CALL, never skip it, except with a TEAM MEMBER): before you say goodbye, always ask: "Before you go, would it be okay if I text you a quick recap of our call?" (add "with your appointment details" if one was booked). Ask it even on short calls, even if they only left a message for Julián or asked for someone else, and even if the call wandered. If they already asked to be texted, that's a yes: just say "I'll text you a quick recap." The recap goes by text to the number they're calling from: never ask for their email or number for the recap. Only a clear yes counts; if they hesitate or say no, that's completely fine.
+ENDING THE CALL: first ask the RECAP TEXT question if you haven't yet (it is required). Then briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with. Only end the call after they say goodbye or clearly want to hang up. Always close warmly with "Have a wonderful rest of your day, and we'll speak with you soon." Never end with just "goodbye."`;
 }
 
 /** Hourly (from autoUpdateFromGitHub): pushes Shawna's phone prompt, the caller lookup tool and a calmer turn-taking
