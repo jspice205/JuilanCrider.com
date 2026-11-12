@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-vapiguard';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-backupbrain';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2850,8 +2850,29 @@ function groqChat(key, model, messages, opts) {
     const fb = PropertiesService.getScriptProperties().getProperty('GROQ_FALLBACK') || 'llama-3.1-8b-instant';
     if (fb !== model) { const r2 = send(fb); if (r2.getResponseCode() < 300) { console.log('Groq: used fallback ' + fb); res = r2; } }
   }
-  if (res.getResponseCode() >= 300) throw new Error('Groq ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  if (res.getResponseCode() >= 300) {  // Groq is down, out of free allowance, or the key stopped working: use the backup brain
+    const backup = backupBrain(messages, opts);
+    if (backup) return backup;
+    throw new Error('Groq ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200));
+  }
   return JSON.parse(res.getContentText()).choices[0].message.content;
+}
+
+/** Backup brain for when Groq fails (Nov 12: "my Groq died"). Google Gemini's free API key (aistudio.google.com),
+ *  saved as GEMINI_API_KEY in the Settings tab. Same messages, same JSON answers. Returns '' when there's no key or it fails too. */
+function backupBrain(messages, opts) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GEMINI_API_KEY');
+  if (!key) return '';
+  try {
+    const res = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {method: 'post',
+      contentType: 'application/json', muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
+      payload: JSON.stringify({model: props.getProperty('GEMINI_MODEL') || 'gemini-2.5-flash', messages: messages, temperature: 0.7,
+        max_tokens: Math.max((opts && opts.maxTokens) || 900, 2000), response_format: {type: 'json_object'}})});
+    if (res.getResponseCode() >= 300) { console.log('Backup brain ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 200)); return ''; }
+    const out = JSON.parse(res.getContentText()).choices[0].message.content;
+    if (out) console.log('Groq failed: used the Gemini backup');
+    return out || '';
+  } catch (e) { console.log('Backup brain error: ' + e.message); return ''; }
 }
 
 /** Lists the chat models on this Groq account and returns the best fit (big general models first). */
@@ -3220,7 +3241,8 @@ Examples (all mean the same as the action shown):
       try { a = ask([msgs[0]].concat(msgs.slice(-5)), props.getProperty('GROQ_MODEL') || ASSISTANT.model); }
       catch (e2) {
         shawnaLog('error', text, 'retry: ' + String(e2.message).slice(0, 200));
-        const why = /429|rate/i.test(e2.message) ? 'Groq\'s free plan hit its per-minute limit' : /413|too large/i.test(e2.message) ? 'that request was too big for Groq\'s free plan'
+        const why = /per day|TPD|RPD/i.test(e2.message) ? 'Groq\'s free plan used up today\'s allowance' : /429|rate/i.test(e2.message) ? 'Groq\'s free plan hit its per-minute limit' : /413|too large/i.test(e2.message) ? 'that request was too big for Groq\'s free plan'
+          : /401|invalid_api_key|Invalid API Key/i.test(e2.message) ? 'my Groq key was rejected: make a new one at console.groq.com and put it in the Settings tab as GROQ_API_KEY'
           : /5\d\d/.test(e2.message) ? 'Groq is having a hiccup' : 'Groq error ' + String(e2.message).slice(0, 60);
         if (!tries) say('give me a minute (' + why + '). I\'ll answer you as soon as it\'s back.');
         throw new Error('Groq: ' + String(e2.message).slice(0, 120));  // runBossCommand retries in a minute (up to 3 times)
