@@ -59,6 +59,12 @@ fetch(API + '?action=agreement&id=' + encodeURIComponent(id))
   .catch(() => msg('Something went wrong', 'Please refresh the page, or contact Julián at 702-498-2571.'));
 
 function render(a) {
+  if (a.reviewOnly) {  // no home picked yet: a copy to read; Julián fills in the address before it can be signed
+    app.innerHTML = `<div class="card"><p style="font-weight:600;margin-bottom:6px">Review copy</p><p class="fine" style="margin:0">Here's the one-home agreement and the Nevada Duties Owed form to look over. Once you and Julián pick the home, he'll fill in the address and text you the link to sign. It takes about a minute.</p></div>
+    <div class="card doc">${a.html}</div>
+    <div class="card doc">${a.duties}</div>`;
+    return;
+  }
   app.innerHTML = `${a.live ? '' : '<div class="draft"><b>Draft for broker review.</b> This page is not in use with buyers yet.</div>'}
     <div class="card doc">${a.html}</div>
     <div class="card doc">${a.duties}</div>

@@ -241,6 +241,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   events (mailer action events) and his FUB appointments onto his personal Google Calendar ("[synced by Shawna]" in the
   description; CALSYNC map; skips ones already there; removes copies when the source moves/cancels). Synced copies get no
   15-min client reminder texts.
+  Showing flow (Nov 12, `showingFlow` in index.html): step 1 pick a day/time from his calendar (slots kind showing) or
+  "Not sure yet, after talking with Julián"; step 2 home (optional), pre-approval, agent, contact → sendLead + bookSlot
+  (property "Home to be chosen with Julián" if blank). The one-home agreement + Duties Owed is emailed even without an
+  address: property AGREEMENT_TBD = review copy (sign.html shows it read-only; signAgreement refuses it). Every website
+  lead → notifyJulian "🌐 <type>: <name>"; every site booking → "📅 Booked on your site". Shawna: no "Hi Unknown" in voice
+  memos; "Hey Shawna" threads expire after 3 h; friends/family threads: she stays out 6 h after Julián texts them
+  (AI_LASTME_) and never pitches calls/real estate; bbSend sends one message at a time per person (BUSY_ cache) so
+  bubbles don't cross. Call notes: the shortcut can send "call notes <Notes title>\n<body>" after "Add Transcript to Note";
+  "Call with X" titles become the name, phone-number titles the phone; the same notes twice are processed once (CNDONE_).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
