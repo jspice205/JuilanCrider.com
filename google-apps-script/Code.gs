@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-noprompts';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-replies';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2407,12 +2407,30 @@ function whatsNewText() {
     if (calls.length) out.push('📞 calls Shawna took:\n' + calls.join('\n'));
   } catch (e) {}
   if (alerts.length) out.push('🔔 since your last update:\n' + alerts.slice(-10).map(a => '• ' + fmt(a.at) + ' ' + a.t.slice(0, 170)).join('\n'));
-  // Unread emails from real people (not system mail), newest first.
+  // Replies to his emails, straight from Follow Up Boss, so they show even if he already opened them in Gmail.
+  // Automatic replies (a "Received" email within 2 minutes of one he sent them, like out of office) are left out.
+  const replied = [];
+  try {
+    const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+    const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,firstName,lastName,lastActivity,assignedUserId', null, 'get').people || [])
+      .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me));
+    people.forEach(p => {
+      if (replied.length >= 8) return;
+      const ems = fubFetch('emails?personId=' + p.id + '&limit=6&sort=-created', null, 'get').emails || [];
+      const sentTimes = ems.filter(e => e.status === 'Sent').map(e => new Date(e.created).getTime());
+      const got = ems.filter(e => e.status === 'Received' && (e.relatedPeople || []).some(r => r.personId === p.id && r.sentByPerson) &&
+        new Date(e.created).getTime() > since && !sentTimes.some(t => { const d = new Date(e.created).getTime() - t; return d >= 0 && d < 2 * 6e4; }));
+      if (got.length) replied.push({who: [realFirst(p), p.lastName].join(' ').trim() || p.name, at: new Date(got[0].created).getTime()});
+    });
+    if (replied.length) out.push('📧 replied to your emails:\n' + replied.map(x => '• ' + x.who + ' (' + fmt(x.at) + ')').join('\n'));
+  } catch (e) {}
+  // Other unread emails from real people (not system mail), newest first.
   try {
     const r = bcolvCall({action: 'search', query: 'in:inbox is:unread after:' + Math.floor(since / 1000) + ' -from:me', max: 15});
     const seen = {}, mails = ((r && r.messages) || []).filter(x => !x.fromMe && !/mailer-daemon|postmaster|no-?reply|notification|followupboss|google\.com|calendar/i.test(x.from) &&
       !/delivery status|undeliverable|auto.?reply|out of office/i.test(x.subject || ''))
-      .sort((x, y) => y.date - x.date).filter(x => { const k = String(x.from).toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; }).slice(0, 6);
+      .sort((x, y) => y.date - x.date).filter(x => { const k = String(x.from).toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; })
+      .filter(x => !replied.some(r => String(x.from).toLowerCase().indexOf(String(r.who).split(' ')[0].toLowerCase()) >= 0)).slice(0, 6);
     if (mails.length) out.push('📧 unread emails:\n' + mails.map(x => '• ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + ': ' + String(x.subject || '(no subject)').slice(0, 70)).join('\n') +
       '');
   } catch (e) {}
@@ -2962,7 +2980,7 @@ function bossTextSafe(msg) {
 function processAssistantQueue() {
   const props = PropertiesService.getScriptProperties();
   try {
-    const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 6 * 36e5);
+    const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 24 * 36e5);  // a day, so alerts survive a long Mac outage
     if (out.length) {
       const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || ''), left = [];
       out.forEach((x, i) => { if (left.length) { left.push(x); return; } try { bbSend(boss, x.m); } catch (e) { left.push(x); } });
