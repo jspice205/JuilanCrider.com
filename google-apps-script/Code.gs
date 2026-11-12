@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-teamcalls';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-teamassist';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3992,14 +3992,19 @@ function vapiWebhook(e) {
   }
 }
 /** Phone numbers of everyone on the Follow Up Boss account (Joey, Tana…), cached 6 h. Calls from them are team calls. */
-function teamNumbers() {
-  const c = CacheService.getScriptCache(), hit = c.get('TEAM_NUMS');
+function teamNumbers() { return Object.keys(teamDirectory()); }
+/** {phone: name} for the team: Follow Up Boss users (not Julián) + TEAM_NUMBERS ("7025551234 Joey, 7025559876 Tana" or bare numbers). */
+function teamDirectory() {
+  const c = CacheService.getScriptCache(), hit = c.get('TEAM_DIR');
   if (hit) return JSON.parse(hit);
-  let nums = [];
-  try { (fubFetch('users?limit=50', null, 'get').users || []).forEach(u => [u.phone, u.mobilePhone, u.cellPhone, u.workPhone].forEach(x => { const n = bbE164(x || ''); if (n) nums.push(n); })); } catch (e) {}
-  nums = nums.concat(String(PropertiesService.getScriptProperties().getProperty('TEAM_NUMBERS') || '').split(',').map(x => bbE164(x || '')).filter(Boolean));
-  c.put('TEAM_NUMS', JSON.stringify(nums), 6 * 3600);
-  return nums;
+  const dir = {};
+  try { (fubFetch('users?limit=50', null, 'get').users || []).forEach(u => { if (u.id === 2) return; [u.phone, u.mobilePhone, u.cellPhone].forEach(x => { const n = bbE164(x || ''); if (n) dir[n] = u.name; }); }); } catch (e) {}
+  String(PropertiesService.getScriptProperties().getProperty('TEAM_NUMBERS') || '').split(',').forEach(x => {
+    const n = bbE164((String(x).match(/[\d()+.\s-]{10,}/) || [''])[0]); if (!n) return;
+    dir[n] = String(x).replace(/[\d()+.-]/g, '').trim() || dir[n] || 'a team member';
+  });
+  c.put('TEAM_DIR', JSON.stringify(dir), 6 * 3600);
+  return dir;
 }
 /** True only if this Follow Up Boss contact belongs to Julián (never write calls into Joey's or Tana's contacts). */
 function isMine(personId) {
@@ -4020,7 +4025,7 @@ function vapiEndOfCall(m, props) {
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
       const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly agreed to get a text: they said yes when asked, OR they asked to be texted themselves ("just text me", "text me the details"). appointment: the date, time and type of any appointment that was actually booked on the call, else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
+        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly agreed to get a text: they said yes when asked, OR they asked to be texted themselves ("just text me", "text me the details"). appointment: the date, time, type and place of any appointment that was booked or that the caller asked Julián to put on his calendar (a showing, open house, team meeting, dinner, call), as a short title like "Team meeting with Joey at the office", else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
         {role: 'user', content: transcript.slice(0, 5000)}]));
       if (!summary) summary = humanize(r.summary || '');
       callerName = String(r.name || '').trim();
@@ -4030,8 +4035,21 @@ function vapiEndOfCall(m, props) {
   }
   const boss0 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   const fmtNum = n => n ? n.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'an unknown number';
-  if (num && num !== boss0 && teamNumbers().indexOf(num) >= 0) {  // Joey / Tana: a team call, never a lead in anyone's CRM
-    notifyJulian('📞 Team call: ' + (callerName || fmtNum(num)), String(summary || 'no summary').slice(0, 400) + (rec ? '\nRecording: ' + rec : '') + '\n(Team member, so nothing was added to Follow Up Boss.)');
+  const mate = num && num !== boss0 ? teamDirectory()[num] : '';
+  if (mate) {  // Joey / Tana: Shawna works for Julián here too. Their request goes to him only, never into anyone's CRM.
+    let added = '';
+    const tm = recapInfo && recapInfo.iso.match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+    if (tm) {
+      try {
+        const start = Utilities.parseDate(tm[1] + ' ' + tm[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm'), end = new Date(start.getTime() + (recapInfo.minutes || 60) * 6e4);
+        const title = recapInfo.appt || ('Meeting with ' + mate);
+        const cal = CalendarApp.getDefaultCalendar();
+        if (!cal.getEvents(new Date(start.getTime() - 6e4), new Date(start.getTime() + 6e4)).some(e => e.getTitle() === title))
+          cal.createEvent(title, start, end, {description: 'Set by ' + mate + ' on a call with ' + assistantName() + '.\n' + String(summary || '')});
+        added = '\n📅 Added to your calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") + '.';
+      } catch (e) { added = '\n(I couldn\'t add it to your calendar: ' + String(e.message).slice(0, 80) + ')'; }
+    }
+    notifyJulian('📞 ' + mate + ' called', String(summary || 'no summary').slice(0, 400) + added + (rec ? '\nRecording: ' + rec : ''), '', mate);
     return json({status: 'team'});
   }
   let person = null;
@@ -4170,6 +4188,8 @@ function vapiLookup(num) {
     if (!num) return 'No caller ID. Ask their name.';
     const props = PropertiesService.getScriptProperties();
     if (num === bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '')) return 'This is Julián himself calling to test you. Be relaxed and natural.';
+    const mate = teamDirectory()[num];
+    if (mate) return 'TEAM MEMBER: ' + mate + ', on Julián\'s team (The DeBenedetto Team). Greet them by first name like a colleague. You are Julián\'s assistant: take whatever they need for Julián, like setting a team meeting, an open house, a showing, a dinner or a call. Get what it is, the day, the time and the place, read it back once, and tell them you\'ll put it on Julián\'s calendar and let him know right away. Don\'t qualify them as a buyer or seller, don\'t ask for email, don\'t offer the recap text.';
     const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,stage,tags,price&phone=' + encodeURIComponent(num.slice(2)), null, 'get').people || [])[0];
     if (!p) return 'New caller, not in Julián\'s contacts. Ask their name early.';
     const first = realFirst(p), tags = (p.tags || []).filter(t => /buyer|seller|relocation|luxury|open house|past client|hot|warm|agent|not now|pre-?approved/i.test(t));
@@ -4209,6 +4229,7 @@ SCHEDULING
 - First check calendar availability and offer a couple of options. Confirm the exact date, time, time zone, type of appointment, their name, email and the property or topic before creating the event.
 - Never say an appointment is booked unless the calendar tool succeeded. If scheduling can't be completed, get their preferred times and say Julián will follow up to confirm. They can also book themselves at juliancrider.com/?book.
 
+TEAM MEMBERS (the lookup says TEAM MEMBER, e.g. Joey or Tana): you are Julián's assistant for them too. Take the request (team meeting, open house, showing, dinner, call), get what, day, time and place, read it back once, and say "I'll put it on Julián's calendar and let him know right now." No buyer questions, no email.
 IF THEY ASK FOR JULIÁN: say he'll call them back shortly; confirm their name, email and the reason for the call. Don't transfer calls. Then, in the meantime, offer to help yourself: "While you wait for Julián, I'm happy to answer any questions." Answer anything you can (how buying or selling works, loans in general, neighborhoods, today's average rates, how Julián works), so they leave the call with what they needed.
 
 INTEREST RATES AND LENDING: you can share today's averages: ${ratesText() || 'not available right now'} Never quote their own rate or payment: that depends on credit, down payment and loan type, so the right number comes from a lender. You can explain how loans and the buying or selling process work in plain words. Offer to have Julián connect them with a local lender he trusts, or set up a quick call with Julián. There's also a live rates page and payment calculator on juliancrider.com.
