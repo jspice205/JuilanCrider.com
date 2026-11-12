@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-plainmail';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-personalmail';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4328,6 +4328,7 @@ function syncCalendars() {
 function remindUpcoming() {
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
+  try { processPersonalEmailOutbox(); } catch (e) { console.log('Personal email: ' + e.message); }
   try { checkClientEmails(); } catch (e) { console.log('Email alerts: ' + e.message); }
   try { processEmailAssistant(); } catch (e) { console.log('Email assistant: ' + e.message); }
   try { applySettings(); } catch (e) { console.log('Settings: ' + e.message); }
@@ -4553,6 +4554,32 @@ function processBcolvEmailOutbox() {
       fubFetch('notes', {personId: n.personId, subject: 'Email NOT sent', body: err.message + '\n\n' + text});
     }
   });
+}
+
+/** Personal letters from Julián's own Gmail (Nov 12, his request for a family/HOA letter): a FUB note "Send personal
+ *  email" by user 2, body "Subject: …" then the text. Sent as written (no sign-off, no Realtor footer), then the note is
+ *  renamed "Send personal email - sent". Never for client business (those go from bcolv). */
+function processPersonalEmailOutbox() {
+  const props = PropertiesService.getScriptProperties(), done = JSON.parse(props.getProperty('PERSONAL_OUTBOX_DONE') || '[]');
+  (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+    .filter(n => /^send personal email$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 && Date.now() - new Date(n.created) < 36 * 36e5)
+    .forEach(n => {
+      done.push(n.id); props.setProperty('PERSONAL_OUTBOX_DONE', JSON.stringify(done.slice(-100)));
+      const lines = String(n.body || '').replace(/\r/g, '').split('\n');
+      let subject = 'Hello';
+      if (/^subject:/i.test(lines[0] || '')) subject = lines.shift().replace(/^subject:\s*/i, '');
+      const text = lines.join('\n').trim();
+      try {
+        const p = fubFetch('people/' + n.personId + '?fields=id,emails', null, 'get');
+        const to = (p.emails || []).map(e => e.value).filter(validEmail)[0];
+        if (!to) throw new Error('no valid email');
+        const html = '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + text.split(/\n{2,}/).map(par => '<p style="margin:0 0 12px">' +
+          par.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('') + '</div>';
+        MailApp.sendEmail(to, subject, text, {htmlBody: html});
+        fubFetch('notes/' + n.id, {subject: 'Send personal email - sent'}, 'put');
+        fubFetch('notes', {personId: n.personId, subject: 'Email sent (personal Gmail): ' + subject, body: 'To ' + to + ' from Julián\'s personal Gmail.'});
+      } catch (err) { fubFetch('notes', {personId: n.personId, subject: 'Email NOT sent', body: err.message}); }
+    });
 }
 
 function processFubOutbox() {
