@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-11-fast';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-threads';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1900,6 +1900,13 @@ function bbWebhook(e) {
         return json({status: 'ok'});
       }
       if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
+      const boss1 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+      if (!sentByShawna && !group && to !== boss1 && /^\+1\d{10}$/.test(to)) {
+        try {
+          const fp = (fubFetch('people?limit=1&fields=id&phone=' + to.slice(2), null, 'get').people || [])[0];
+          if (fp) { rememberJulianText(to, data.text); detectMeeting(to, fp.id, data.text); }
+        } catch (e) { console.log('His text: ' + e.message); }
+      }
     }
     return json({status: 'ok'});
   }
@@ -1943,7 +1950,8 @@ function bbWebhook(e) {
   const person = found[0], text = String(data.text).slice(0, 1000);
   try { fubFetch('textMessages', {personId: person.id, message: text, fromNumber: from, toNumber: TEXTING.myNumber, isIncoming: true}); }
   catch (err) { fubFetch('notes', {personId: person.id, subject: 'Text from ' + (person.firstName || 'contact'), body: text}); }
-  if (/^\s*(stop|stopall|unsubscribe|end|quit|cancel|opt ?out)\b/i.test(text)) {
+  try { detectMeeting(from, person.id, text); } catch (e) { console.log('Meeting: ' + e.message); }
+  if (/^\s*(stop|stopall|unsubscribe|end|quit|cancel|opt ?out|stop texting( me)?|remove me)\s*[.!]*\s*$/i.test(text)) {  // the whole text only
     const tags = (person.tags || []).filter(t => t !== 'Text OK').concat('Text Opt-Out');
     fubFetch('people/' + person.id, {tags: tags}, 'put');
     return json({status: 'ok'});
@@ -2058,10 +2066,94 @@ function webAnswer(q) {
 /** Live facts for a text, only when it asks about rates or something current (keeps Groq's free limits for the rest). */
 function liveInfo(text, always) {
   const parts = [];
+  (String(text || '').match(/https?:\/\/[^\s<>"]+/g) || []).slice(0, 2).forEach(u => {
+    const t = pageText(u);
+    parts.push(t ? 'The page at ' + u + ' says: ' + t : 'The link ' + u + ' could not be opened (the site blocks it); ask them what they like about it.');
+  });
   if (RATE_Q.test(text)) parts.push(ratesText());
   if (always || WEB_Q.test(text)) parts.push(webAnswer(text));
   const out = parts.filter(Boolean).join('\n');
   return out ? '\nLIVE INFO (current, use it if it helps and say where numbers come from):\n' + out : '';
+}
+
+// HIS VOICE (Julián, Nov 11): Shawna learns how he texts from his own replies to clients (not hers), last 40 kept.
+function rememberJulianText(to, text) {
+  text = String(text || '').trim();
+  if (text.length < 2 || text.length > 400 || /\bsh(?:aw|au|w)n+a\b/i.test(text) || /^\[|^call notes/i.test(text)) return;
+  try {
+    const props = PropertiesService.getScriptProperties();
+    let v = JSON.parse(props.getProperty('JULIAN_VOICE') || '[]');
+    v.push(text.replace(/\s+/g, ' ')); v = v.slice(-40);
+    while (JSON.stringify(v).length > 7000) v.shift();
+    props.setProperty('JULIAN_VOICE', JSON.stringify(v));
+  } catch (e) {}
+}
+function julianVoice() {
+  const v = JSON.parse(PropertiesService.getScriptProperties().getProperty('JULIAN_VOICE') || '[]').slice(-18);
+  return v.length < 3 ? '' : '\nHOW JULIÁN REALLY TEXTS (his own recent texts to clients; match his tone, length, words and emoji habits, never copy them word for word):\n' + v.map(t => '• ' + t).join('\n');
+}
+
+// MEETINGS FROM TEXTS (Julián, Nov 11): when he and a client agree on a time in their texts (whoever wrote it), Shawna
+// puts it on his calendar + Follow Up Boss, and offers to send the client a tap-to-add invite (Reply YES).
+const MEET_HINT = /\b(\d{1,2}(:\d\d)?\s*(am|pm)|noon|morning|afternoon|evening|tonight|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|wed|thu|fri|sat|sun)\b|\b(works|that works|see you|confirmed|sounds good|perfect|deal|i'?ll be there)\b/i;
+function detectMeeting(phone, personId, lastText) {
+  if (!personId || !MEET_HINT.test(String(lastText || ''))) return;
+  const props = PropertiesService.getScriptProperties(), cache = CacheService.getScriptCache(), key = props.getProperty('GROQ_API_KEY');
+  if (!key || cache.get('MEETCHK_' + personId)) return;
+  cache.put('MEETCHK_' + personId, '1', 60);
+  const thread = bbThread(phone);
+  if (!thread) return;
+  let r = {};
+  try {
+    r = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+      {role: 'system', content: 'Read this text conversation between Julián (a Las Vegas Realtor) and a client. Today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm') +
+        ' in Las Vegas. Did they just AGREE on a specific meeting (a showing, walkthrough, call or meeting) with a day AND a time, confirmed by both sides? Return JSON only: {"agreed": true|false, "start": "YYYY-MM-DDTHH:mm Las Vegas time", "minutes": 60, "title": "short title like Onyx Crest walkthrough", "location": "address or place if said, else empty"}. If the day or time is missing or not yet confirmed, agreed is false.'},
+      {role: 'user', content: thread.split('\n').slice(-14).join('\n')}], {maxTokens: 500, noPick: true}));
+  } catch (e) { console.log('Meeting check: ' + e.message); return; }
+  const m = String(r.start || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  if (!r.agreed || !m) return;
+  const start = Utilities.parseDate(m[1] + ' ' + m[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm');
+  if (start.getTime() < Date.now()) return;
+  const dk = 'MEET_' + personId + '_' + m[1] + m[2].replace(':', '');
+  if (props.getProperty(dk)) return;
+  props.setProperty(dk, '1');
+  const p = fubFetch('people/' + personId + '?fields=id,name,firstName,lastName', null, 'get'), who = p.name || [p.firstName, p.lastName].join(' ');
+  const end = new Date(start.getTime() + (Number(r.minutes) || 60) * 6e4), title = who + ': ' + humanize(r.title || 'meeting');
+  const cal = CalendarApp.getDefaultCalendar();
+  const dup = cal.getEvents(new Date(start.getTime() - 36e5), new Date(start.getTime() + 36e5)).some(e => e.getTitle().toLowerCase().indexOf(String(p.firstName || who).toLowerCase()) >= 0);
+  if (!dup) {
+    cal.createEvent(title, start, end, {location: r.location || '', description: 'Phone: ' + phone + '\nSet in your texts with ' + who + ' (added by ' + assistantName() + ').'});
+    try { fubFetch('appointments', {title: title, start: start.toISOString(), end: end.toISOString(), location: r.location || '', invitees: [{personId: personId}]}); } catch (e) {}
+  }
+  const n = addPending({kind: 'invite', personId: personId, who: who, phone: phone, title: humanize(r.title || 'Meeting with Julián'), start: start.getTime(), end: end.getTime(), location: r.location || ''});
+  notifyJulian('📅 ' + who, (dup ? 'You already have ' : 'I put ') + humanize(r.title || 'your meeting') + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") +
+    (dup ? ' on your calendar.' : ' on your calendar from your texts.') + ' Want me to send ' + (p.firstName || who) + ' a tap-to-add calendar invite? ' + yesHint(n) + '.', '', who);
+}
+
+/** Shawna writes Julián's reply to a client's text thread (he asked her to: "reply to Lisa", "handle it"). */
+function draftThreadReply(p, phone, instruction) {
+  const props = PropertiesService.getScriptProperties();
+  const thread = bbThread(phone), notes = personHistory(p.id), camp = personCampaigns(p.id);
+  const out = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+    {role: 'system', content: assistantPrompt(assistantName(), 'julian') + '\nJULIÁN ASKED YOU TO WRITE HIS NEXT TEXT IN THIS CONVERSATION. Read the whole thread and notes, then answer their latest message(s) in context, as Julián. ' +
+      'For price or negotiation questions: show you heard them and that you will work it with them (a call or meeting), but never promise a price, a discount or what a seller will accept. Set escalate false.'},
+    {role: 'user', content: 'Contact: ' + (p.name || '') + (thread ? '\nThe text conversation (oldest first):\n' + thread : '') + '\nFollow Up Boss notes:\n' + notes + (camp ? '\nCAMPAIGNS:\n' + camp : '') +
+      (instruction ? '\n\nJulián\'s instructions for this reply: ' + instruction : '') + '\n\nReply as JSON only.'}]));
+  return humanize(out.reply || '');
+}
+
+/** Opens a link someone texted (Julián, Nov 11: Shawna can open links and read web pages), as plain text. */
+function pageText(url) {
+  const cache = CacheService.getScriptCache(), k = 'PG_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, url)).slice(0, 30);
+  const hit = cache.get(k); if (hit !== null) return hit;
+  let t = '';
+  try {
+    const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true, headers: {'User-Agent': 'Mozilla/5.0 (Macintosh) Safari/605'}});
+    if (res.getResponseCode() < 300) t = res.getContentText().slice(0, 400000).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'").replace(/\s+/g, ' ').trim().slice(0, 3500);
+  } catch (e) {}
+  cache.put(k, t, 3600);
+  return t;
 }
 
 function assistantReply(person, from, text) {
@@ -2082,11 +2174,13 @@ function assistantReply(person, from, text) {
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
   if (out.important || out.escalate) stat('neededYou');
+  const sens0 = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('No Shawna') >= 0;
   if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
+    props.setProperty('LAST_ALERT_ID', JSON.stringify({id: person.id, at: Date.now()}));
     const k = 'IMP_' + person.id;
     if (Date.now() - Number(props.getProperty(k) || 0) > 2 * 36e5) {
       props.setProperty(k, String(Date.now()));
-      try { notifyJulian((first || 'A client') + ' needs you', (first || 'They') + ' texted: "' + String(text).slice(0, 140) + '"' + (out.why || out.reason ? ' (' + (out.why || out.reason) + ')' : '') + (out.escalate ? ' I\'m leaving this one for you.' : ' I\'m handling the reply.')); } catch (e) {}
+      try { notifyJulian((first || 'A client') + ' needs you', (first || 'They') + ' texted: "' + String(text).slice(0, 140) + '"' + (out.why || out.reason ? ' (' + (out.why || out.reason) + ')' : '') + (out.escalate || sens0 ? '\n\nThis one\'s for you. Want me to write the reply? Just say "reply to ' + (first || 'them') + '" and tell me anything to include.' : ' I\'m handling the reply.'), '', [first, p.lastName].join(' ').trim()); } catch (e) {}
     }
   }
   const reply = humanize(out.reply);
@@ -2208,7 +2302,7 @@ function addPending(item) {
 }
 function pendingLabel(x) {
   return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
-    : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : 'text to ' + x.who;
+    : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
 }
 function yesHint(n) { return pendingQueue().length > 1 ? 'Reply YES ' + n : 'Reply YES'; }
 
@@ -2592,7 +2686,8 @@ function assistantPrompt(name, persona) {
   const who = asJulian
     ? `You ARE Julián J. Crider texting his own clients from his phone. Write in first person as Julián ("I", "me"). Never mention an assistant or AI on your own. If someone sincerely asks whether they're talking to a person, an AI or a bot, be honest: "Ha, good question. You're texting with ${name}, my AI assistant. I read every conversation and I'm happy to jump on a call anytime." Never deny being AI.`
     : `You are ${name}, Julián J. Crider's AI assistant, texting his clients. Be open that you're his assistant.`;
-  return `${who}
+  const voice = asJulian ? julianVoice() : '';
+  return `${who}${voice}
 Julián is a Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson (NV S.0177760, 702-498-2571). Think like a top luxury advisor and a good friend: warm, sharp, genuinely interested in the person, never salesy.
 ${assistantKnowledge()}
 
@@ -2600,7 +2695,9 @@ HOW TO TEXT (this matters most):
 - Sound like a real person texting a friend he respects. Relaxed, warm, specific to what THEY said. Contractions, natural rhythm, a little personality.
 - Catch up like a human first. If they share something personal or casual, respond to that first (a quick reaction, a light question about them) before anything about real estate. Don't rush to business.
 - 1 to 3 short sentences. One question at most, and not every text needs a question.
-- Emojis: use 1 or 2 when they fit naturally (😊 🙌🏾 🏡 👀 ☀️ 🔑 👋🏾 😂), never forced.
+- Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏾 🏡 👀 ☀️ 🔑 👋🏾 😂), never by habit at the end of every text and never in back-to-back texts.
+- Longer replies: break them into 2 or 3 short paragraphs with a blank line between, the way a person texts. Short replies stay one line.
+- Read the WHOLE conversation first and answer what they actually said in context (who they are, what you already told them, what was planned). Never answer only the last line.
 - Chris Voss, used lightly and naturally: mirror a few of their words, label a feeling ("Sounds like…", "Seems like…"), or ask a calm "what" or "how" question. Use a no-oriented question ("Would it be crazy if…?", "Is it a bad idea to…?") only once in a while. Never stack techniques, never sound scripted.
 - No corporate phrases ("I'd be happy to assist", "Great question", "valued client", "touch base"). No dashes of any kind (no "—", "–" or " - "); use commas or periods.
 - Word choices: "here's what I can do for you" (never "sorry, I can't"), "when we work together" (not "if you decide to"), "I'll confirm that for you" (not "I'm not sure"), "I was thinking of you" (never "sorry to bother you"), "the next steps are". It's fine to say "honestly, this one isn't for everyone" when something isn't a fit.
@@ -2812,10 +2909,19 @@ function bossCommand(text, tries) {
   if (picked && !pend) return say('I don\'t have a #' + picked + ' waiting. ' + (queue.length ? 'Waiting now: ' + queue.map(x => '#' + x.n + ' ' + pendingLabel(x)).join(', ') : 'Nothing is waiting for your OK.'));
   if (pend && pend.kind !== 'schedule' && ym) {
     dropPend(pend);
-    if (Date.now() - pend.at > (/^(email|deal|event)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+    if (Date.now() - pend.at > (/^(email|deal|event|invite)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
     stat('approved');
     if (pend.kind === 'deal') {
       try { return say('done. ' + pend.who + '\'s deal is now in ' + moveDeal(pend) + '. ✅'); } catch (e) { return say('I couldn\'t move that deal: ' + String(e.message).slice(0, 120)); }
+    }
+    if (pend.kind === 'invite') {  // tap-to-add calendar invite for a meeting set in their texts
+      props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
+      const first = String(pend.who || '').split(' ')[0];
+      const r = bbSend(pend.phone, 'Here\'s the invite for ' + Utilities.formatDate(new Date(pend.start), 'America/Los_Angeles', "EEEE 'at' h:mm a") + (first ? ', ' + first : '') + '. Tap it to add it to your calendar.');
+      Utilities.sleep(1200);
+      try { bbPostAttachment(pend.phone, r && r.service, icsInvite(pend.title + ' with Julián', pend.start, pend.end, pend.location, 'Julián Crider, 702-498-2571')); } catch (e) { return say('the text went, but the invite file didn\'t: ' + String(e.message).slice(0, 80)); }
+      fubFetch('notes', {personId: pend.personId, subject: 'Calendar invite sent', body: pend.title + ', ' + Utilities.formatDate(new Date(pend.start), 'America/Los_Angeles', 'EEE MMM d h:mm a') + '\n(sent by ' + name + ' at Julián\'s request)'});
+      return say('invite sent to ' + pend.who + '. ✅');
     }
     if (pend.kind === 'event') {
       const start = new Date(pend.start), end = new Date(start.getTime() + (pend.minutes || 30) * 6e4);
@@ -2869,6 +2975,8 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - taskdone: he says tasks are done or wants them cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "clear the old tasks", "clear them all"). "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
 - taskstart: he wants to work a task from your to-do list ("do 2", "let's knock out number 3", "start the Sonia one", "handle 1"). "message": the number; "who": the person if he names one.
 - text: he wants you to text a client (e.g. "text Lisa and ask if 3pm works"). Write the message in his voice: short, warm, Chris Voss style, no apology, "I was thinking of you" not "sorry to bother you".
+- If he wants YOU to answer someone ("reply to Lisa", "you handle it", "answer her", "what should I say back", "write her back"), return action text with "draft": true and put any instructions he gave in "message" (or leave it empty); you will write the reply from the real conversation. If you just told him a client TEXTED, replying means a TEXT, never an email. Use email only when he says email or they emailed.
+- Never invent an email address or phone number: only fill "email"/"phone" with ones he actually typed.
 - voicememo: he wants you to send someone a voice memo / voice note / audio message in your voice ("message" = what you'll say, written to be spoken, 15 to 40 seconds).
 - If you just suggested an email reply and he says how to change it ("make it shorter", "add that I'm free Thursday", "say it like this: ..."), return action email for that same person with the updated "message".
 - email: he wants you to email someone or answer their email ("reply to Ruth", "email Ruth back and say..."). Write a short, warm email in his voice, plain paragraphs, no signature (it's signed automatically). If they emailed recently it goes as a reply in that same thread. If he asks you to answer their email, read it in your recent conversation or the data first so the reply fits what they said.
@@ -2951,6 +3059,15 @@ Examples (all mean the same as the action shown):
       }
     }
   }
+  // The router sometimes invents an email (lisa.dragos@example.com) or phone: keep only ones he actually typed.
+  if (!cnKey && !calPick && a) {
+    const digits = text.replace(/\D/g, ''), low = text.toLowerCase();
+    (Array.isArray(a.actions) ? a.actions : [a]).forEach(x => {
+      if (!x) return;
+      if (x.email && low.indexOf(String(x.email).toLowerCase()) < 0) delete x.email;
+      if (x.phone) { const d = String(x.phone).replace(/\D/g, '').slice(-7); if (d.length < 7 || digits.indexOf(d) < 0) delete x.phone; }
+    });
+  }
   // Several requests in one text ("text Lisa, remind me to call Dan and what's my week look like"): do each in order.
   const doAction = a => {
     const findOne = who => {
@@ -2962,6 +3079,11 @@ Examples (all mean the same as the action shown):
       }
       const exact = ppl.filter(p => (p.name || '').toLowerCase() === q.toLowerCase());
       if (exact.length) return exact.sort((x, y) => String(x.created).localeCompare(String(y.created)))[0];  // oldest = the real one
+      if (ppl.length > 1) {  // "Lisa" right after "Lisa needs you": the Lisa she just told him about
+        const la = JSON.parse(props.getProperty('LAST_ALERT_ID') || 'null');
+        const hit = la && Date.now() - la.at < 12 * 36e5 && ppl.filter(x => x.id === la.id)[0];
+        if (hit) return hit;
+      }
       return ppl.length === 1 ? ppl[0] : (ppl.length ? {many: ppl} : null);
     };
     const addContact = () => {
@@ -3062,6 +3184,10 @@ Examples (all mean the same as the action shown):
         if (h < 9) sendAt += (9 - h) * 36e5; else if (h >= 21) sendAt += (24 - h + 9) * 36e5;
       }
       const whenTxt = sendAt ? Utilities.formatDate(new Date(sendAt), 'America/Los_Angeles', "EEE MMM d 'at' h:mm a") : '';
+      if (a.draft || !String(a.message || '').trim()) {  // "reply to Lisa" / "handle it": written from the real conversation
+        try { a.message = draftThreadReply(p, phone, a.draft ? String(a.message || '') : ''); } catch (e) {}
+        if (!a.message) return say('I couldn\'t write that one just now. Tell me what to say and I\'ll send it.');
+      }
       const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
       return say(name + ': ' + (sendAt ? 'schedule this for ' + p.name + ' on ' + whenTxt : 'send this to ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"\n\n' + yesHint(n) + ' or NO to cancel.');
     }
@@ -3601,7 +3727,13 @@ function vapiWebhook(e) {
   fubFetch('notes', {personId: person.id, subject: 'Call with ' + assistantName() + (mins ? ' (' + mins + ')' : ''),
     body: (summary || 'No summary.') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
-  if (num && num === boss) return json({status: 'ok'});  // Julián testing: note only, no call-back task
+  if (num && num === boss) {  // Julián testing from his own phone: no call-back task, but show him what a caller would get
+    try {
+      notifyJulian('🧪 Test call logged', String(summary || 'no summary').slice(0, 300) +
+        (recapInfo && recapInfo.ok ? '\n\nThe caller said yes to a recap, so they\'d get this text:\n"' + (recapInfo.recap || '') + (recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + '"' : '\n\nNo recap text (they didn\'t say yes to one on the call).'));
+    } catch (e) {}
+    return json({status: 'ok'});
+  }
   try { notifyJulian((callerName || 'Someone') + ' called', assistantName() + ' took a call' + (num ? ' from ' + num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : '') + ': ' + String(summary || 'no summary').slice(0, 220) + ' There\'s a call-back task in Follow Up Boss.'); } catch (e) {}
   createCallTask(person.id, assistantName() + ' took their call: ' + summary.slice(0, 140) + ' Call them back.', 'Call');
   stat('calls');

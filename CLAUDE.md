@@ -225,6 +225,17 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   their questions in the meantime.
   Vapi versions: syncVapiAssistant PATCH publishes (v35-37 on Nov 11); the dashboard "Draft" is an old local draft, never
   publish it (it has the old receptionist prompt).
+- Nov 12 fixes (Lisa thread): STOP opt-out only when the WHOLE text is an opt-out word ("End of Dec you said?" had
+  tagged Lisa Dragos 2223 Text Opt-Out; restored Text OK + note). Prompt: few emojis (not every text), paragraphs for
+  longer replies, read the whole thread. `rememberJulianText`/`julianVoice` (JULIAN_VOICE, his last 40 texts to FUB
+  contacts) → "HOW JULIÁN REALLY TEXTS" in assistantPrompt (persona julian). `detectMeeting` (his outgoing texts and
+  client texts matching MEET_HINT; router model reads last 14 thread lines; agreed day+time → calendar event + FUB
+  appointment unless one exists, MEET_<id>_<time> dedupe) → notifyJulian + pending kind `invite` (YES texts an .ics).
+  Alerts: escalated/sensitive texts say "This one's for you. Want me to write the reply?" (not "I'm handling it");
+  LAST_ALERT_ID makes "Lisa" resolve to the Lisa she just alerted about. Router text action "draft": true →
+  `draftThreadReply` (whole bbThread + notes + campaigns; no price promises); replying to a text is a text, not email;
+  router-invented emails/phones are scrubbed unless he typed them. `liveInfo` opens links (`pageText`, cached 1 h).
+  Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
