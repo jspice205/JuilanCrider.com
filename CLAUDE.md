@@ -320,6 +320,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   whatsNewText also lists FUB "Received" emails (sentByPerson) from people active since the last update, skipping
   auto-replies (<2 min after a Sent one; Victor Cohen 731's 9:06 reply was 6 s after the Legacy email = auto-reply).
   BOSS_OUTBOX keeps retrying alerts for 24 h.
+  Unsubscribe (Nov 12, Gina Bauer 1976 asked by email reply on Nov 11; tagged by hand): processEmailAssistant checks
+  subject + their own words (quoted email cut off) against UNSUB_RE → `unsubscribeContact` (tags Unsubscribed + Do Not Email +
+  Not Interested, pauses running plans, note, notifyJulian "🚫 X unsubscribed", no reply). Funnel + past-client loop skip
+  Unsubscribed/Do Not Email. Auto-reply cutoff in whatsNewText is 45 s (Gina's real reply came 101 s after the email).
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12

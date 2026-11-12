@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-replies';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-unsub';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -974,7 +974,7 @@ function runFunnel(people) {
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
   let used = props.getProperty('FUNNEL_DAY') === today ? Number(props.getProperty('FUNNEL_COUNT')) || 0 : 0, started = 0;
 
-  const paused = p => /active client|pending|under contract|closed/i.test(String(p.stage || '')) || has(p, 'Pause') || has(p, 'Not Interested');
+  const paused = p => /active client|pending|under contract|closed/i.test(String(p.stage || '')) || has(p, 'Pause') || has(p, 'Not Interested') || has(p, 'Unsubscribed') || has(p, 'Do Not Email');
   const isBounced = p => has(p, 'Bounced') && !has(p, 'Opened Email');
   const ok = p => {
     const tags = p.tags || [], stage = String(p.stage || '');
@@ -1169,7 +1169,7 @@ function runPastClientLoop(people) {
   (last > 1 ? sheet.getRange(2, 1, last - 1, PAST_CLIENTS_TAB.headers.length).getValues() : [])
     .forEach((r, i) => rows[r[0]] = {row: i + 2, closed: r[2], as: r[3], done: String(r[4] || '').split(',').filter(Boolean)});
   const tagHas = (p, t) => (p.tags || []).some(x => String(x).toLowerCase() === t.toLowerCase());
-  const skip = p => /trash/i.test(String(p.stage || '')) || ['Deceased', 'Has Agent', 'Pause', 'No Past Client Loop'].some(t => tagHas(p, t)) || (p.tags || []).some(t => /^Test\b/i.test(t));
+  const skip = p => /trash/i.test(String(p.stage || '')) || ['Deceased', 'Has Agent', 'Pause', 'No Past Client Loop', 'Unsubscribed', 'Do Not Email'].some(t => tagHas(p, t)) || (p.tags || []).some(t => /^Test\b/i.test(t));
   const planIds = Object.keys(FUNNEL.plans).map(k => FUNNEL.plans[k]).concat(FUNNEL.legacyAfterIntroPlan, FUNNEL.reintroPlan, FUNNEL.neighborPlan);
   const today = new Date(), day = Utilities.formatDate(today, 'America/Los_Angeles', 'yyyy-MM-dd');
   // Join: deal closed, stage Closed / Past Client, or tagged "past client".
@@ -2374,6 +2374,23 @@ function todoText(range) {
   return lines.join('\n\n');
 }
 
+// Someone asking off the list, by email (subject or their own words) or in a text that isn't a plain STOP.
+const UNSUB_RE = /\b(unsubscribe|unsub|remove me|take me off|stop (emailing|sending|contacting)|opt(ed)? ?out|no more emails|do not (email|contact) me|don'?t (email|contact) me)\b/i;
+/** Takes a contact off every email: tags Unsubscribed + Do Not Email + Not Interested (the funnel, newsletters and the
+ *  past-client loop skip them), pauses running action plans, logs a note and tells Julián. No reply is sent to them. */
+function unsubscribeContact(p, how, said) {
+  const props = PropertiesService.getScriptProperties(), k = 'UNSUB_' + p.id;
+  if (props.getProperty(k)) return;
+  props.setProperty(k, String(Date.now()));
+  try { fubFetch('people/' + p.id + '?mergeTags=true', {tags: ['Unsubscribed', 'Do Not Email', 'Not Interested']}, 'put'); } catch (e) {}
+  try { (fubFetch('actionPlansPeople?personId=' + p.id, null, 'get').actionPlansPeople || []).filter(a => a.status === 'Running')
+    .forEach(a => fubFetch('actionPlansPeople/' + a.id, {status: 'Paused'}, 'put')); } catch (e) {}
+  const who = [realFirst(p), p.lastName].join(' ').trim() || p.name || 'A contact';
+  try { fubFetch('notes', {personId: p.id, subject: 'Unsubscribed', body: who + ' asked to unsubscribe by ' + how + ': "' + String(said || '').replace(/\s+/g, ' ').slice(0, 300) +
+    '"\nTagged Unsubscribed + Do Not Email + Not Interested and paused their email plans. Don\'t email them unless they reach out first.'}); } catch (e) {}
+  try { notifyJulian('🚫 ' + who + ' unsubscribed', 'They asked to be taken off your emails, so I took them off everything and noted it in Follow Up Boss.', '', who); } catch (e) {}
+}
+
 /** Every alert Shawna texts Julián (calls, website leads, bookings, email briefs…), last 3 days, so his daily update can
  *  list what came in even when the alert text never reached him (Nov 12: the Mac was down during calls and emails). */
 function logAlert(msg) {
@@ -2419,7 +2436,7 @@ function whatsNewText() {
       const ems = fubFetch('emails?personId=' + p.id + '&limit=6&sort=-created', null, 'get').emails || [];
       const sentTimes = ems.filter(e => e.status === 'Sent').map(e => new Date(e.created).getTime());
       const got = ems.filter(e => e.status === 'Received' && (e.relatedPeople || []).some(r => r.personId === p.id && r.sentByPerson) &&
-        new Date(e.created).getTime() > since && !sentTimes.some(t => { const d = new Date(e.created).getTime() - t; return d >= 0 && d < 2 * 6e4; }));
+        new Date(e.created).getTime() > since && !sentTimes.some(t => { const d = new Date(e.created).getTime() - t; return d >= 0 && d < 45e3; }));  // under 45 s = an automatic reply
       if (got.length) replied.push({who: [realFirst(p), p.lastName].join(' ').trim() || p.name, at: new Date(got[0].created).getTime()});
     });
     if (replied.length) out.push('📧 replied to your emails:\n' + replied.map(x => '• ' + x.who + ' (' + fmt(x.at) + ')').join('\n'));
@@ -4741,6 +4758,9 @@ function processEmailAssistant(list) {
     if (/auto.?reply|automatic reply|out of (the )?office|thank you for (contacting|your (email|message|inquiry))|we (will|'ll) (contact|get back to) you|in the order (it|your email) was received|do not reply|this mailbox is not monitored/i.test(m.subject + ' ' + m.body)) return;
     const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,tags,stage,assignedUserId,phones&email=' + encodeURIComponent(addr), null, 'get').people || [])[0];
     if (!p || (p.assignedUserId && p.assignedUserId !== me)) return;
+    // "Unsubscribe" in the subject or in their own words (not the quoted email below): take them off everything (Nov 12).
+    const ownWords = String(m.body || '').split(/\n\s*On .{5,200}wrote:|\n-{2,}\s*Original Message|\n\s*>|\nFrom: /i)[0].slice(0, 600);
+    if (UNSUB_RE.test(m.subject + ' ' + ownWords)) { unsubscribeContact(p, 'email', ownWords || m.subject); return; }
     const tags = p.tags || [];
     if (tags.indexOf('No Shawna') >= 0 || tags.indexOf('Partner') >= 0) return;
     const phone = bbE164(((p.phones || [])[0] || {}).value || ''), first = realFirst(p);
