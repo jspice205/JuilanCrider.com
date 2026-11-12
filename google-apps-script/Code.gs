@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-macwatch';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-fullupdate';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2374,10 +2374,58 @@ function todoText(range) {
   return lines.join('\n\n');
 }
 
-/** Morning briefing: today's calendar, then today's to-dos. */
+/** Every alert Shawna texts Julián (calls, website leads, bookings, email briefs…), last 3 days, so his daily update can
+ *  list what came in even when the alert text never reached him (Nov 12: the Mac was down during calls and emails). */
+function logAlert(msg) {
+  try {
+    const props = PropertiesService.getScriptProperties(), t = String(msg || '').replace(/\s+/g, ' ').trim();
+    if (!t || /^(🧪|Shawna here|I am connected|I'm back online)/.test(t)) return;
+    let log = JSON.parse(props.getProperty('ALERT_LOG') || '[]').filter(x => Date.now() - x.at < 3 * 864e5);
+    log.push({at: Date.now(), t: t.slice(0, 220)});
+    while (JSON.stringify(log).length > 7000) log.shift();
+    props.setProperty('ALERT_LOG', JSON.stringify(log));
+  } catch (e) {}
+}
+
+/** "What's new since your last update": calls Shawna took, alerts (leads, bookings, emails), unread emails from people.
+ *  Covers everything since the last full update (at most 3 days, at least the last 18 hours). */
+function whatsNewText() {
+  const props = PropertiesService.getScriptProperties(), now = Date.now();
+  const since = Math.max(now - 3 * 864e5, Math.min(Number(props.getProperty('WHATSNEW_AT') || 0) || 0, now - 18 * 36e5));
+  const fmt = t => Utilities.formatDate(new Date(t), 'America/Los_Angeles', now - t > 20 * 36e5 ? 'EEE h:mm a' : 'h:mm a');
+  const out = [], alerts = JSON.parse(props.getProperty('ALERT_LOG') || '[]').filter(x => x.at > since);
+  // Calls Shawna answered (Follow Up Boss call notes), unless an alert already covered that call.
+  try {
+    const notes = (fubFetch('notes?limit=40&sort=-created&fields=id,subject,body,created,personId', null, 'get').notes || [])
+      .filter(n => /^Call with Shawna/.test(n.subject || '') && new Date(n.created).getTime() > since)
+      .filter(n => !alerts.some(a => /^📞/.test(a.t) && Math.abs(a.at - new Date(n.created).getTime()) < 15 * 6e4));
+    const calls = notes.slice(0, 6).map(n => {
+      let who = '';
+      try { const pp = fubFetch('people/' + n.personId + '?fields=id,name,firstName,lastName', null, 'get'); who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {}
+      return '• ' + fmt(new Date(n.created).getTime()) + ' ' + (who || 'a caller') + ': ' + String(n.body || '').split('\n')[0].slice(0, 140);
+    });
+    if (calls.length) out.push('📞 calls Shawna took:\n' + calls.join('\n'));
+  } catch (e) {}
+  if (alerts.length) out.push('🔔 since your last update:\n' + alerts.slice(-10).map(a => '• ' + fmt(a.at) + ' ' + a.t.slice(0, 170)).join('\n'));
+  // Unread emails from real people (not system mail), newest first.
+  try {
+    const r = bcolvCall({action: 'search', query: 'in:inbox is:unread after:' + Math.floor(since / 1000) + ' -from:me', max: 15});
+    const seen = {}, mails = ((r && r.messages) || []).filter(x => !x.fromMe && !/mailer-daemon|postmaster|no-?reply|notification|followupboss|google\.com|calendar/i.test(x.from) &&
+      !/delivery status|undeliverable|auto.?reply|out of office/i.test(x.subject || ''))
+      .sort((x, y) => y.date - x.date).filter(x => { const k = String(x.from).toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; }).slice(0, 6);
+    if (mails.length) out.push('📧 unread emails:\n' + mails.map(x => '• ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + ': ' + String(x.subject || '(no subject)').slice(0, 70)).join('\n') +
+      '\n("emails" for what they said)');
+  } catch (e) {}
+  return out.length ? out.join('\n\n') : '🔔 nothing new came in since your last update.';
+}
+
+/** "What do I have today" / morning briefing: everything pressing or new. Calendar, what came in (calls, leads, emails),
+ *  then to-dos, waiting texts and approvals (Julián, Nov 12). */
 function agendaText(week) {
   const range = week ? 'week' : 'today';
-  return calendarText(range) + '\n\n' + todoText(range);
+  const parts = [calendarText(range), whatsNewText(), todoText(range)];
+  PropertiesService.getScriptProperties().setProperty('WHATSNEW_AT', String(Date.now()));
+  return parts.join('\n\n');
 }
 
 // ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
@@ -2897,6 +2945,7 @@ function assistantCancel(phone) {
 /** A text to Julián that must not get lost: if the texting Mac doesn't take it, it's retried every minute (6 h). */
 function bossTextSafe(msg) {
   const props = PropertiesService.getScriptProperties(), boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  logAlert(msg);  // kept for "what do I have today", even if this text never reaches him (Mac down)
   if (!boss) return false;
   try { bbSend(boss, msg); return true; }
   catch (e) {
@@ -3145,7 +3194,7 @@ function bossCommand(text, tries) {
 {"action":"jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
-- agenda: his TO-DO list only (tasks, follow-ups, who's waiting on him): "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
+- agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
 - unschedule: cancel a text he scheduled for later ("cancel the text to Lisa", "don't send Dan that message Friday"). Put the person in "who".
 - taskdone: he says something is already done or wants tasks cleared ("done 2", "mark 1 and 3 done", "I called Sonia", "I already texted Lisa back", "Dan's handled", "already took care of that", "that's done", "clear the old tasks", "clear them all"). Whenever he says he already did something, it's taskdone (with "who" if he names a person), never a new task or text. "message": the numbers from your last to-do list (comma separated), or "old" (older than a week), or "all"; "who" if he names a person.
 - taskstart: he wants to work a task from your to-do list ("do 2", "let's knock out number 3", "start the Sonia one", "handle 1"). "message": the number; "who": the person if he names one.
@@ -3180,7 +3229,7 @@ Examples (all mean the same as the action shown):
 "hit Kyle up" / "shoot Lisa a text" / "tell him I'm on the way" / "let her know 3 works" / "text bro back" → text
 "run it" / "send it" / "bet" / "yup" / "go ahead" / "do that" / "yes please" → yes to what you just offered
 "who been hittin my line" / "anybody text me" / "what came in" → texts; "who emailed" / "any emails" / "inbox" → emails
-"anything else I need to do" / "what I got today" / "what's on deck" / "what's on my plate" → agenda (to-dos); "what's on my calendar" / "how's my week look" / "what's my schedule tomorrow" / "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
+"anything else I need to do" / "what I got today" / "what's on deck" / "what's on my plate" / "what did I miss" / "catch me up" → agenda (the full update); "what's on my calendar" / "how's my week look" / "what's my schedule tomorrow" / "am I free at 3" → calendar; "who's hot" / "who's ready to move" → hot
 "pull up Dan" / "what's up with Dan" / "who is Dan" → lookup; "remind me to call Dan" → task; "put Dan down for Thursday at 2" → schedule
 "you can talk to Kyle" / "Kyle's cool, you can text him" / "add Kyle to your list" → allow
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
@@ -3468,7 +3517,11 @@ Examples (all mean the same as the action shown):
       ((r && r.emails) || []).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
       return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
     }
-    if (a.action === 'agenda') return say(todoText(agendaRange(String(a.message || '') + ' ' + text)));
+    if (a.action === 'agenda') {  // "what do I have today" = the full update; "my to-dos/tasks" = just the list
+      const rg = agendaRange(String(a.message || '') + ' ' + text);
+      if (/\b(to ?-?do list|my to ?-?dos|tasks?)\b/i.test(text) || rg === 'tomorrow') return say(todoText(rg));
+      return say(agendaText(rg === 'week'));
+    }
     if (a.action === 'unschedule') {
     const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
     if (!sh || sh.getLastRow() < 2) return say('nothing is scheduled.');

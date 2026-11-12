@@ -309,6 +309,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Mac watch (Nov 12, "Shawna not working": Shawna Log stopped getting rows = texts never reached the script):
   `checkTextingMac` (remindUpcoming tick) pings BlueBubbles; down 10+ min → email NOTIFY_EMAIL + ntfy (every 3 h max);
   back → texts him "I'm back online".
+  Full update (Nov 12, "what do I have today" missed calls/emails from while the Mac was down): bossTextSafe → `logAlert`
+  (ALERT_LOG, 3 days); `whatsNewText` = calls Shawna took (FUB "Call with Shawna" notes) + alerts + unread inbox emails since
+  WHATSNEW_AT (≥18 h, ≤3 days); agenda/morning briefing = calendar + what's new + to-dos (`agendaText`); "my to-do list"/
+  "tasks"/tomorrow → todoText only.
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
