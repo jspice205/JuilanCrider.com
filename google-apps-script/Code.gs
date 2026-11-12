@@ -148,7 +148,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-histlog';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-calsync';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4039,8 +4039,63 @@ function ensureTextQueueTrigger() {
 // in its notes (website bookings add "Phone: …" automatically; for a showing, add the client's number to the event).
 // Title with "Showing" → showing wording (uses the event's location). Skips anyone tagged Text Opt-Out.
 // ============================================================
+// CALENDAR SYNC (Julián, Nov 12: "everything on my bcolv calendar, add it to my personal calendar"). Every 15 minutes
+// the next 30 days of his bcolv (business) calendar and his Follow Up Boss appointments are copied onto his personal
+// Google Calendar (the one this script runs in). Moved or deleted ones follow; anything already there isn't doubled.
+function syncCalendars() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('CALSYNC_RUN')) return;
+  cache.put('CALSYNC_RUN', '1', 14 * 60);
+  const props = PropertiesService.getScriptProperties(), cal = CalendarApp.getDefaultCalendar();
+  const now = new Date(), until = new Date(Date.now() + 30 * 864e5), want = {};
+  let bcolvOk = false, fubOk = false;
+  if (props.getProperty('BCOLV_MAILER_URL')) {
+    try {
+      const r = bcolvCall({action: 'events', from: now.toISOString(), to: until.toISOString()}) || {};
+      if (r.ok !== false && r.events) bcolvOk = true;
+      (r.events || []).forEach(e => { want['b|' + e.title + '|' + e.start] = {title: e.title, start: e.start, end: e.end, note: 'From your bcolv (business) calendar.' + (e.description ? '\n\n' + e.description : '')}; });
+    } catch (e) { console.log('bcolv events: ' + e.message); }
+  }
+  try {
+    const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+    (fubFetch('appointments?limit=100&sort=-start', null, 'get').appointments || []).forEach(a => {
+      const st = new Date(a.start).getTime();
+      if (!(st > now.getTime() && st < until.getTime())) return;
+      if (a.createdById !== me && !(a.invitees || []).some(i => i.userId === me)) return;
+      const people = (a.invitees || []).filter(i => i.personId).map(i => i.name).join(', ');
+      want['f|' + a.id + '|' + st] = {title: a.title, start: st, end: new Date(a.end || st + 36e5).getTime(), location: a.location || '',
+        note: 'From Follow Up Boss' + (people ? ' with ' + people : '') + '.' + (a.description ? '\n\n' + a.description : '')};
+    });
+    fubOk = true;
+  } catch (e) { console.log('FUB appointments: ' + e.message); }
+  const map = JSON.parse(props.getProperty('CALSYNC') || '{}');
+  Object.keys(want).forEach(k => {
+    if (map[k]) return;
+    const w = want[k], start = new Date(w.start), end = new Date(Math.max(w.end || 0, w.start + 15 * 6e4));
+    // Already on his calendar (booked on the site, by Shawna, or by hand)? Then don't add a second one.
+    const same = cal.getEvents(new Date(w.start - 6e4), new Date(w.start + 6e4)).filter(e => Math.abs(e.getStartTime().getTime() - w.start) < 6e4 &&
+      (e.getTitle().toLowerCase() === String(w.title).toLowerCase() || String(w.title).toLowerCase().indexOf(e.getTitle().toLowerCase().split(':')[0]) >= 0));
+    if (same.length) { map[k] = {id: '', start: w.start}; return; }
+    const ev = cal.createEvent(w.title, start, end, {location: w.location || '', description: w.note + '\n[synced by Shawna]'});
+    map[k] = {id: ev.getId(), start: w.start};
+  });
+  Object.keys(map).forEach(k => {
+    const m = map[k];
+    if (m.start < now.getTime()) { delete map[k]; return; }
+    const src = k.charAt(0);
+    if (!want[k] && ((src === 'b' && bcolvOk) || (src === 'f' && fubOk))) {  // moved or canceled at the source: remove our copy
+      if (m.id) { try { const ev = cal.getEventById(m.id); if (ev) ev.deleteEvent(); } catch (e) {} }
+      delete map[k];
+    }
+  });
+  let json = JSON.stringify(map);
+  while (json.length > 8500) { const ks = Object.keys(map).sort((x, y) => map[y].start - map[x].start); delete map[ks[0]]; json = JSON.stringify(map); }
+  props.setProperty('CALSYNC', json);
+}
+
 function remindUpcoming() {
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
+  try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
   try { checkClientEmails(); } catch (e) { console.log('Email alerts: ' + e.message); }
   try { processEmailAssistant(); } catch (e) { console.log('Email assistant: ' + e.message); }
   try { applySettings(); } catch (e) { console.log('Settings: ' + e.message); }
@@ -4049,6 +4104,7 @@ function remindUpcoming() {
   events.forEach(ev => {
     const key = 'REM_' + ev.getId().slice(0, 40) + '_' + ev.getStartTime().getTime();
     if (props.getProperty(key) || ev.isAllDayEvent()) return;
+    if (/\[synced by Shawna\]/.test(ev.getDescription() || '')) return;  // copies from bcolv/FUB: no automatic client reminders
     const blob = [ev.getDescription(), ev.getLocation(), ev.getTitle()].join('\n');
     const m = blob.match(/(?:\+?1[\s.-]?)?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})/);
     if (!m) return;
