@@ -218,6 +218,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Unknown/ambiguous name → asks; a short reply within 30 min (CALLNOTES_WAIT) names it.
 - Saw-you-called (Nov 11): after a Vapi call from someone already in FUB with Text OK (no recap consent path), Text
   Queue step `call-followup` (~1 min, 9am-9pm): "Hey X, it's Julián. Saw you just called… good time to call you back?"
+  Fast replies (Nov 11, Julián: never longer than 10 s): auto and backup modes sleep 3-8 s in the webhook and send (no
+  1-min queue; skipped if he texted them meanwhile); ASSISTANT_FAST=off restores the old pacing/backup hold; humanDelay
+  max 10 s. Self-texts on the business line (shortcut run on the business iPhone, 2571 → 2571) with "call notes" go to
+  Shawna (deduped SELF_ cache); other self-texts are ignored. Vapi: when they ask for Julián, Shawna offers to answer
+  their questions in the meantime.
   Vapi versions: syncVapiAssistant PATCH publishes (v35-37 on Nov 11); the dashboard "Draft" is an old local draft, never
   publish it (it has the old receptionist prompt).
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
