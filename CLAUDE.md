@@ -266,6 +266,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   keeps LAST_VOICE_TEXT; "transcript" / "text me that" / "text me back your voice memo" sends the written version.
   Already done: "I already called Dan" / "Lisa's handled" → taskdone for that person (their tasks due today or earlier,
   else their next one, even if not on the numbered list); "that's done" → LAST_TASK (the one "do N" started).
+  Own numbers (Nov 12): `isOwnNumber` (business 2571, personal 1382, Google Voice 1554, ALERT/TEST_TEXT_TO, OWN_NUMBERS)
+  never count as "waiting on you" (textLog skips them; agenda/unanswered filter them); his own reply to someone marks
+  their waiting texts read (`textLogAnswered`); approvals addressed to the business number itself are dropped.
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
