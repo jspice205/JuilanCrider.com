@@ -235,6 +235,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   LAST_ALERT_ID makes "Lisa" resolve to the Lisa she just alerted about. Router text action "draft": true →
   `draftThreadReply` (whole bbThread + notes + campaigns; no price promises); replying to a text is a text, not email;
   router-invented emails/phones are scrubbed unless he typed them. `liveInfo` opens links (`pageText`, cached 1 h).
+  His own texts to FUB contacts are logged as notes "Text from Julián" (Nov 12, his ask). Umar Tomlin 703 = his uncle:
+  Trash + Deceased (Nov 12). Lisa Dragos: Onyx Crest walkthrough with Tom, Sat Nov 14 9:30am (FUB appointment 3102).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
