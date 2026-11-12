@@ -80,7 +80,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Files by text: a bubble "[file: <Drive file id or name>]" sends that Drive file (e.g. a CMA PDF) as an attachment.
   bcolv email outbox: note subject "Send bcolv email" by user 2, body "Subject: …" / optional "File: <Drive id>" / text →
   processBcolvEmailOutbox emails FROM julianc@bcolv.com (attachments need Shawna Mailer v2; the note waits until then),
-  logs "Email sent: …" and renames the note "Send bcolv email - sent". Web app GET ?action=version shows CODE_VERSION
+  logs "Email sent: …" and renames the note "Send bcolv email - sent". A "Signature: none" header line sends it without the "Julián" + Realtor footer (personal letters, Nov 12). Web app GET ?action=version shows CODE_VERSION
   (check it before relying on new code). CMAs: reports/cma-template.html + render-cma.js; client data stays local.
   RULES (Julián, Nov 8): client emails always go from julianc@bcolv.com, never julian.crider@gmail.com. Never tell
   Julián something was sent until it's verified (FUB GET emails?personId=… shows status Sent, or a "Text sent" note);

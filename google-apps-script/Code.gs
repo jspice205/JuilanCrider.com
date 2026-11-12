@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-folders';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-plainmail';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3896,13 +3896,13 @@ function testBusinessCalendar() {
 }
 
 /** Sends an email FROM julianc@bcolv.com through the small "Shawna Mailer" script in that account. */
-function sendFromBcolv(to, subject, text, attachments) {
+function sendFromBcolv(to, subject, text, attachments, plain) {
   const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
   if (!url) return {ok: false, error: 'bcolv mailer not set up'};
   const html = String(text).split(/\n{2,}/).map(par => '<p style="margin:0 0 12px">' + par.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('') +
-    '<p style="margin:0">Julián</p>' + EMAIL_FOOTER;
+    (plain ? '' : '<p style="margin:0">Julián</p>' + EMAIL_FOOTER);
   const res = UrlFetchApp.fetch(url, {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({key: props.getProperty('BCOLV_MAILER_KEY'), to: to, subject: subject, text: text + '\n\nJulián', html: '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + html + '</div>', attachments: attachments || undefined})});
+    payload: JSON.stringify({key: props.getProperty('BCOLV_MAILER_KEY'), to: to, subject: subject, text: plain ? text : text + '\n\nJulián', html: '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + html + '</div>', attachments: attachments || undefined})});
   try { return JSON.parse(res.getContentText()); } catch (e) { return {ok: false, error: 'mailer answered ' + res.getResponseCode()}; }
 }
 
@@ -4524,10 +4524,12 @@ function processBcolvEmailOutbox() {
     const fresh = fubFetch('notes/' + n.id, null, 'get');
     if (!/^send bcolv email$/i.test(String(fresh.subject || '').trim())) return;
     const lines = String(fresh.body || '').replace(/\r/g, '').split('\n');
-    let subject = 'Following up', fileId = '';
-    while (lines.length && /^(subject|file):/i.test(lines[0])) {
+    let subject = 'Following up', fileId = '', plain = false;
+    while (lines.length && /^(subject|file|signature):/i.test(lines[0])) {
       const l = lines.shift();
-      if (/^subject:/i.test(l)) subject = l.replace(/^subject:\s*/i, ''); else fileId = l.replace(/^file:\s*/i, '').trim();
+      if (/^subject:/i.test(l)) subject = l.replace(/^subject:\s*/i, '');
+      else if (/^signature:/i.test(l)) plain = /none|no|off|plain/i.test(l.replace(/^signature:\s*/i, ''));  // personal letters: no "Julián" + Realtor footer
+      else fileId = l.replace(/^file:\s*/i, '').trim();
     }
     const text = lines.join('\n').trim();
     let attachments;
@@ -4542,7 +4544,7 @@ function processBcolvEmailOutbox() {
       const p = fubFetch('people/' + n.personId + '?fields=id,firstName,emails', null, 'get');
       const to = (p.emails || []).map(e => e.value).filter(validEmail)[0];
       if (!to) throw new Error('no valid email');
-      const r = sendFromBcolv(to, subject, text, attachments);
+      const r = sendFromBcolv(to, subject, text, attachments, plain);
       if (!r || !r.ok) throw new Error((r && r.error) || 'mailer did not answer');
       if (attachments && r.attachments !== attachments.length) throw new Error('sent, but the attachment did not go');
       fubFetch('notes/' + n.id, {subject: 'Send bcolv email - sent'}, 'put');
