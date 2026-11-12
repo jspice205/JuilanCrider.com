@@ -313,6 +313,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (ALERT_LOG, 3 days); `whatsNewText` = calls Shawna took (FUB "Call with Shawna" notes) + alerts + unread inbox emails since
   WHATSNEW_AT (≥18 h, ≤3 days); agenda/morning briefing = calendar + what's new + to-dos (`agendaText`); "my to-do list"/
   "tasks"/tomorrow → todoText only.
+  No prompts (Nov 12, Julián: "this isn't 2020"): Shawna's texts to him carry no reply instructions ("Reply YES",
+  "do 2"/"done 2", "Text X to…"); she asks like a person ("Want me to send it?"); yesHint = "(#n)" only when several
+  approvals wait. YES regex also takes sure/sounds good/perfect/do that/"yes please"/"yes to 2".
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
