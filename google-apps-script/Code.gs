@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-unsub';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-voiceask';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -797,13 +797,30 @@ function daysAgo(iso) { const t = iso ? new Date(iso).getTime() : NaN; return is
 
 const LIVE_SINCE = new Date('2026-10-29T12:00:00Z');  // leads created before this were imported in bulk
 
+/** True when this person's latest "email reply" was an automatic one (out of office, "thanks for contacting us"):
+ *  it came in under 45 s after one of Julián's emails. Those never count as a reply in scoring (Nov 12, Victor Cohen).
+ *  Checked once per reply time (cached in AUTOREPLY_<id>). */
+function isAutoReplyEmail(p) {
+  if (!p.lastReceivedEmail || daysAgo(p.lastReceivedEmail) > 90) return false;
+  const props = PropertiesService.getScriptProperties(), k = 'AUTOREPLY_' + p.id, hit = props.getProperty(k);
+  if (hit && hit.split('|')[0] === String(p.lastReceivedEmail)) return hit.split('|')[1] === '1';
+  let auto = false;
+  try {
+    const ems = fubFetch('emails?personId=' + p.id + '&limit=6&sort=-created', null, 'get').emails || [];
+    const got = ems.filter(e => e.status === 'Received')[0];
+    if (got) { const t = new Date(got.created).getTime(); auto = ems.some(e => e.status === 'Sent' && t - new Date(e.created).getTime() >= 0 && t - new Date(e.created).getTime() < 45e3); }
+  } catch (e) { return false; }
+  props.setProperty(k, String(p.lastReceivedEmail) + '|' + (auto ? '1' : '0'));
+  return auto;
+}
+
 // Activity = what the lead did, not what we did: replies, calls in, Instagram/Facebook messages, a new inquiry,
 // site/IDX visits, email opens/clicks, RealScout views. Only lead-side fields are read, so importing, tagging or
 // texting someone never raises their score. Recent activity counts most and fades out after 90 days.
 function activityScore(p) {
   const why = []; let pts = 0;
   const fresh = (iso, d7, d30, d90) => { const d = daysAgo(iso); return d === null ? 0 : d <= 7 ? d7 : d <= 30 ? d30 : d <= 90 ? d90 : 0; };
-  const replies = [['text', p.lastReceivedText], ['email', p.lastReceivedEmail], ['phone', p.lastIncomingCall], ['DM', p.lastReceivedInboxAppMessage]]
+  const replies = [['text', p.lastReceivedText], ['email', isAutoReplyEmail(p) ? '' : p.lastReceivedEmail], ['phone', p.lastIncomingCall], ['DM', p.lastReceivedInboxAppMessage]]
     .filter(r => r[1]).sort((a, b) => new Date(b[1]) - new Date(a[1]));
   if (replies.length) { const n = fresh(replies[0][1], 40, 25, 10); if (n) { pts += n; why.push(`replied by ${replies[0][0]} ${daysAgo(replies[0][1])}d ago`); } }
   // A new inquiry after they were added (showing request, form, IDX inquiry). An import sets this to the import time, so that's skipped.
@@ -3121,11 +3138,13 @@ const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['
 function bossCommand(text, tries) {
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
+  let wantVoice = false;  // "send me a voice memo": answer with a voice memo even though he typed (Nov 12)
   const say = msg => {
     const t = humanize(String(msg).replace(new RegExp('^' + name + ':\\s*'), '')); bossMemory('assistant', t);
+    try { props.setProperty('LAST_SAY', JSON.stringify({t: t.slice(0, 1500), at: Date.now()})); } catch (e) {}
     // He talked to her with a voice message: she answers with a voice memo only (Julián, Nov 12). The written version is
     // kept, so "transcript" / "text me that" sends it. If the voice can't be made, the text goes instead.
-    if (CacheService.getScriptCache().get('BOSS_VOICE') && props.getProperty('ELEVENLABS_API_KEY') && t.length < 900) {
+    if ((wantVoice || CacheService.getScriptCache().get('BOSS_VOICE')) && props.getProperty('ELEVENLABS_API_KEY') && t.length < 900) {
       try {
         bbPostAttachment(boss, '', shawnaVoice(t.replace(/[\u{1F300}-\u{1FAFF}\u2600-\u27BF]/gu, '').replace(/\n+/g, '. ')));
         props.setProperty('LAST_VOICE_TEXT', JSON.stringify({t: t, at: Date.now()}));
@@ -3139,6 +3158,20 @@ function bossCommand(text, tries) {
   if (/^\s*(transcript|text( me)?( it| that| back)?( your)?( voice ?memo)?( back)?|type it( out)?|send (me )?the text|in text)\s*[.!?]*\s*$/i.test(text)) {
     const lv = JSON.parse(props.getProperty('LAST_VOICE_TEXT') || 'null');
     if (lv && Date.now() - lv.at < 12 * 36e5) return bbSend(boss, lv.t);
+  }
+  // "send me a voice memo" / "voice memo me" / "tell me in a voice note": she answers HIM by voice. Alone, it re-sends her
+  // last answer as a voice memo; with a request ("voice memo me my day"), she does the request and answers by voice.
+  // "Send Lisa a voice memo" (someone else) still goes to the voicememo action below.
+  const VM = /\b(?:(?:send|give|reply|answer|tell|text|hit)\s+me\s+(?:back\s+)?(?:with\s+|in\s+|as\s+)?(?:a\s+)?voice\s*(?:memo|note|message|msg)|voice\s*(?:memo|note|message)\s+me|(?:in|as|with)\s+a\s+voice\s*(?:memo|note|message)|say it out loud|read it to me)\b/i;
+  if (VM.test(text)) {
+    wantVoice = true;
+    const rest = text.replace(VM, ' ').replace(/^[\s,.!?]*(?:hey\s+)?(?:shawna|shauna)?[\s,]*(?:and|please|can you|could you|pls|plz)?[\s,.!?]*/i, '').replace(/[\s,.!?]*(please|pls|plz)?[\s.!?]*$/i, '').trim();
+    if (!props.getProperty('ELEVENLABS_API_KEY')) return bbSend(boss, 'I can\'t make voice memos yet: my voice (ElevenLabs) isn\'t connected. Once ELEVENLABS_API_KEY is in the Settings tab I can.');
+    if (rest.replace(/[^a-z0-9]/gi, '').length < 3) {
+      const last = JSON.parse(props.getProperty('LAST_SAY') || 'null');
+      return say(last && Date.now() - (last.at || 0) < 6 * 36e5 ? last.t : 'Hey Julián, it\'s Shawna. What can I do for you?');
+    }
+    text = rest;
   }
   // A pending "send this text?" waiting for YES / NO
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');

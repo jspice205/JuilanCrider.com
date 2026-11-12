@@ -324,6 +324,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   subject + their own words (quoted email cut off) against UNSUB_RE → `unsubscribeContact` (tags Unsubscribed + Do Not Email +
   Not Interested, pauses running plans, note, notifyJulian "🚫 X unsubscribed", no reply). Funnel + past-client loop skip
   Unsubscribed/Do Not Email. Auto-reply cutoff in whatsNewText is 45 s (Gina's real reply came 101 s after the email).
+  Voice on request (Nov 12): typed "send me a voice memo"/"voice memo me…"/"…in a voice memo" (VM regex in bossCommand)
+  → wantVoice; alone it re-sends LAST_SAY as a voice memo, with a request it does it and answers by voice. "Send Lisa a
+  voice memo" still = voicememo action. Auto-replies (<45 s after a Sent email, `isAutoReplyEmail`, AUTOREPLY_<id>)
+  no longer count as "replied by email" in activityScore.
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
