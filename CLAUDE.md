@@ -305,6 +305,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   call: Shawna went silent after he spelled his email (audio: he said "Hello" twice, ~40 s of nothing) = the AI model
   stopped answering mid-call, most likely Groq free-tier rate limits on a long prompt; recommended moving Vapi's model to a
   paid provider (e.g. OpenAI gpt-4.1-mini in Vapi) or a paid Groq tier.
+  syncVapiAssistant now GETs the assistant hourly and re-pushes the prompt + lookup_caller tool whenever Vapi's live prompt
+  differs (e.g. an old dashboard draft got published); the model/provider Julián picks in Vapi is kept (Nov 12: he moved
+  the phone brain off Groq to a Vapi-billed model).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
