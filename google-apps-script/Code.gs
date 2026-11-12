@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-donefix';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-folders';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3098,7 +3098,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his TO-DO list only (tasks, follow-ups, who's waiting on him): "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -3140,7 +3140,9 @@ Examples (all mean the same as the action shown):
 "pull up Dan" / "what's up with Dan" / "who is Dan" → lookup; "remind me to call Dan" → task; "put Dan down for Thursday at 2" → schedule
 "you can talk to Kyle" / "Kyle's cool, you can text him" / "add Kyle to your list" → allow
 - alerts: he wants text alerts turned "on" or "off" (put on or off in "message").
-- remember: he tells you something to remember for good (a preference, a fact about his business or a client). Put the fact in "message", written as a full sentence.
+- jot: he wants something saved in one of HIS folders (his personal notebook, not a client's record): golf (swing thoughts, his game, practice, rounds), links (web links he sends you), socialpod (anything about SocialPod), personal (anything he just wants written down and remembered: "write this down", "note to self", "save this", "remember that I parked on level 3"). Put the folder in "folder" (golf, links, socialpod, personal, or a new folder name he gives like "recipes") and the note in "message", in his words.
+- notes: he wants to see or search a folder ("what are my swing thoughts", "show my golf notes", "what links did I save about mortgages", "what did I write about SocialPod"). "folder" = which one; "query" = his question if he asked one.
+- remember: a business fact or preference for YOU to use when you work (how he likes things done, a fact about his business or a client). Put the fact in "message", written as a full sentence. Personal reminders and notes are jot, not remember.
 - callme: he wants you to phone him (e.g. "call me", "give me a call"). Put anything he wants to talk about in "message".
 - Never use dashes in anything you write.
 - claude: anything you can't do with the actions above, and anything bigger: website changes, designs, emails campaigns, social posts, videos, reports, code, Follow Up Boss setup. Put his request in "message".
@@ -3154,6 +3156,10 @@ Examples (all mean the same as the action shown):
   if (!cnKey && cnWait && Date.now() - cnWait.at < 30 * 6e4 && text.length < 80 && !/\?/.test(text)) { cnKey = cnWait.key; cnWho = text.trim(); }
   if (cnKey) props.deleteProperty('CALLNOTES_WAIT');
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
+  else if (/^\s*(save\s+(this|that)\s*(link)?\s*[:\-]?\s*)?https?:\/\/\S+\s*$/i.test(text)) a = {action: 'jot', folder: 'links', message: text};
+  else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
+  else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
+  else if (/^\s*(note to self|personal( note)?|jot( this| that)?( down)?|write (this|that) down)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'personal', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(done|finished|complete|check off)\s*#?\d+([\s,&]+(and\s+)?#?\d+)*\s*[.!]*\s*$/i.test(text)) a = {action: 'taskdone', message: text.replace(/^\D+/, '')};  // "done 5": no AI needed
   else if (/^\s*(do|start)\s*#?\d+\s*[.!]*\s*$/i.test(text)) a = {action: 'taskstart', message: text.replace(/^\D+/, '')};
   else if (cnKey) {
@@ -3549,6 +3555,8 @@ Examples (all mean the same as the action shown):
       props.setProperty('TEXT_ALERTS', on ? 'on' : 'off');
       return say(on ? 'text alerts are on. I\'ll tell you when clients text.' : 'text alerts are off. I\'ll handle texts quietly. Ask me "who texted me?" anytime.');
     }
+    if (a.action === 'jot') return say(jotNote(a.folder, a.message || text));
+    if (a.action === 'notes') return say(readNotes(a.folder, a.query || (/\?$|what|which|any|when|how/i.test(text) ? text : '')));
     if (a.action === 'remember') {
       const ss = getSS(), sh = ss.getSheetByName('Shawna Knowledge') || ensureTab(ss, {name: 'Shawna Knowledge', color: '#6B4FBB', headers: ['One fact per row (Shawna reads these)']});
       sh.appendRow([cell(a.message || text)]);
@@ -3672,6 +3680,56 @@ function callNotesParse(full) {
       '"emailSubject": "short subject", "emailBody": "a short recap email (3 to 6 sentences, plain paragraphs, no signature) if the call had details worth putting in writing, else empty"}'},
     {role: 'user', content: String(full).slice(0, 14000)}], {maxTokens: 1400});
   try { return JSON.parse(raw); } catch (e) { const j = String(raw).match(/\{[\s\S]*\}/); return j ? JSON.parse(j[0]) : {}; }
+}
+
+// SHAWNA'S FOLDERS (Julián, Nov 12): his personal notebooks, kept as tabs in the JC Open House Leads sheet so he can
+// open them in the Google Sheets app. Golf (swing thoughts, his game), Links (web links he sends), SocialPod, Personal.
+// Anything else he names ("put this in my recipes folder") gets its own new folder tab.
+const NOTE_FOLDERS = {
+  golf: {name: 'Golf Notes', color: '#188038', headers: ['When', 'Note']},
+  links: {name: 'Links', color: '#1A73E8', headers: ['When', 'Link', 'Title', 'Note']},
+  socialpod: {name: 'SocialPod Notes', color: '#9334E6', headers: ['When', 'Note']},
+  personal: {name: 'Personal Notes', color: '#5F6368', headers: ['When', 'Note']}
+};
+function noteFolder(folder) {
+  const k = String(folder || 'personal').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim()
+    .replace(/^social ?pod.*/, 'socialpod').replace(/^(golf|swing).*/, 'golf').replace(/^(links?|websites?|urls?)$/, 'links').replace(/^(personal|me|self|notes?)$/, 'personal');
+  if (NOTE_FOLDERS[k]) return NOTE_FOLDERS[k];
+  const nm = k.replace(/\b\w/g, c => c.toUpperCase()).slice(0, 30) + ' Notes';
+  return {name: nm, color: '#E37400', headers: ['When', 'Note']};
+}
+/** Saves a note (or a link) into one of his folders. Returns a short confirmation. */
+function jotNote(folder, text) {
+  const f = noteFolder(folder), sh = ensureTab(getSS(), f), when = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d/yyyy h:mm a');
+  if (f.name === 'Links') {
+    const urls = String(text).match(/https?:\/\/[^\s<>"]+/g) || [];
+    const note = String(text).replace(/https?:\/\/[^\s<>"]+/g, '').replace(/^\s*(save|saved|link|links?)\s*(this|that)?\s*(link)?\s*[:\-]?\s*/i, '').trim();
+    urls.forEach(u => {
+      let title = '';
+      try { const h = UrlFetchApp.fetch(u, {muteHttpExceptions: true, followRedirects: true, headers: {'User-Agent': 'Mozilla/5.0 (Macintosh) Safari/605'}}).getContentText().slice(0, 100000);
+        title = ((h.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i) || h.match(/<title[^>]*>([^<]+)/i) || [])[1] || '').replace(/&amp;/g, '&').replace(/&#39;|&rsquo;/g, "'").trim().slice(0, 150); } catch (e) {}
+      sh.appendRow([when, u, cell(title), cell(note)]);
+    });
+    return urls.length ? 'saved to Links 🔗' + (urls.length > 1 ? ' (' + urls.length + ' links)' : '') : 'I didn\'t see a link in that one.';
+  }
+  sh.appendRow([when, cell(String(text).trim())]);
+  return 'saved to ' + f.name.replace(/ Notes$/, '') + ' 📝';
+}
+/** Reads a folder back: the latest notes, or an answer to his question from what's in it. */
+function readNotes(folder, question) {
+  const f = noteFolder(folder), sh = getSS().getSheetByName(f.name);
+  if (!sh || sh.getLastRow() < 2) return 'your ' + f.name.replace(/ Notes$/, '') + ' folder is empty so far.';
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, f.headers.length).getDisplayValues();
+  const lines = rows.map(r => f.name === 'Links' ? r[0] + ' ' + r[1] + (r[2] ? ' (' + r[2] + ')' : '') + (r[3] ? ': ' + r[3] : '') : r[0] + ': ' + r[1]);
+  const key = PropertiesService.getScriptProperties().getProperty('GROQ_API_KEY');
+  if (question && key) {
+    try {
+      return JSON.parse(groqChat(key, PropertiesService.getScriptProperties().getProperty('GROQ_MODEL') || ASSISTANT.model, [
+        {role: 'system', content: 'You are Shawna, Julián\'s personal assistant. Answer his question using only his saved notes below (newest last). Short and plain, no dashes; list the matching notes or links if that helps. Return JSON {"reply": "..."}.'},
+        {role: 'user', content: 'His ' + f.name + ':\n' + lines.join('\n').slice(-9000) + '\n\nHis question: ' + question}], {maxTokens: 700})).reply || '';
+    } catch (e) {}
+  }
+  return f.name + ' (latest):\n' + lines.slice(-8).map(l => '• ' + l.slice(0, 160)).join('\n');
 }
 
 /** Runs one of Julián's texts to Shawna with a log and a safety net: if it fails (Mac busy, Groq hiccup), it's queued
