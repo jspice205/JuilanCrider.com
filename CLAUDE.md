@@ -543,7 +543,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Deal cards (Nov 13): boss action `dealmove` ("Lisa is in escrow, closing Dec 20", "list Lisa's house", "Dan's offer got
   accepted"; router picks a DEAL_STAGES key) → `setDealStage` (moves the open card in that pipeline or creates one, sets
   projectedCloseDate/price, contact stage forward only, FUB note) → runListingFlow right away. His words are the approval.
-  Boss action `pipeline` → `pipelineText` (open deals by stage, days in stage, closing date). moveDeal (suggestDeal YES) uses
+  Boss action `pipeline` → `pipelineText(ask)` (open deals by stage, days in stage, closing date; "who's in escrow" → only
+  Due Diligence/Loan/Appraisal cards with closing date and days to close). moveDeal (suggestDeal YES) uses
   setDealStage too. Automatic cards: bookSlot kind listing → Sellers 35 "PERSONAL LISTINGS (follow up)"; a pre-approved/cash
   buyer booking a consult or showing → Buyers 32 NURTURE (no flow messages in those stages). Client pages start themselves
   at lb-0 (HOT BUYERS) / lp-0 / la-0 (link added to that first message). Julián's views: FUB Deals board + smart lists
