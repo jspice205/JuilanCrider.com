@@ -588,6 +588,14 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   today" task. Alerts are never mixed: `willAnswer` → "💬 X texted (I'm answering)… if you text them yourself, I step back";
   otherwise "🙋 X needs YOU… I did NOT reply". ASSISTANT_MAX_PER_DAY default 40 (was 12) so she doesn't drop a live thread.
 
+- All clear (Nov 13, Julián: "it should say everything done for the day so I feel accomplished"): "clear" / "clear all" /
+  "clear everything" also empties BOSS_QUEUE, ALERT_LOG and sets WHATSNEW_AT, then replies "🎉 All clear. Everything's done
+  for today." (+ counts, + how many future-dated tasks remain). whatsNewText now covers only since WHATSNEW_AT (no forced
+  18-hour window). agendaText adds "🎉 Everything's done for today. Nice work." when nothing new, no tasks, no waiting texts,
+  no approvals. "cancel <name> email/text" drops matching approvals. Test contacts: notifyJulian skips who/title with "test",
+  logAlert skips "Julian TEST"/"(email Test)", pendingQueue drops test who / julian.crider@gmail.com, checkClientEmails skips
+  isTestPerson; email nudges are once per email (NUDGED_<id>, Julian TEST got three on Nov 13).
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
