@@ -462,6 +462,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   day-9 due diligence, seller day-3 HOA/disclosures, and closing-date steps (`close: N` = N days before the deal card's
   projectedCloseDate: utilities/movers 7, loan check 5, walkthrough/keys 2, signing 1). `createEscrowTasks` (ESCROW_TASKS,
   ESCT_<dealId>) makes FUB tasks dated from acceptance once, and from the close date once it's on the card (asks him for it).
+- Sellers (Nov 13): juliancrider.com/?sell = `sellPresentation` (listing presentation as a page: pricing, prep, marketing,
+  weekly updates, offers→closing, Duties Owed; no stats/promises); ?listing = `listingFlow` (address, timeline, listed now?
+  → polite no, at the home / video first) → sendLead "Listing appointment" + pickTime kind `listing` (MEETINGS.listing,
+  60 min, location = address, tags Likely Seller + Listing Appointment, task "bring the CMA", text links ?sell). Both on
+  Homes > Home value. Closing gift: syncDealStages makes one task "Send a closing gift to X" when a deal entered CLOSED in
+  the last 14 days (GIFT_<dealId>). Vendor list: blank fillable "Preferred Vendor List" PDF in Drive Deal Flows for Joey;
+  when it comes back, load it into a "Vendors" sheet tab for Shawna (not into the repo).
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.

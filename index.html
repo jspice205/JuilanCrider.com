@@ -756,6 +756,12 @@ img{max-width:100%;display:block}
         <button class="pill block" type="submit">Get my home value</button>
         <button class="pill ghost block" type="button" style="margin-top:8px" data-open="net">Estimate my net proceeds</button>
       </form>
+      <div class="textcard" style="margin-top:16px">
+        <h3 style="font-size:17px;font-weight:700;margin-bottom:4px">Thinking about selling?</h3>
+        <p style="color:var(--ink2);font-size:15px;margin-bottom:12px">See exactly how I price, market and sell a home, then pick a time for me to walk through yours.</p>
+        <button class="pill block" type="button" data-open="sell">How I sell homes</button>
+        <button class="pill ghost block" type="button" style="margin-top:8px" data-open="listing">Book a listing appointment</button>
+      </div>
       <div class="done" id="valDone" hidden><div class="dot"></div><h3>Request received</h3><p>Julián will reach out within one business day to set up a walkthrough.</p></div>
       <h3 style="font-size:20px;font-weight:800;letter-spacing:-.02em;margin:28px 0 4px">Buying your next home?</h3>
       <p style="color:var(--ink2);font-size:15px;margin-bottom:14px">Today’s mortgage rates and a payment calculator.</p>
@@ -2176,6 +2182,8 @@ function openSheet(kind, opt={}){
   if (kind==='buyer') openBuyer(opt);
   if (kind==='net') openNet();
   if (kind==='book') bookFlow(opt.type);
+  if (kind==='sell') sellPresentation();
+  if (kind==='listing') listingFlow();
 }
 // Text-me style links go through Book a consultation (qualify, then pick a time) instead of a text to Julián's cell.
 document.addEventListener('click', e => { const b = e.target.closest('[data-book]'); if (b) { e.preventDefault(); openSheet('book', {type: b.dataset.book}); } });
@@ -2258,11 +2266,64 @@ function pickTime(c, note){
           $('sheetBody').innerHTML = showing
             ? doneHTML('Showing booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you there and text you a reminder 15 minutes before.`)
             : c.kind === 'golf' ? doneHTML('We’re on ⛳', `${res.label} (Pacific time), ${c.holes || 18} holes${c.course ? ' at ' + c.course : ''}. Julián will text you to confirm the tee time.`)
+            : c.kind === 'listing' ? doneHTML('You’re booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you at the home and text you a reminder 15 minutes before.`)
             : c.kind === 'video' ? doneHTML('You’re booked', `${res.label} (Pacific time).${res.link ? ' Video link: <a href="' + res.link + '" target="_blank" rel="noopener">' + res.link + '</a>.' : ''}${c.email ? ' A calendar invite is on its way.' : ''}`)
             : doneHTML('You’re booked', `${res.label} (Pacific time).${c.email ? ' A calendar invite is on its way.' : ''} Julián will call you at ${c.phone}.`);
         }).catch(requested);
     });
   }).catch(requested);
+}
+// Seller presentation (Nov 13, juliancrider.com/?sell): the listing presentation as a page Julián sends before every
+// listing appointment. No made-up stats or promises; it explains how he prices, markets and communicates.
+function sellPresentation(){
+  const step = (n, h, p) => `<div style="display:flex;gap:12px;margin:0 0 14px"><div style="flex:0 0 28px;height:28px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${n}</div><div><b style="display:block;margin-bottom:2px">${h}</b><span style="color:var(--ink2);font-size:15px">${p}</span></div></div>`;
+  openRaw('', `<article class="reader"><div class="kick">For homeowners</div><h1>How I sell your home</h1>
+    <p>Selling a home is one of the biggest financial moves you’ll make. Here’s exactly how I handle it, so you know what happens at every step before we ever sign anything.</p>
+    <h2>1. Pricing that holds up</h2>
+    <p>I don’t pull a number from an algorithm. I walk through your home, then compare it with what nearby homes actually sold for, what’s pending and what you’re competing against today. You get three numbers: where buyers will likely land, where we could push, and where we’d be chasing the market. Then we decide together.</p>
+    <h2>2. Getting it ready</h2>
+    <p>A short prep list, not a renovation. Decluttering, light, small repairs and curb appeal make the biggest difference in photos. If something needs a pro, I have people I trust.</p>
+    <h2>3. Marketing</h2>
+    ${step('📸','Professional photos','Plus video or drone when the home calls for it.')}
+    ${step('🏠','MLS, Zillow and Realtor.com','Every major site buyers and their agents search.')}
+    ${step('📱','Instagram','Reels and stories on @juliancriderestates, built to reach buyers moving to Las Vegas from out of state.')}
+    ${step('🌐','Its own page on juliancrider.com','With every photo and a way to book a showing.')}
+    ${step('✉️','Your neighbors and my network','A just-listed note to the neighborhood and an email to my clients and agent network.')}
+    ${step('🚪','Open houses and private tours','Scheduled around your life, with showing instructions you approve.')}
+    <h2>4. You always know where things stand</h2>
+    <p>You’ll hear from me every week while you’re listed: showings, online views and what buyers are saying. If something isn’t working, I’ll tell you early and bring a plan, not excuses.</p>
+    <h2>5. Offers to closing</h2>
+    ${step(1,'Offers','I walk you through price and everything else that matters: closing date, contingencies and credits.')}
+    ${step(2,'Escrow','Inspection, repairs, the buyer’s appraisal and loan. I track every deadline and text you before each one.')}
+    ${step(3,'Closing day','Keys, remotes and manuals on the counter, and you’re done. I stay in touch after, too.')}
+    <h2>How I work for you</h2>
+    <p>Nevada requires every agent to explain the duties they owe you. I’ll send you the state’s Duties Owed form to sign before we start. It covers honesty, confidentiality, disclosure and accounting for your money, and it costs you nothing.</p>
+    <div class="take"><div class="who">Julián J. Crider</div><p>Realtor, Boeckle &amp; Co. License S.0177760. The next step is a walkthrough of your home. It takes about an hour, and there’s no obligation.</p></div>
+    <button class="pill block" id="sellBook">Book a listing appointment</button>
+    <button class="pill ghost block" style="margin-top:8px" id="sellNet">Estimate my net proceeds</button>
+    <button class="pill ghost block" style="margin-top:8px" onclick="closeSheet()">Back to the site</button></article>`);
+  $('sellBook').onclick = listingFlow; $('sellNet').onclick = () => openSheet('net');
+}
+// Listing appointment (Nov 13, juliancrider.com/?listing): sellers pick a 1-hour walkthrough at the home (or a video call
+// first) from Julián's open times. Someone already listed with another agent gets a polite no.
+function listingFlow(){
+  openRaw('Book a listing appointment', `<p class="fine" style="margin:0 0 14px">About an hour. I’ll walk through the home, then we’ll talk price, prep and timing. No obligation.</p>
+    <div class="field"><label for="lAddr">Property address</label><input id="lAddr" autocomplete="street-address"></div>
+    <div class="field"><span class="lab">When are you thinking of selling?</span><div class="chips" data-chips="ltl" data-opts="Within 3 months|3–6 months|6–12 months|Not sure yet"></div></div>
+    <div class="field"><span class="lab">Is it listed with an agent right now?</span><div class="chips" data-chips="lag" data-opts="No|Yes, it’s listed now|It was, the listing ended"></div></div>
+    <div class="field"><span class="lab">Where should we meet?</span><div class="chips" data-chips="lhow" data-opts="At the home|Video call first"></div></div>
+    ${contactFields}
+    <div class="field"><label for="lNote">What matters most to you about this sale?</label><textarea id="lNote" rows="3"></textarea></div>
+    <p class="err" id="fErr">Add the address, your first name and phone.</p><button class="pill block" id="lNext">Pick a time</button>`);
+  $('lNext').onclick = () => {
+    const addr = $('lAddr').value.trim(); if (!requireContact() || !addr) { $('fErr').style.display = 'block'; return; }
+    const ag = chipVal(sheet,'lag') || '', tl = chipVal(sheet,'ltl') || '', video = /Video/.test(chipVal(sheet,'lhow') || ''), note = $('lNote').value.trim();
+    sendLead({tab:'Website Leads', type:'Listing appointment', ...contactVals(), property: addr, timeline: tl, source:'juliancrider.com',
+      notes: joinNotes(['Listed now: ' + ag, 'Meet: ' + (video ? 'Video call first' : 'At the home'), 'What matters: ' + note])});
+    if (/listed now/.test(ag)) { $('sheetBody').innerHTML = doneHTML('Thank you','Since your home is listed with another agent right now, they’re the best person to help. If anything changes, I’m here.'); return; }
+    pickTime({...contactVals(), kind: video ? 'video' : 'listing', minutes: video ? 30 : 60, property: addr, type: 'Listing appointment',
+      notes: ['Listing appointment', addr, tl && 'Timeline: ' + tl, ag && 'Listed now: ' + ag, note && 'What matters: ' + note].filter(Boolean).join(' · ')});
+  };
 }
 function golfFlow(){
   openRaw('Golf with Julián ⛳', `<p class="fine" style="margin:0 0 14px">Pick 9 or 18, tell me about the tee time, then choose a day.</p>` + contactFields + `
@@ -2379,6 +2440,9 @@ function askIntent(){
   // juliancrider.com/?book opens Book a consultation right away (the link sent in Instagram and text auto-replies).
   if (/[?&]golf\b/.test(location.search)) { setTimeout(golfFlow, 300); return; }
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
+  // juliancrider.com/?sell opens the seller presentation; ?listing opens Book a listing appointment.
+  if (/[?&]sell\b/.test(location.search)) { setTimeout(() => openSheet('sell'), 300); return; }
+  if (/[?&]listing\b/.test(location.search)) { setTimeout(() => openSheet('listing'), 300); return; }
   // juliancrider.com/?value opens the home-value form (link in the neighbor emails).
   if (/[?&]value\b/.test(location.search)) { showTab('homes'); showPane('h-value'); return; }
   // juliancrider.com/?signin (or ?openhouse) opens the step-by-step sign-in funnel (works at an open house or from home).
