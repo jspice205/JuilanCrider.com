@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-propfile';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-property';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2658,6 +2658,7 @@ function findDuplicates(people) {
     ((p.phones || []).map(x => String(x.value || '').replace(/\D/g, '').slice(-10)).filter(x => x.length === 10)).forEach(d => add('phone ' + d, p));
     ((p.emails || []).map(x => String(x.value || '').toLowerCase().trim()).filter(validEmail)).forEach(e => add('email ' + e, p));
     const nm = String(p.name || '').toLowerCase().replace(/\s+/g, ' ').trim(); if (nm.split(' ').length > 1) add('name ' + nm, p);
+    if (nm.split(' ').length > 1) add('similar-name ' + nm.split(' ').map(nameKey).join(' '), p);  // Emilee Durant ~ Emilee Durrant
   });
   const seen = {}, rows = [];
   Object.keys(groups).forEach(k => {
@@ -2665,13 +2666,83 @@ function findDuplicates(people) {
     if (g.length < 2) return;
     const ids = g.map(p => p.id).sort((a, b) => a - b).join(','); if (seen[ids]) return; seen[ids] = 1;
     const test = g.filter(p => (p.tags || []).some(t => /^Test\b/i.test(t)));
-    rows.push(['same ' + k.split(' ')[0], g.map(p => p.name + ' (' + p.id + ')').join(' · '),
+    rows.push([(k.indexOf('similar') === 0 ? 'similar name' : 'same ' + k.split(' ')[0]), g.map(p => p.name + ' (' + p.id + ')').join(' · '),
       test.length ? 'Test contact(s): ' + test.map(p => p.name).join(', ') + ' can go to Trash' : 'Merge into the oldest (' + Math.min.apply(null, g.map(p => p.id)) + ')']);
   });
   const sh = ensureTab(getSS(), DUPLICATES_TAB);
   if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 3).clearContent();
   if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows.slice(0, 500).map(r => r.map(cell)));
   PropertiesService.getScriptProperties().setProperty('DUP_COUNT', String(rows.length));
+}
+
+// ---------- Property records (Nov 13): Clark County public records by address ----------
+// Address → parcel number: county "Existing Addresses" layer (Number, Direction, Name, Type, Parcel; checked by
+// propertyDiscover). Parcel → owner, mailing address, recorded date, values, size, year built, sale: the Assessor
+// parcel page (plain GET). Public records only.
+const PROP_ADDR_LAYER = 'https://maps.clarkcountynv.gov/arcgis/rest/services/Address/Layers/FeatureServer/0/query';
+const STREET_TYPES = {street: 'ST', st: 'ST', avenue: 'AVE', ave: 'AVE', drive: 'DR', dr: 'DR', lane: 'LN', ln: 'LN', road: 'RD', rd: 'RD',
+  court: 'CT', ct: 'CT', circle: 'CIR', cir: 'CIR', way: 'WAY', place: 'PL', pl: 'PL', boulevard: 'BLVD', blvd: 'BLVD', parkway: 'PKWY',
+  pkwy: 'PKWY', trail: 'TRL', trl: 'TRL', terrace: 'TER', ter: 'TER', loop: 'LOOP', highway: 'HWY', hwy: 'HWY', point: 'PT', pt: 'PT', run: 'RUN', path: 'PATH', cove: 'CV', cv: 'CV'};
+/** "123 Desert Rose Ln, Henderson" → {apn, address, subdivision} or {error}. */
+function parcelForAddress(text) {
+  const t = String(text || '').replace(/[.,#].*$/, ' ').replace(/\b(north las vegas|las vegas|henderson|nv|nevada)\b/gi, ' ').replace(/\s\d{5}(-\d{4})?\s*$/, ' ').replace(/\s+/g, ' ').trim();
+  const m = t.match(/^(\d+)\s+(?:([NSEW])\.?\s+)?(.+)$/i);
+  if (!m) return {error: 'I need a street number and name, like "123 Desert Rose Ln".'};
+  let words = m[3].trim().split(' '), type = '';
+  const lastW = words[words.length - 1].toLowerCase();
+  if (STREET_TYPES[lastW] && words.length > 1) { type = STREET_TYPES[lastW]; words.pop(); }
+  const name = words.join(' ').toUpperCase().replace(/'/g, "''");
+  const q = (where) => {
+    const r = UrlFetchApp.fetch(PROP_ADDR_LAYER + '?where=' + encodeURIComponent(where) + '&outFields=Number,Direction,Name,Type,SubdName,Parcel&returnGeometry=false&resultRecordCount=10&f=json', {muteHttpExceptions: true});
+    try { return JSON.parse(r.getContentText()).features || []; } catch (e) { return []; }
+  };
+  let f = q("Number='" + m[1] + "' AND Name='" + name + "'" + (type ? " AND Type='" + type + "'" : ''));
+  if (!f.length) f = q("Number='" + m[1] + "' AND Name LIKE '" + name + "%'");
+  if (m[2] && f.length > 1) f = f.filter(x => String(x.attributes.Direction || '').toUpperCase() === m[2].toUpperCase()).concat(f).slice(0, f.length);
+  f = f.filter(x => x.attributes.Parcel);
+  if (!f.length) return {error: 'I couldn\'t find "' + t + '" in Clark County\'s address records. Check the spelling, or send the parcel number.'};
+  const a = f[0].attributes;
+  return {apn: String(a.Parcel).replace(/\D/g, ''), address: [a.Number, a.Direction, a.Name, a.Type].filter(Boolean).join(' '), subdivision: a.SubdName || '', more: f.length - 1};
+}
+/** Assessor record for an 11-digit parcel number, as readable text (owner, values, size, sale…). */
+function parcelRecord(apn) {
+  const r = UrlFetchApp.fetch('https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ParcelDetail.aspx?hdnParcel=' + apn + '&hdnInstance=pcl', {muteHttpExceptions: true});
+  return r.getContentText().replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&amp;/g, ' ')
+    .replace(/\s+/g, ' ').replace(/^.*?(General Information)/, '$1').replace(/Assessor Map Viewing Guidelines.*$/, '').slice(0, 3500);
+}
+/** The text Shawna sends for "look up <address>" (or a parcel number). */
+function propertyLookupText(query) {
+  let apn = (String(query).match(/\b(\d{3})-?(\d{2})-?(\d{3})-?(\d{3})\b/) || []).slice(1).join(''), where = null;
+  if (!apn) { where = parcelForAddress(query); if (where.error) return where.error; apn = where.apn; }
+  const raw = parcelRecord(apn);
+  if (!/Owner/i.test(raw)) return 'I found parcel ' + apn + ' but the Assessor\'s page didn\'t load. Try again in a minute.';
+  let summary = '';
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const j = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+      {role: 'system', content: 'This is a Clark County Assessor parcel record. Write a short, plain summary for a Realtor, one item per line, no dashes: owner(s) and mailing address (say if the mailing address is different from the property, which usually means it is not owner occupied), property address, subdivision, last sale price and date (or recorded date if no sale), total taxable value (latest year), estimated lot size, year built, living sq ft, bedrooms/bathrooms, pool, land use. Skip anything that is blank. Return JSON {"summary": "..."}.'},
+      {role: 'user', content: raw}], {maxTokens: 700, noPick: true}));
+    summary = String(j.summary || '').trim();
+  } catch (e) {}
+  if (!summary) {
+    const between = (a, b) => ((raw.split(a)[1] || '').split(b)[0] || '').trim();
+    summary = ['Owner: ' + between('Owner and Mailing Address', 'Location Address'), 'Address: ' + between('Location Address', 'City/Unincorporated Town'),
+      'Recorded: ' + between('Recorded Date', 'Vesting'), 'Total taxable value: ' + (raw.match(/Total Taxable Value ([\d,]+) ([\d,]+)/) || [])[2],
+      'Lot: ' + between('Estimated Size', 'Original Const. Year'), 'Year built: ' + between('Original Const. Year', 'Last Sale Price')].join('\n');
+  }
+  const pretty = apn.replace(/(\d{3})(\d{2})(\d{3})(\d{3})/, '$1-$2-$3-$4');
+  return '🏠 ' + (where ? where.address : 'Parcel ' + pretty) + ' (parcel ' + pretty + ')\n' + summary + (where && where.more ? '\n(' + where.more + ' other unit(s) share that street number)' : '') +
+    '\nFrom Clark County public records.';
+}
+
+/** Spelling-proof name key: lower case, letters only, doubled letters collapsed (Durrant = Durant). */
+function nameKey(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, '').replace(/(.)\1+/g, '$1'); }
+/** Letters to change to turn a into b (small strings only). */
+function editDistance(a, b) {
+  a = String(a || ''); b = String(b || ''); if (Math.abs(a.length - b.length) > 3) return 9;
+  let prev = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) { const cur = [i]; for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+  return prev[b.length];
 }
 
 /** A usable first name, or ''. Follow Up Boss shows "No Name" when it has none: never greet anyone as "No". */
@@ -3397,7 +3468,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -3414,6 +3485,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- property: look up a property in Clark County public records (owner, last sale, value, size, year built): "look up 123 Desert Rose Ln", "who owns 456 Summit Club Dr", "pull the records on Lisa's house". "message" = the street address or parcel number exactly as he wrote it; "who" = the client if he wants it saved to their file.
 - campaigns: anything about campaigns, drips or action plans: what campaign someone is on, whether they got the email or text, how many emails or texts they have left, when the next one goes ("what campaign is Lisa in", "did Dan get the email", "how many emails does Ika have left") → "who" = the person. Who is on a campaign or which campaigns are running ("who's in JC Hot", "what campaigns are running") → no "who", "message" = the campaign name (empty for all).
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
 - hot: list his hottest leads right now.
@@ -3558,6 +3630,11 @@ Examples (all mean the same as the action shown):
       if (!ppl.length && q.split(/\s+/).length > 1) {  // "Lily Montenegro" → search the last name, keep first names that start the same
         const parts = q.toLowerCase().split(/\s+/), first = parts[0].slice(0, 3);
         ppl = get(parts[parts.length - 1]).filter(p => String(p.firstName || p.name || '').toLowerCase().indexOf(first) === 0);
+      }
+      if (!ppl.length && q.split(/\s+/).length > 1) {  // a spelling slip ("Emilee Durant" for Durrant): same first name, last name 1-2 letters off
+        const parts = q.toLowerCase().split(/\s+/), last = parts[parts.length - 1];
+        ppl = get(parts[0]).filter(p => { const ln = String(p.lastName || String(p.name || '').split(' ').slice(-1)[0] || '').toLowerCase();
+          return String(p.firstName || '').toLowerCase() === parts[0] && (nameKey(ln) === nameKey(last) || editDistance(ln, last) <= 2); });
       }
       const exact = ppl.filter(p => (p.name || '').toLowerCase() === q.toLowerCase());
       if (exact.length) return exact.sort((x, y) => String(x.created).localeCompare(String(y.created)))[0];  // oldest = the real one
@@ -3707,6 +3784,20 @@ Examples (all mean the same as the action shown):
       }
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
+    }
+    if (a.action === 'property') {  // "look up 123 Desert Rose Ln", "who owns …", "pull the records on Lisa's house"
+      let p = null, q = String(a.message || text);
+      if (a.who && !/^\s*$/.test(a.who)) { p = findOne(a.who); if (p && p.many) return askWhich(p.many); }
+      if (!/\d/.test(q) && p) {  // "Lisa's house": use the address on her contact
+        const ad = ((fubFetch('people/' + p.id + '?fields=addresses', null, 'get').addresses) || [])[0];
+        if (!ad || !ad.street) return say('I don\'t have an address for ' + (p.name || a.who) + '. What\'s the street address?');
+        q = ad.street;
+      }
+      say('On it 👀 pulling the county records.');
+      const out = propertyLookupText(q);
+      let saved = '';
+      if (p && /parcel/.test(out)) { fubFetch('notes', {personId: p.id, subject: 'Property records', body: out}); saved = '\n\n📝 Saved to ' + (p.name || a.who) + '\'s file.'; }
+      return say(out + saved);
     }
     if (a.action === 'campaigns') {  // "what campaign is Lisa on", "who's in JC Hot", "what campaigns are running"
       if (a.who) {
