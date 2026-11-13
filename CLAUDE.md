@@ -442,6 +442,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   anniversary (FUB field customClosingAnniversary if set, also for older clients; filled in at closing); Closed → Past Client after day 30. Tag "past client" (older clients) → quarterly only, first 30-60 days out,
   JC drips paused, funnel skips them. Emails via sendFromBcolv (bcolv), texts via Text Queue (Text OK only). "Past Clients"
   sheet tab; max 15/day; skip tags Pause / No Past Client Loop / Deceased / Has Agent. `previewPastClientLoop`.
+- Listing flow (Nov 13, `runListingFlow` after runPastClientLoop each morning; LISTING_FLOW): Sellers pipeline cards in
+  Listing Prep 20 / Active 22 / Offers 36 / Due Diligence 24 + Appraisal 29 (escrow) → next due message (prep d0/d3, live d0,
+  weekly check-in every 7 days, price talks d14/d21, offer d0, escrow d0/d7) drafted to Julián (bossTextSafe) and queued
+  for YES (text if Text OK, else bcolv email). LF_STATE per deal; "Listing Flow" sheet tab; max 4/day. Sellers who close
+  (stage 26) get PC_SELLER_<id> → sellerSteps wording for pc-3d/pc-1w in the past-client loop. Evergreen = plan 26 JC
+  Long-Term Nurture (24 emails, monthly then every 60 days); 0 running on Nov 13 because the funnel fills hot/warm/legacy/
+  farm first and hands off after 25-65 days.
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
   POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
   task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`
