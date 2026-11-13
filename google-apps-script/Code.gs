@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-greetwho';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-drafts';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4469,7 +4469,8 @@ Examples (all mean the same as the action shown):
     };
     const findOne = who => {
       const fields = 'id,name,firstName,lastName,tags,phones,created';
-      if (a.personId && String(who || '') === String(a.who || '')) { try { return fubFetch('people/' + a.personId + '?fields=' + fields, null, 'get'); } catch (e) {} }
+      if (a.personId && String(who || '') === String(a.who || '')) { try { const r0 = fubFetch('people/' + a.personId + '?fields=' + fields, null, 'get');
+        if (r0 && r0.id) props.setProperty('LAST_PERSON', JSON.stringify({id: r0.id, name: r0.name, at: Date.now()})); return r0; } catch (e) {} }
       const r = findOneRaw(who);
       if (r && !r.many) props.setProperty('LAST_PERSON', JSON.stringify({id: r.id, name: r.name, at: Date.now()}));
       return r;
@@ -4572,7 +4573,15 @@ Examples (all mean the same as the action shown):
       }
       let email = a.email;
       if (!email) { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; }
-      if (!email) return say((p.name || a.who) + ' has no email yet. Send me their email and I\'ll write it.');
+      // Draft only (Nov 13, Julián: "you don't need an email on file to draft an email"): no address on file, or he said
+      // "just draft it / I'll send it myself / don't send" → write it, save it as a note on them, text it to him. Nothing is sent.
+      const draftOnly = !email || /\bjust (draft|write)|\bdraft (it|this|that|one|an email|the email|a note)\b|\bdraft only\b|i(?:'|’)?ll (text|send|email|forward) it|send it myself|don'?t send|format of an email|in (my |the |her |his )?notes/i.test(text);
+      if (draftOnly) {
+        const subj = humanize(a.subject || 'Quick note from Julián'), bodyD = humanize(a.message || '');
+        if (!bodyD.trim()) return say('what should the email to ' + (p.name || a.who) + ' say? I\'ll write it up as a draft.');
+        try { fubFetch('notes', {personId: p.id, subject: 'Email draft (not sent)', body: 'Subject: ' + subj + '\n\n' + bodyD}); } catch (e) {}
+        return say('📝 DRAFT only, nothing was sent' + (email ? '' : ' (' + (p.name || a.who) + ' has no email on file)') + '. Saved in ' + (p.name || a.who) + '\'s notes in Follow Up Boss:\n\nSubject: ' + subj + '\n\n' + bodyD);
+      }
       let subject = humanize(a.subject || 'Quick note from Julián'), body = humanize(a.message || ''), threadId = '';
       // Keep the conversation in one thread: answer in the latest email thread with them from the last 60 days (opened or
       // not, theirs or a campaign email we sent). With Shawna Mailer v5 the reply always goes to them; with an older
