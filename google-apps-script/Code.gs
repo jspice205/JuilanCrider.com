@@ -105,6 +105,7 @@ function doPost(e) {
     if (data.action === 'signAgreement') return signAgreement(data);
     if (data.action === 'book') return json(bookSlot(data));
     if (data.action === 'enrich') return json(enrichSignIn(data));
+    if (data.action === 'clientReact') return json(clientReact(data));
     const ss = getSS();
     const timestamp = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
 
@@ -157,11 +158,12 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-sell';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-clientpages';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
+  if (e && e.parameter && e.parameter.action === 'client') return json(clientPageData(String(e.parameter.id || '')));
   if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
 }
@@ -1288,6 +1290,91 @@ const LISTING_FLOW = {
         email: "Hi {first},\n\nAlmost done. Bring a valid photo ID to signing. I'll let you know the moment it records."}]
   }
 };
+// ---------- Client pages (Nov 13): a private page per client at juliancrider.com/?client=<token> ----------
+// Buyers: homes Julián adds by link (photo + title from the listing page); Love / Pass / Tour come back to him as a text
+// + FUB note. Sellers: showing feedback, market updates and notes from Julián. Everything lives in the "Client Pages"
+// tab (one row per item; the 'page' row holds the role and address). Julián fills it by texting Shawna.
+const CLIENT_TAB = {name: 'Client Pages', color: '#1F6FEB', headers: ['Page', 'Person ID', 'Client', 'Kind', 'When', 'Title', 'Link', 'Photo', 'Details', 'Reaction']};
+function clientPageUrl(token) { return 'https://juliancrider.com/?client=' + token; }
+function clientPageFor(p, role, address) {
+  const props = PropertiesService.getScriptProperties(), k = 'CPAGE_' + p.id;
+  let token = props.getProperty(k);
+  if (token) return {token: token, isNew: false};
+  token = Utilities.getUuid().replace(/-/g, '').slice(0, 18);
+  props.setProperty(k, token);
+  ensureTab(getSS(), CLIENT_TAB).appendRow([token, p.id, cell(p.name || realFirst(p)), 'page', new Date(), cell(address || ''), '', '', role, '']);
+  try { fubFetch('notes', {personId: p.id, subject: 'Client page', body: 'Private client page (' + role + '): ' + clientPageUrl(token)}); } catch (e) {}
+  return {token: token, isNew: true};
+}
+function clientRows(token) {
+  const sh = ensureTab(getSS(), CLIENT_TAB), last = sh.getLastRow();
+  return (last > 1 ? sh.getRange(2, 1, last - 1, CLIENT_TAB.headers.length).getValues() : [])
+    .map((r, i) => ({row: i + 2, page: String(r[0]), personId: r[1], client: r[2], kind: r[3], when: r[4], title: r[5], link: r[6], photo: r[7], details: r[8], reaction: r[9]}))
+    .filter(r => r.page === token);
+}
+/** Public data for the page (first name only; nothing but what Julián put on it). */
+function clientPageData(token) {
+  if (!/^[a-f0-9]{12,}$/.test(token)) return {status: 'error'};
+  const rows = clientRows(token), head = rows.filter(r => r.kind === 'page')[0];
+  if (!head) return {status: 'error'};
+  return {status: 'ok', first: String(head.client || '').split(/\s+/)[0], role: head.details || 'buyer', address: head.title || '',
+    items: rows.filter(r => r.kind !== 'page').map(r => ({id: r.row, kind: r.kind, when: r.when ? new Date(r.when).toISOString() : '', title: r.title, link: r.link, photo: r.photo, details: r.details, reaction: r.reaction}))};
+}
+function clientReact(d) {
+  const token = String(d.id || ''), rows = clientRows(token), it = rows.filter(r => r.row === Number(d.item) && r.kind === 'home')[0];
+  const head = rows.filter(r => r.kind === 'page')[0], reaction = {love: 'Love it', pass: 'Pass', tour: 'Tour it'}[d.reaction];
+  if (!it || !head || !reaction) return {status: 'error'};
+  const note = String(d.note || '').slice(0, 500);
+  ensureTab(getSS(), CLIENT_TAB).getRange(it.row, 10).setValue(cell(reaction + (note ? ': ' + note : '')));
+  const name = String(head.client || 'Your client'), home = it.title || it.link;
+  try { fubFetch('notes', {personId: head.personId, subject: 'Client page: ' + reaction, body: home + '\n' + it.link + (note ? '\n"' + note + '"' : '')}); } catch (e) {}
+  try { notifyJulian({love: '❤️ ', pass: '👎 ', tour: '🗓 '}[d.reaction] + name + ': ' + reaction, home + (note ? '\n"' + note + '"' : '') + (d.reaction === 'tour' ? '\nWant me to find a time?' : ''), '', name); } catch (e) {}
+  return {status: 'ok'};
+}
+/** Page title, photo and description of a listing link (og tags). Zillow often blocks this: the link still goes on. */
+function pageMeta(url) {
+  try {
+    const t = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true}).getContentText().slice(0, 300000);
+    const og = k => ((t.match(new RegExp('<meta[^>]+property=["\']og:' + k + '["\'][^>]+content=["\']([^"\']+)', 'i')) || [])[1] || '').replace(/&amp;/g, '&').replace(/&#39;|&#x27;/g, "'").replace(/&quot;/g, '"');
+    return {title: og('title') || ((t.match(/<title>([^<]+)/i) || [])[1] || '').trim(), photo: og('image'), details: og('description').slice(0, 220)};
+  } catch (e) { return {title: '', photo: '', details: ''}; }
+}
+/** Boss action clientpage: create/send a page, add home links, showing feedback or a market update. */
+function clientPageCommand(a, text) {
+  const raw = String(a.message || text || '');
+  let p = a.who ? findOne(a.who) : null;
+  if (!p) return 'whose page is it?';
+  if (p.many) return 'which one? ' + p.many.slice(0, 4).map(x => x.name).join(', ');
+  const tags = (fubFetch('people/' + p.id + '?fields=id,name,firstName,lastName,tags,phones,emails,addresses', null, 'get') || {});
+  p = Object.assign({}, p, tags);
+  let isSeller = /\bsell|seller|listing|feedback|market update\b/i.test(raw) || (p.tags || []).some(t => /likely seller|listing appointment/i.test(t));
+  const addr = ((p.addresses || [])[0] || {}).street || '';
+  const pg = clientPageFor(p, isSeller ? 'seller' : 'buyer', isSeller ? addr : '');
+  if (!pg.isNew) { const head = clientRows(pg.token).filter(r => r.kind === 'page')[0]; if (head) isSeller = head.details === 'seller'; }
+  const url = clientPageUrl(pg.token), sh = ensureTab(getSS(), CLIENT_TAB), who = p.name || realFirst(p);
+  const links = (raw.match(/https?:\/\/[^\s<>"]+/g) || []);
+  if (links.length) {
+    links.slice(0, 8).forEach(l => { const m = pageMeta(l); sh.appendRow([pg.token, p.id, cell(who), 'home', new Date(), cell(m.title || 'Home'), l, m.photo, cell(m.details), '']); });
+    return 'added ' + links.length + ' home' + (links.length > 1 ? 's' : '') + ' to ' + who + '\'s page: ' + url + (pg.isNew ? '\n\nWant me to text them the link?' : '');
+  }
+  const after = (raw.split(/:\s*/).slice(1).join(': ') || '').trim();
+  if (/feedback/i.test(raw) && after) { sh.appendRow([pg.token, p.id, cell(who), 'feedback', new Date(), 'Showing feedback', '', '', cell(after), '']); return 'added the showing feedback to ' + who + '\'s page: ' + url; }
+  if (/market|update/i.test(raw) && after) { sh.appendRow([pg.token, p.id, cell(who), 'update', new Date(), 'Market update', '', '', cell(after), '']); return 'added the market update to ' + who + '\'s page: ' + url; }
+  if (/\bnote\b/i.test(raw) && after) { sh.appendRow([pg.token, p.id, cell(who), 'note', new Date(), 'From Julián', '', '', cell(after), '']); return 'added your note to ' + who + '\'s page: ' + url; }
+  if (/\bsend|text|email\b/i.test(raw)) {
+    const phone = bbE164(((p.phones || [])[0] || {}).value || ''), email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
+    const textOk = phone && (p.tags || []).indexOf('Text OK') >= 0 && (p.tags || []).indexOf('Text Opt-Out') < 0;
+    const msg = isSeller ? 'Hey ' + realFirst(p) + ', it\'s Julián. I made you a private page for your home: showing feedback and market updates all in one place. ' + url
+      : 'Hey ' + realFirst(p) + ', it\'s Julián 🏡 I made you a private page with homes I picked for you. Tap Love, Pass or Tour on each one and I\'ll take it from there: ' + url;
+    if (!textOk && !email) return 'here\'s ' + who + '\'s page: ' + url + '\n\nI don\'t have a way to reach them (no Text OK and no email), so send it yourself.';
+    const n = textOk ? addPending({personId: p.id, who: who, phone: phone, message: msg, at: Date.now()})
+      : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: isSeller ? 'Your home page' : 'Homes I picked for you', message: msg, at: Date.now()});
+    return 'here\'s the ' + (textOk ? 'text' : 'email') + ':\n\n"' + msg + '"\n\nWant me to send it? ' + yesHint(n);
+  }
+  return (pg.isNew ? 'made ' : 'here\'s ') + who + '\'s ' + (isSeller ? 'seller' : 'buyer') + ' page: ' + url + (isSeller
+    ? '\n\nText me showing feedback or a market update for them and I\'ll put it on.' : '\n\nSend me listing links for them and I\'ll put the homes on it.');
+}
+
 // ---------- Deal parties (Nov 13): transaction coordinator + title company, entered PER DEAL at open escrow ----------
 // Julián texts Shawna "TC for Lisa's deal is Jane Doe jane@x.com 702…" / "title for Lisa is First American, Maria …".
 // Saved per client in DEAL_PARTIES_<personId> + a FUB note. "default TC is …" saves DEAL_TC_DEFAULT for every deal.
@@ -1458,7 +1545,9 @@ function runListingFlow(people) {
     if (due.duties && !signed) { try { dutiesLink = createDutiesLink(who, email || '', phone || '', due.duties); } catch (e) {} }
     let tpl = textOk ? due.text : due.email;
     if (!dutiesLink) tpl = String(tpl).replace(/[^.!?\n]*\{duties\}[^.!?\n]*[.!?]?[ \t]*/, ' ').replace(/(First|Then)[, ]+/, '').replace(/ {2,}/g, ' ');
-    const msg = pcFill(tpl, p, {duties: dutiesLink});
+    const cpage = props.getProperty('CPAGE_' + p.id);
+    let msg = pcFill(tpl, p, {duties: dutiesLink});
+    if (cpage && /^l[ab]-w/.test(due.id)) msg += (textOk ? ' Everything is on your page: ' : '\n\nEverything is on your page: ') + clientPageUrl(cpage);
     const n = textOk ? addPending({personId: p.id, who: who, phone: phone, message: msg, at: now, long: true})
       : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: pcFill(due.subject, p), message: msg, at: now});
     st.done.push(due.id); drafted++;
@@ -3797,7 +3886,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"clientpage|dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -3814,6 +3903,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- clientpage: a client's private page on juliancrider.com: make or send someone's page, add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
 - property: look up a property in Clark County public records (owner, last sale, value, size, year built): "look up 123 Desert Rose Ln", "who owns 456 Summit Club Dr", "pull the records on Lisa's house". "message" = the street address or parcel number exactly as he wrote it; "who" = the client if he wants it saved to their file.
 - campaigns: anything about campaigns, drips or action plans: what campaign someone is on, whether they got the email or text, how many emails or texts they have left, when the next one goes ("what campaign is Lisa in", "did Dan get the email", "how many emails does Ika have left") → "who" = the person. Who is on a campaign or which campaigns are running ("who's in JC Hot", "what campaigns are running") → no "who", "message" = the campaign name (empty for all).
@@ -4115,6 +4205,7 @@ Examples (all mean the same as the action shown):
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
     }
+    if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
       const raw = String(a.message || text), role = /\btitle\b|escrow (officer|company)/i.test(raw) ? 'title' : 'tc', x = parseParty(raw);
       if (!x.name && !x.email) return say('who is it? Send their name, email and phone.');
