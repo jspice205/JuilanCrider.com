@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-deals';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-mine';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1754,6 +1754,7 @@ function runListingFlow(people) {
   if (!LISTING_FLOW.live) return 0;
   const props = PropertiesService.getScriptProperties(), byId = {}; (people || []).forEach(p => byId[p.id] = p);
   const state = JSON.parse(props.getProperty('LF_STATE') || '{}'), now = Date.now();
+  const lfMe = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
   const deals = [].concat(fubFetch('deals?pipelineId=2&limit=100', null, 'get').deals || [], fubFetch('deals?pipelineId=1&limit=100', null, 'get').deals || [])
     .filter((d, i, arr) => LISTING_FLOW.stages[Number(d.stageId)] && arr.findIndex(x => x.id === d.id) === i);
   const sheet = ensureTab(getSS(), LISTING_TAB);
@@ -1764,8 +1765,13 @@ function runListingFlow(people) {
     const fresh = !st || st.stage !== stage;
     if (fresh) st = state[d.id] = {stage: stage, since: d.enteredStageAt ? new Date(d.enteredStageAt).getTime() : now, done: []};
     const pid = ((d.people || [])[0] || {}).id;
-    if (fresh && stage === 'prep' && pid) { try { createListingTasks(pid, d.name); } catch (e) {} } if (!pid || drafted >= LISTING_FLOW.perDay) return;
+    if (!pid) return;
+    const mineDeal = !(d.users && d.users.length && !d.users.some(u => Number(u.id) === lfMe));
+    if (fresh && stage === 'prep' && mineDeal) { try { createListingTasks(pid, d.name); } catch (e) {} }
+    if (drafted >= LISTING_FLOW.perDay) return;
     const p = byId[pid] || fubFetch('people/' + pid + '?fields=id,name,firstName,lastName,tags,emails,phones,assignedUserId', null, 'get');
+    // Shared account (Nov 13): Joey's and Tana's deals and clients never get Julián's flow, texts, tasks or pages.
+    if ((d.users && d.users.length && !d.users.some(u => Number(u.id) === lfMe)) || (p.assignedUserId && Number(p.assignedUserId) !== lfMe)) return;
     const tags = p.tags || [];
     if (['Pause', 'Do Not Email', 'Unsubscribed', 'Deceased'].some(t => tags.indexOf(t) >= 0)) return;
     const age = Math.floor((now - st.since) / 864e5);

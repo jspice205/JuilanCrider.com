@@ -549,6 +549,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   at lb-0 (HOT BUYERS) / lp-0 / la-0 (link added to that first message). Julián's views: FUB Deals board + smart lists
   (Hot leads = tag Tier A, Active clients = stage Active Client, In escrow = stage Pending, Past clients); no separate dashboard.
 
+- Shared account guard (Nov 13): runListingFlow skips deals whose users don't include Julián and people assigned to Joey/Tana
+  (lfMe), so their clients get none of his flow texts, tasks, client pages or escrow tasks. Everything else (funnel, scoring,
+  21-day, holidays, past-client loop) already filters to assignedUserId = Julián. Smart lists: POST smartLists exists but
+  needs a "conditions" format we don't know (guess → 500; docs.followupboss.com unreachable), so Julián clicks them.
+  Later (his ask): triggers that move a card when the client does something (e.g. signs Duties Owed / buyer agreement).
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
