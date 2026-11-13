@@ -466,6 +466,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   step holiday-<key>-<year> for Text OK contacts tagged VIP / past client or stage Past Client (max 80) + one approval
   (pending kind 'holiday'); YES flips them to pending for 10am. Quarterly VIP call tasks NOT added (his Oct 29
   inbound-only rule: no outreach/call tasks) unless he asks.
+- Nov 13: REVIEW_LINK_DEFAULT = his Google review link (g.page/r/Cbt-6pN_iF5zEAI/review); `isTestPerson` (tag Test…, "test"
+  in the name, contact 2221, own numbers) keeps his test contacts out of whatsNewText calls/replies and the email
+  assistant; his own test calls to Vapi no longer text him.
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
   POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
   task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`
