@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-escrow';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-sell';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -178,6 +178,8 @@ const MEETINGS = {
   consult: {label: 'Consultation', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
   phone: {label: 'Phone call', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
   video: {label: 'Video call', minutes: 30, max: 45, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
+  // Listing appointment (Nov 13): 1-hour walkthrough at the seller's home, booked from juliancrider.com/?listing.
+  listing: {label: 'Listing appointment', minutes: 60, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
   showing: {label: 'Showing', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
   golf: {label: 'Golf', minutes: 300, startsOnly: true, step: 60, days: 21, hours: {1: [8, 15], 2: [8, 15], 4: [11, 16], 5: [8, 15]}},
 };
@@ -239,12 +241,12 @@ function bookSlot(d) {
   if (!String(d.name || '').trim() || !String(d.phone || '').trim()) return {status: 'error', message: 'Name and phone are required.'};
   const end = new Date(slot.getTime() + m.minutes * 6e4), email = validEmail(d.email) ? String(d.email).trim() : '';
   const label = Utilities.formatDate(slot, BOOKING.tz, "EEE, MMM d 'at' h:mm a");
-  const showing = m.kind === 'showing' && d.property, golf = m.kind === 'golf', video = m.kind === 'video';
-  const title = showing ? `Showing: ${d.name}` : golf ? `Golf: ${d.name} (${d.holes || 18} holes)` :
+  const showing = m.kind === 'showing' && d.property, golf = m.kind === 'golf', video = m.kind === 'video', listing = m.kind === 'listing' && d.property;
+  const title = showing ? `Showing: ${d.name}` : listing ? `Listing appointment: ${d.name}` : golf ? `Golf: ${d.name} (${d.holes || 18} holes)` :
     `${m.label}: ${d.name}${d.type ? ' (' + d.type + ')' : ''}`;
   const desc = ['Booked on juliancrider.com', `Phone: ${d.phone}`, email && `Email: ${email}`,
     golf && `Holes: ${d.holes || 18}`, golf && `Tee time booked: ${d.teeBooked || 'not yet'}`, golf && d.course && `Course: ${d.course}`, d.notes].filter(Boolean).join('\n');
-  const link = createBookingEvent(title, slot, end, desc, showing ? String(d.property) : golf ? (d.course || '') : '', email, video);
+  const link = createBookingEvent(title, slot, end, desc, showing || listing ? String(d.property) : golf ? (d.course || '') : '', email, video);
   try {  // Follow Up Boss: find or add the person, then appointment + note + task
     const phone = String(d.phone).replace(/\D/g, '');
     let found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
@@ -258,21 +260,23 @@ function bookSlot(d) {
     if (found.length) {
       const pid = found[0].id;
       try { fubFetch('appointments', {title: title, description: desc, start: slot.toISOString(), end: end.toISOString(),
-        location: showing ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
-      fubFetch('notes', {personId: pid, subject: 'Booked: ' + m.label, body: `${label} (${m.minutes} min)${showing ? ' at ' + d.property : ''}${link ? '\nVideo: ' + link : ''}\n${desc}`});
-      if (!golf) createCallTask(pid, showing ? `showing ${label} at ${d.property}` : `${m.label.toLowerCase()} ${label}`);
+        location: showing || listing ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
+      if (listing) { try { fubFetch('people/' + pid + '?mergeTags=true', {tags: ['Likely Seller', 'Listing Appointment']}, 'put'); } catch (e) {} }
+      fubFetch('notes', {personId: pid, subject: 'Booked: ' + m.label, body: `${label} (${m.minutes} min)${showing || listing ? ' at ' + d.property : ''}${link ? '\nVideo: ' + link : ''}\n${desc}`});
+      if (!golf) createCallTask(pid, showing ? `showing ${label} at ${d.property}` : listing ? `listing appointment ${label} at ${d.property} (bring the CMA)` : `${m.label.toLowerCase()} ${label}`);
     }
   } catch (err) { console.error('Booking FUB: ' + err); }
   try {  // confirmation text (the 15-minute reminder comes from remindUpcoming)
     const first = String(d.name).trim().split(/\s+/)[0];
     const sent = bbSend(d.phone, showing ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
+      : listing ? `Hey ${first}, it's Julián 👋🏾 You're all set: I'll see you at ${String(d.property).split(',')[0]} ${label}. Before then, here's how I sell homes: juliancrider.com/?sell`
       : golf ? `Hey ${first}, it's Julián ⛳ We're on for ${d.holes || 18} holes ${label}${d.course ? ' at ' + d.course : ''}. Looking forward to it!`
       : video ? `Hey ${first}, it's Julián 👋🏾 You're all set for our video call ${label}.${link ? " Here's the link: " + link : " I'll send the link shortly."}`
       : `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. I'll call you then. If anything changes, just text me here.`);
     try {  // tap-to-add calendar invite right under the confirmation
       Utilities.sleep(1500);
-      const invTitle = showing ? 'Showing with Julián: ' + String(d.property).split(',')[0] : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
-      bbPostAttachment(d.phone, sent && sent.service, icsInvite(invTitle, slot, end, showing ? String(d.property) : golf ? (d.course || '') : (link || 'Julián will call you'),
+      const invTitle = showing ? 'Showing with Julián: ' + String(d.property).split(',')[0] : listing ? 'Listing appointment with Julián' : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
+      bbPostAttachment(d.phone, sent && sent.service, icsInvite(invTitle, slot, end, showing || listing ? String(d.property) : golf ? (d.course || '') : (link || 'Julián will call you'),
         (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.'));
     } catch (e) { console.log('Calendar invite not sent: ' + e.message); }
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
@@ -1497,6 +1501,14 @@ function syncDealStages(peopleById) {
     (d.people || []).forEach(x => {
       const p = peopleById[x.id]; if (!p) return;
       if (want === 'Closed' && Number(sid) === 26) { try { PropertiesService.getScriptProperties().setProperty('PC_SELLER_' + p.id, '1'); } catch (e) {} }  // sold, not bought
+      // Closing gift (Nov 13, from his Sellers Closing board): one task for Julián when a deal newly lands in CLOSED.
+      if (want === 'Closed' && d.enteredStageAt && Date.now() - new Date(d.enteredStageAt).getTime() < 14 * 864e5) {
+        const gk = 'GIFT_' + d.id, pr = PropertiesService.getScriptProperties();
+        if (!pr.getProperty(gk)) { pr.setProperty(gk, '1'); try {
+          fubFetch('tasks', {personId: p.id, assignedUserId: 2, type: 'Follow Up', name: 'Send a closing gift to ' + (realFirst(p) || p.name || 'the client') + ' (' + (d.name || 'closed deal') + ')',
+            dueDate: Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd')});
+        } catch (e) { console.log('Gift task ' + p.id + ': ' + e.message); } }
+      }
       if (want === 'Closed') closed[p.id] = d.projectedCloseDate || d.closeDate || d.enteredStageAt || d.updatedAt || new Date().toISOString();
       const cur = order.indexOf(String(p.stage || '').toLowerCase());
       if (cur >= order.indexOf(want.toLowerCase())) return;  // never move anyone backwards
