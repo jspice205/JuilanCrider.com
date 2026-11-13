@@ -555,6 +555,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   needs a "conditions" format we don't know (guess → 500; docs.followupboss.com unreachable), so Julián clicks them.
   Later (his ask): triggers that move a card when the client does something (e.g. signs Duties Owed / buyer agreement).
 
+- Sifter + analytics (Nov 13): scoreFubDatabase tags the 200 best-scored Hot/Warm/Nurture contacts "Top 200" (removed when
+  they drop out), tracks tier moves (up/down) and `funnelSnapshot` appends one row per night to the "Funnel History" tab
+  (tiers, Top 200 mix, moves, JC campaign counts, Text OK, opened/clicked/bounced/unsubscribed, active/escrow, who moved
+  up); FUNNEL_WEEK collects the week's movers; weeklyScorecard adds `funnelWeekText` (Hot/Warm/Nurture with change vs 7 days
+  ago, movers, opens/clicks/text OK/bounced). Nov 13 baseline: 1,991 contacts; Tier A 28, B 37, C 1,904; JC Hot 27, Warm 11,
+  Legacy 164, Farm 0, LTN 0; Opened 188, Clicked 24, Bounced 70, Unsubscribed 6, Text OK 6, Not DNC checked 1,394.
+  Julián's plan: run it with real clients 1-2 months, keep what works. The 12 old FUB smart lists (2024 defaults) are
+  shared with the team: leave them; he adds his own.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
