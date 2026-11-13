@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-property';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-sellerloop';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1001,6 +1001,7 @@ function scoreFubDatabase() {
     try { runFunnel(people); } catch (err) { console.error('Funnel: ' + err); }
     try { findDuplicates(people); } catch (err) { console.error('Duplicates: ' + err); }
     try { runPastClientLoop(people); } catch (err) { console.error('Closed client loop: ' + err); }
+    try { runListingFlow(people); } catch (err) { console.error('Listing flow: ' + err); }
   }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
@@ -1178,6 +1179,12 @@ const PAST_CLIENTS = {
   live: true, perDay: 15,
   dealStages: {active: [19, 20, 22], pending: [21, 28, 23, 36, 24, 29], closed: [25, 26]},
   agreementStage: 19,  // Buyers › HOT BUYERS
+  // Sellers (closed in the Sellers pipeline) get their own wording for the first two touches (Nov 13).
+  sellerSteps: {
+    'pc-3d': {text: "Hey {first}, Julián here 🎉 Congrats again on closing! How's the move going? Anything you still need from me on the old place?",
+      subject: 'Congrats again on closing', email: "Hi {first},\n\nCongratulations again on closing. How's the move going?\n\nIf anything comes up with the sale paperwork, utilities or the buyer, send it my way and I'll handle it."},
+    'pc-1w': {subject: 'One week since closing', email: "Hi {first},\n\nOne week since closing. I hope the move went smoothly.\n\nIf you're buying next, here or anywhere else, I'd love to help or connect you with someone great where you're going. Just reply."}
+  },
   steps: [
     {step: 'pc-3d', day: 3, text: "Hey {first}, Julián here 🔑 How are the first few nights in the new place? Anything not working the way it should?",
       subject: 'How are the first few nights?', email: "Hi {first},\n\nHow are the first few nights in the new place? If anything isn't working the way it should, tell me and I'll get the right person out there."},
@@ -1202,6 +1209,81 @@ const PAST_CLIENTS = {
     text: "Happy {years} home anniversary, {first}! 🎉🏡 Hard to believe it's been {yearsWord} already. Hope the house has been good to you. Julián",
     email: "Hi {first},\n\nHappy {years} home anniversary! Hard to believe it's been {yearsWord} since you got the keys.\n\nI hope the house has been good to you. If you'd ever like to know what it's worth today, just reply and I'll run the number.\n\nP.S. If someone you know is thinking about a move, I'd be grateful for the introduction."}
 };
+// ---------- Listing flow (Nov 13): sellers get a steady, human update rhythm while their home is listed ----------
+// Keyed off the Sellers pipeline card (Julián only moves the card). Every message is DRAFTED for his OK first: Shawna
+// texts him the draft and it waits in the approvals queue ("yes" sends it: text if Text OK, else email from bcolv).
+// day = days since the card entered that stage; 'every' repeats (weekly update while active).
+const LISTING_FLOW = {
+  live: true, perDay: 4,
+  stages: {20: 'prep', 22: 'active', 36: 'offers', 24: 'escrow', 29: 'escrow'},
+  steps: {
+    prep: [
+      {id: 'lp-0', day: 0, subject: 'Getting your home ready', text: "Hey {first}, Julián here 🏡 Excited to get your home ready. I'm sending a short prep list today. What's the one thing you're most worried about before we go live?",
+        email: "Hi {first},\n\nExcited to get your home ready. Here's the short version of what makes the biggest difference before photos:\n\n1. Declutter counters and surfaces (less is more on camera)\n2. Fresh lightbulbs, all the same color, every room\n3. Touch up paint and any small repairs\n4. Backyard and pool sparkling, front entry swept\n5. Put away personal photos and valuables\n\nWhat's the one thing you're most worried about before we go live? Reply and we'll handle it together."},
+      {id: 'lp-3', day: 3, subject: 'Photo day', text: "Hey {first}, quick check before photo day. Anything you'd like me to have the photographer focus on? Your favorite spot in the house usually makes the best first photo 📸",
+        email: "Hi {first},\n\nQuick check before photo day. Anything you'd like the photographer to focus on? Your favorite spot in the house usually makes the best first photo."}],
+    active: [
+      {id: 'la-0', day: 0, subject: "You're live 🎉", text: "Hey {first}, you're officially live 🎉 Here's what happens next: showings, feedback, and a quick update from me every week. Keep the house guest ready and I'll do the rest.",
+        email: "Hi {first},\n\nYou're officially live. Here's what happens next:\n\n• Showings: you'll get a heads up before each one\n• Feedback: I'll pass along what buyers and their agents say\n• Weekly update: every week you'll hear from me with views, showings and what I'm seeing\n\nKeep the house guest ready and I'll do the rest."},
+      {id: 'la-w', every: 7, from: 7, subject: 'Your weekly update', text: "Hey {first}, weekly check in on your home 🏡 I've got this week's showings and feedback for you. Would it be a bad idea to hop on a quick call today to go over it?",
+        email: "Hi {first},\n\nWeekly check in on your home. I have this week's showings, online views and buyer feedback ready for you.\n\nWould it be a bad idea to hop on a quick call this week to go over it together?"},
+      {id: 'la-14', day: 14, subject: 'A quick look at the numbers', text: "Hey {first}, two weeks in. Would you be against looking at the numbers together? Showings and feedback tell us a lot right now, and I want us ahead of the market, not chasing it.",
+        email: "Hi {first},\n\nWe're two weeks in. Would you be against looking at the numbers together?\n\nShowings and feedback tell us a lot at this point. My goal is to keep us ahead of the market, not chasing it. Here's what I can do for you: a 15 minute call where I walk you through what's sold, what's competing and what buyers are saying."},
+      {id: 'la-21', day: 21, subject: 'Where we stand', text: "Hey {first}, three weeks in. It sounds like you want this sold without leaving money on the table. Would it be crazy to talk price and presentation this week?",
+        email: "Hi {first},\n\nThree weeks in. It sounds like you want this sold without leaving money on the table, and so do I.\n\nWould it be crazy to talk price and presentation this week? A small change now usually beats a bigger one later."}],
+    offers: [
+      {id: 'lo-0', day: 0, subject: 'We have an offer', text: "Hey {first}, we have an offer 🎉 I'm reviewing the terms now. When's a good time in the next hour or two to walk through it together?",
+        email: "Hi {first},\n\nWe have an offer. I'm reviewing the terms now, price and everything else that matters (closing date, contingencies, credits).\n\nWhen's a good time to walk through it together?"}],
+    escrow: [
+      {id: 'le-0', day: 0, subject: "You're under contract 🎉", text: "Hey {first}, you're under contract 🎉 The next steps are inspection, appraisal and the buyer's loan. I'll keep you posted at every step, no surprises.",
+        email: "Hi {first},\n\nYou're under contract. Here's what happens from here:\n\n1. Inspection (usually in the first week or so)\n2. Appraisal\n3. The buyer's loan approval\n4. Final walkthrough and closing\n\nI'll keep you posted at every step. No surprises."},
+      {id: 'le-7', day: 7, subject: 'Escrow check in', text: "Hey {first}, quick escrow check in. Everything is moving. Anything on your mind about the timeline or the move?",
+        email: "Hi {first},\n\nQuick escrow check in. Everything is moving. Anything on your mind about the timeline or the move? Just reply."}]
+  }
+};
+const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
+/** Daily (after scoring): for each Sellers card in Listing Prep / Active / Offers / escrow, drafts the next due message
+ *  for Julián's OK (approvals queue + a text to him). Nothing reaches the client until he says yes. */
+function runListingFlow(people) {
+  if (!LISTING_FLOW.live) return 0;
+  const props = PropertiesService.getScriptProperties(), byId = {}; (people || []).forEach(p => byId[p.id] = p);
+  const state = JSON.parse(props.getProperty('LF_STATE') || '{}'), now = Date.now();
+  const deals = (fubFetch('deals?pipelineId=2&limit=100', null, 'get').deals || []).filter(d => LISTING_FLOW.stages[Number(d.stageId)]);
+  const sheet = ensureTab(getSS(), LISTING_TAB);
+  let drafted = 0;
+  deals.forEach(d => {
+    const stage = LISTING_FLOW.stages[Number(d.stageId)];
+    let st = state[d.id];
+    if (!st || st.stage !== stage) st = state[d.id] = {stage: stage, since: d.enteredStageAt ? new Date(d.enteredStageAt).getTime() : now, done: []};
+    const pid = ((d.people || [])[0] || {}).id; if (!pid || drafted >= LISTING_FLOW.perDay) return;
+    const p = byId[pid] || fubFetch('people/' + pid + '?fields=id,name,firstName,lastName,tags,emails,phones,assignedUserId', null, 'get');
+    const tags = p.tags || [];
+    if (['Pause', 'Do Not Email', 'Unsubscribed', 'Deceased'].some(t => tags.indexOf(t) >= 0)) return;
+    const age = Math.floor((now - st.since) / 864e5);
+    const due = LISTING_FLOW.steps[stage].map(x => {
+      if (!x.every) return x;
+      if (age < x.from) return null;
+      const k = Math.floor((age - x.from) / x.every), day = x.from + k * x.every;
+      return [14, 21].indexOf(day) >= 0 ? null : Object.assign({}, x, {id: x.id + k, day: day});  // day 14/21 have their own message
+    }).filter(x => x && age >= x.day && age < x.day + 5 && st.done.indexOf(x.id) < 0)[0];
+    if (!due) return;
+    const phone = bbE164(((p.phones || [])[0] || {}).value || ''), email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
+    const textOk = phone && tags.indexOf('Text OK') >= 0 && tags.indexOf('Text Opt-Out') < 0;
+    if (!textOk && !email) return;
+    const who = [realFirst(p), p.lastName].join(' ').trim() || p.name, msg = pcFill(textOk ? due.text : due.email, p);
+    const n = textOk ? addPending({personId: p.id, who: who, phone: phone, message: msg, at: now, long: true})
+      : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: pcFill(due.subject, p), message: msg, at: now});
+    st.done.push(due.id); drafted++;
+    const label = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age}[stage];
+    bossTextSafe('🏡 ' + who + ' (' + label + '). Here\'s the ' + (textOk ? 'text' : 'email') + ' I\'d send:\n\n"' + msg + '"\n\n' +
+      'Want me to send it? ' + yesHint(n));
+    sheet.appendRow([d.id, who, stage, new Date(st.since), st.done.join(','), new Date()]);
+  });
+  Object.keys(state).forEach(id => { if (!deals.some(d => String(d.id) === String(id))) delete state[id]; });
+  props.setProperty('LF_STATE', JSON.stringify(state));
+  return drafted;
+}
+
 const PAST_CLIENTS_TAB = {name: 'Past Clients', color: '#C9A227', headers: ['Person ID', 'Name', 'Closed on', 'Joined as', 'Touches sent', 'Last touch', 'Status']};
 
 function pcFill(t, p, extra) {
@@ -1225,6 +1307,7 @@ function syncDealStages(peopleById) {
     if (!want) return;
     (d.people || []).forEach(x => {
       const p = peopleById[x.id]; if (!p) return;
+      if (want === 'Closed' && Number(sid) === 26) { try { PropertiesService.getScriptProperties().setProperty('PC_SELLER_' + p.id, '1'); } catch (e) {} }  // sold, not bought
       if (want === 'Closed') closed[p.id] = d.projectedCloseDate || d.closeDate || d.enteredStageAt || d.updatedAt || new Date().toISOString();
       const cur = order.indexOf(String(p.stage || '').toLowerCase());
       if (cur >= order.indexOf(want.toLowerCase())) return;  // never move anyone backwards
@@ -1297,6 +1380,7 @@ function runPastClientLoop(people) {
       due = {step: 'pc-q' + q, subject: Q.subject, text: Q.text, email: Q.email};
     }
     if (!due) return;
+    if (PAST_CLIENTS.sellerSteps[due.step] && props.getProperty('PC_SELLER_' + id)) due = Object.assign({}, due, PAST_CLIENTS.sellerSteps[due.step]);
     const extra = Object.assign({review: review}, due.extra || {});
     const results = [];
     const email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
