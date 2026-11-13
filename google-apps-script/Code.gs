@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-followthrough';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-12-propdiscover';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -299,6 +299,62 @@ function setupAutoUpdate() {
   ScriptApp.newTrigger('autoUpdateFromGitHub').timeBased().everyHours(1).create();  // only once updates actually work
 }
 
+/** One-time check (Nov 12) of Clark County's public property-record services, so Claude can build Shawna's "look up
+ *  <address>" (Claude's workspace can't reach the county sites; this script can). Writes what it finds to the
+ *  "Property Lookup Setup" tab: service names, parcel/address layers with their fields, one sample record, and the
+ *  Assessor parcel page text for that parcel. Read-only; public records only. Runs once from the hourly update. */
+function propertyDiscover() {
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('PROP_DISCOVERED', '2');
+  const ss = getSS(), name = 'Property Lookup Setup';
+  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
+  sh.clear(); sh.appendRow(['What', 'URL', 'Found']);
+  const rows = [], started = Date.now();
+  const get = url => {
+    try { const r = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true}); return {code: r.getResponseCode(), text: r.getContentText()}; }
+    catch (e) { return {code: 0, text: 'ERROR ' + e.message}; }
+  };
+  const log = (what, url, found) => rows.push([what, url, String(found).slice(0, 45000)]);
+  const roots = ['https://maps.clarkcountynv.gov/arcgis/rest/services', 'https://gisgate.co.clark.nv.us/arcgis/rest/services'];
+  const want = /parcel|address|assess|cadast|landbase|property|site/i;
+  let sampleApn = '';
+  roots.forEach(root => {
+    if (Date.now() - started > 240e3) return;
+    const top = get(root + '?f=json'); log('directory', root, top.code + ' ' + top.text.slice(0, 3000));
+    let j; try { j = JSON.parse(top.text); } catch (e) { return; }
+    const services = (j.services || []).slice();
+    (j.folders || []).slice(0, 25).forEach(f => {
+      if (Date.now() - started > 240e3) return;
+      const fr = get(root + '/' + f + '?f=json');
+      try { (JSON.parse(fr.text).services || []).forEach(x => services.push(x)); } catch (e) {}
+    });
+    log('all services', root, services.map(x => x.name + ' (' + x.type + ')').join('\n'));
+    services.filter(x => want.test(x.name)).slice(0, 12).forEach(x => {
+      if (Date.now() - started > 240e3) return;
+      const surl = root + '/' + x.name + '/' + x.type;
+      const sv = get(surl + '?f=json');
+      let layers = []; try { layers = JSON.parse(sv.text).layers || []; } catch (e) {}
+      log('service', surl, layers.map(l => l.id + ': ' + l.name).join('\n') || sv.text.slice(0, 1000));
+      layers.filter(l => want.test(l.name)).slice(0, 4).forEach(l => {
+        if (Date.now() - started > 240e3) return;
+        const lurl = surl + '/' + l.id;
+        const meta = get(lurl + '?f=json');
+        let fields = ''; try { fields = (JSON.parse(meta.text).fields || []).map(f => f.name + ' (' + (f.alias || '') + ')').join(', '); } catch (e) {}
+        const q = get(lurl + '/query?where=1%3D1&outFields=*&returnGeometry=false&resultRecordCount=1&f=json');
+        log('layer fields', lurl, fields);
+        log('layer sample', lurl + '/query', q.text.slice(0, 3000));
+        if (!sampleApn) { const m = q.text.match(/"(?:APN|PARCEL|PARCELNUM|PARCEL_NUM|PARCELID|PARCEL_ID)[A-Z_]*"\s*:\s*"?(\d{3}-?\d{2}-?\d{3}-?\d{3})/i); if (m) sampleApn = m[1].replace(/-/g, ''); }
+      });
+    });
+  });
+  if (sampleApn) {
+    const pd = 'https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ParcelDetail.aspx?hdnParcel=' + sampleApn + '&hdnInstance=pcl';
+    const r = get(pd);
+    log('parcel page', pd, r.code + ' ' + r.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 6000));
+  } else log('parcel page', '', 'no sample parcel number found');
+  if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
+}
+
 function autoUpdateFromGitHub() {
   console.log(updateFromGitHub(true));
   try { ensureTextQueueTrigger(); } catch (e) { console.log('Text triggers: ' + e.message); }
@@ -307,6 +363,7 @@ function autoUpdateFromGitHub() {
   try { processAllowNotes(); } catch (e) { console.log('Shawna allow: ' + e.message); }
   try { cleanupOldTasks(); } catch (e) { console.log('Old tasks: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
+  try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '2') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
