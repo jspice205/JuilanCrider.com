@@ -441,6 +441,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   prints URL + JSON body. Free-plan fallback: ManyChat replies with juliancrider.com/?signin (Julián set this up Nov 11).
   `igReply`: the webhook also returns {reply} = Shawna's answer (as Julián, IG_<handle> keeps 8 msgs) for ManyChat Pro to
   send back (map $.reply); works without email/phone; "source": "comment" for comment-to-DM automations.
+- Instagram (Metricool brand 5871119, @juliancriderestates): Stories are scheduled with autoPublish false so Julián gets a
+  Metricool push and adds a Link sticker (juliancrider.com/?book "Book a free call" or ?relocate "Moving to Vegas? Start
+  here"); the API can't add link stickers. Reaction videos (#realestatereaction Reels): Julián wants them uploaded at the
+  HIGHEST QUALITY (Nov 13): export/upload 1080x1920, high bitrate; when quality matters, post from the Instagram app with
+  Settings → Data usage and media quality → "Upload at highest quality" on (Metricool notification mode).
 - His API key cannot create pipelines (403). FUB's API can't create action plans, automations,
   smart lists, or send texts/emails, so give Julián click-by-click steps for those.
 - Pipelines: Buyers (Nurture, Hot Buyers, Offer, Due Diligence, Loan/Appraisal, Closed) and
