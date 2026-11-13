@@ -2273,6 +2273,45 @@ function pickTime(c, note){
     });
   }).catch(requested);
 }
+// Client pages (Nov 13, juliancrider.com/?client=<private id>): buyers see the homes Julián picked and tap Love / Pass /
+// Tour (it goes straight to him); sellers see showing feedback, market updates and notes. Filled by texting Shawna.
+function clientPage(id){
+  const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const day = t => t ? new Date(t).toLocaleDateString('en-US', {timeZone:'America/Los_Angeles', month:'short', day:'numeric'}) : '';
+  sheet.classList.add('full'); scrim.classList.add('full');
+  openRaw('', `<p class="fine">Loading your page…</p>`);
+  fetch(SHEET_URL + '?' + new URLSearchParams({action:'client', id})).then(r => r.json()).then(d => {
+    if (d.status !== 'ok') { $('sheetBody').innerHTML = doneHTML('Page not found','This link may have changed. Text Julián at 702-498-2571 and he’ll send you a fresh one.'); return; }
+    const items = (d.items || []).slice().reverse(), seller = d.role === 'seller';
+    const homes = items.filter(x => x.kind === 'home'), fb = items.filter(x => x.kind === 'feedback'), up = items.filter(x => x.kind === 'update'), notes = items.filter(x => x.kind === 'note');
+    const card = x => `<div class="textcard" style="padding:0;overflow:hidden;margin-bottom:14px">
+      ${x.photo ? `<img src="${e(x.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:100%;aspect-ratio:3/2;object-fit:cover;display:block" onerror="this.remove()">` : ''}
+      <div style="padding:14px 16px 16px"><b style="display:block;font-size:16px;margin-bottom:4px">${e(x.title || 'Home')}</b>
+      ${x.details ? `<p style="color:var(--ink2);font-size:14px;margin:0 0 10px">${e(x.details)}</p>` : ''}
+      <a class="link" href="${e(x.link)}" target="_blank" rel="noopener">See the listing ›</a>
+      <div class="chips" style="margin-top:12px" data-home="${x.id}">${[['love','❤️ Love it'],['pass','👎 Pass'],['tour','🗓 Tour it']].map(([k,l]) => `<button type="button" class="chip ${String(x.reaction||'').startsWith(l.slice(3)) ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
+      <div data-noteb="${x.id}" hidden class="field" style="margin:10px 0 0"><input aria-label="Note to Julián" placeholder="Anything to tell Julián? (optional)"><button type="button" class="mini" style="margin-top:8px">Send note</button></div>
+      <p class="fine" data-ok="${x.id}" hidden style="margin:8px 0 0">Got it. Julián will see this right away.</p></div></div>`;
+    const entry = x => `<div style="border-left:3px solid var(--hair);padding:2px 0 2px 12px;margin:0 0 14px"><span class="fine" style="margin:0">${day(x.when)}</span><p style="margin:2px 0 0;white-space:pre-line">${e(x.details)}</p></div>`;
+    const sec = (h, list, empty) => `<h2>${h}</h2>` + (list.length ? list.map(entry).join('') : `<p style="color:var(--ink2)">${empty}</p>`);
+    $('sheetBody').innerHTML = `<article class="reader"><div class="kick">Private page from Julián</div>
+      <h1>${seller ? (d.address ? e(d.address) : 'Your home') : 'Homes for you, ' + e(d.first)}</h1>
+      <p>${seller ? `Hi ${e(d.first)}. Everything about your sale in one place: what buyers are saying after showings, how the market around you is moving, and notes from me.` : `Hi ${e(d.first)}. These are homes I picked for you. Tap <b>Love it</b>, <b>Pass</b> or <b>Tour it</b> on each one and I’ll take it from there. Passing on a home helps me just as much.`}</p>
+      ${notes.length ? sec('From Julián', notes, '') : ''}
+      ${seller ? sec('Showing feedback', fb, 'Feedback from showings will show up here.') + sec('Market updates', up, 'Market updates for your area will show up here.')
+        : (homes.length ? homes.map(card).join('') : '<p style="color:var(--ink2)">Julián is pulling homes for you now. Check back soon.</p>') + (fb.length ? sec('Showing notes', fb, '') : '') + (up.length ? sec('Market updates', up, '') : '')}
+      <button class="pill block" id="cpBook" style="margin-top:8px">Book a call with Julián</button>
+      <p class="fine" style="margin-top:14px">This page is private to you. Please don’t share the link.</p></article>`;
+    $('cpBook').onclick = () => { sheet.classList.remove('full'); scrim.classList.remove('full'); openSheet('book', {type: seller ? 'Selling or home value' : 'Buying a home'}); };
+    const send = (item, r, note) => fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'clientReact', id, item, reaction: r, note: note || ''})});
+    document.querySelectorAll('[data-home]').forEach(box => box.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+      const item = box.dataset.home; box.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
+      send(item, b.dataset.r).then(() => { document.querySelector(`[data-ok="${item}"]`).hidden = false; });
+      const nb = document.querySelector(`[data-noteb="${item}"]`); nb.hidden = false;
+      nb.querySelector('button').onclick = () => { const v = nb.querySelector('input').value.trim(); if (!v) return; send(item, b.dataset.r, v); nb.hidden = true; };
+    }));
+  }).catch(() => { $('sheetBody').innerHTML = doneHTML('Can’t load right now','Please try again in a minute, or text Julián at 702-498-2571.'); });
+}
 // Seller presentation (Nov 13, juliancrider.com/?sell): the listing presentation as a page Julián sends before every
 // listing appointment. No made-up stats or promises; it explains how he prices, markets and communicates.
 function sellPresentation(){
@@ -2440,6 +2479,9 @@ function askIntent(){
   // juliancrider.com/?book opens Book a consultation right away (the link sent in Instagram and text auto-replies).
   if (/[?&]golf\b/.test(location.search)) { setTimeout(golfFlow, 300); return; }
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
+  // juliancrider.com/?client=<id> opens that client's private page.
+  const cpm = location.search.match(/[?&]client=([a-f0-9]{12,})/);
+  if (cpm) { setTimeout(() => clientPage(cpm[1]), 200); return; }
   // juliancrider.com/?sell opens the seller presentation; ?listing opens Book a listing appointment.
   if (/[?&]sell\b/.test(location.search)) { setTimeout(() => openSheet('sell'), 300); return; }
   if (/[?&]listing\b/.test(location.search)) { setTimeout(() => openSheet('listing'), 300); return; }

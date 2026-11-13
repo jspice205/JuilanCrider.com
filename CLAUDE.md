@@ -469,6 +469,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Homes > Home value. Closing gift: syncDealStages makes one task "Send a closing gift to X" when a deal entered CLOSED in
   the last 14 days (GIFT_<dealId>). Vendor list: blank fillable "Preferred Vendor List" PDF in Drive Deal Flows for Joey;
   when it comes back, load it into a "Vendors" sheet tab for Shawna (not into the repo).
+<<<<<<< HEAD
+- Client pages (Nov 13): juliancrider.com/?client=<token> (`clientPage` in index.html; GET ?action=client →
+  `clientPageData`, first name only). "Client Pages" sheet tab, one row per item (kind page/home/feedback/update/note; the
+  page row holds role buyer|seller + address); CPAGE_<personId> = token. Boss action `clientpage` (`clientPageCommand`):
+  "make Lisa a client page", "add <links> to Dan's page" (pageMeta: og title/photo/description), "feedback for Lisa's
+  house: …", "market update for Lisa: …", "note for Dan: …", "send Dan his page" (approval; text if Text OK else bcolv
+  email). Buyers tap Love/Pass/Tour (+ optional note) → POST clientReact → Reaction cell, FUB note, notifyJulian. Weekly
+  listing (la-w) and buyer (lb-w) flow texts add the page link when one exists.
+=======
+>>>>>>> origin/main
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
