@@ -2350,8 +2350,10 @@ function freePage(){
     sendLead({tab:'Website Leads', type:'Free in Vegas', ...contactVals(), property:'', timeline:'', source:'juliancrider.com', notes: joinNotes(['Birthday month: ' + $('frBday').value, 'Joined: Free in Vegas'])});
     $('sheetBody').innerHTML = doneHTML('You’re on the list 🎉', 'Look for a text from Julián in a minute. New free picks come every couple of weeks.'); };
   fetch(SHEET_URL + '?action=free').then(r => r.json()).then(d => {
-    const items = (d.items || []).slice(0, 8); if (!items.length || !$('freeNew')) return;
-    $('freeNew').innerHTML = '<h2>New picks</h2>' + items.map(x => `<div style="margin:0 0 14px"><b style="display:block">${e(x.what)}</b>${x.link ? `<a class="link" href="${e(x.link)}" target="_blank" rel="noopener">Details ›</a>` : ''}</div>`).join('');
+    const all = d.items || [], row = x => `<div style="margin:0 0 14px"><b style="display:block">${e(x.what)}</b>${x.link ? `<a class="link" href="${e(x.link)}" target="_blank" rel="noopener">Details ›</a>` : ''}</div>`;
+    const picks = all.filter(x => x.kind !== 'birthday').slice(0, 8), bday = all.filter(x => x.kind === 'birthday').slice(0, 10);
+    if (!$('freeNew') || !(picks.length || bday.length)) return;
+    $('freeNew').innerHTML = (picks.length ? '<h2>New picks</h2>' + picks.map(row).join('') : '') + (bday.length ? '<h2>Birthday freebies 🎂</h2>' + bday.map(row).join('') + '<p class="fine">Most need the business’s app or rewards sign-up before your birthday.</p>' : '');
   }).catch(() => {});
 }
 // Seller presentation (Nov 13, juliancrider.com/?sell): the listing presentation as a page Julián sends before every

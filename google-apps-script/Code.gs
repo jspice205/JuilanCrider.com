@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-free';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-freefind';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1559,18 +1559,65 @@ function runTouch21() {
 // types in the tab need Y too). Thursdays, up to 3 verified unsent items become one text to subscribers (tag Free in
 // Vegas + Text OK), held as "review" for his single yes (goes out at noon). On the 1st of each month, subscribers whose
 // birthday month it is (tag "Bday <Month>") get a happy-birthday-month text, same approval. Nothing is made up.
-const FREE_TAB = {name: 'Free in Vegas', color: '#F4B400', headers: ['Added', 'What', 'Link', 'Verified (Y)', 'Sent']};
+const FREE_TAB = {name: 'Free in Vegas', color: '#F4B400', headers: ['Added', 'What', 'Link', 'Verified (Y)', 'Sent', 'Source', 'Kind']};
+function freeTab() {
+  const sh = ensureTab(getSS(), FREE_TAB);
+  if (!sh.getRange(1, 6).getValue()) sh.getRange(1, 6, 1, 2).setValues([['Source', 'Kind']]);  // tabs made before Nov 13 had 5 columns
+  return sh;
+}
+// Sources Julián gave (Nov 13). Shawna reads them, proposes picks, and nothing is listed until he says yes.
+// Instagram accounts (e.g. @secretlasvegas_smn) can't be read automatically: he texts Shawna "free: <post link>".
+const FREE_SOURCES = {
+  food: {name: 'Deals Finders (free food days)', url: 'https://dealsfinders.com/free-food-days/'},
+  bday: {name: 'Freebl (birthday freebies)', url: 'https://freebl.co/'}};
+function sourceText(url, near) {
+  try {
+    const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true, headers: {'User-Agent': 'Mozilla/5.0 (Macintosh) Safari/605'}});
+    if (res.getResponseCode() >= 300) return '';
+    const t = res.getContentText().slice(0, 900000).replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<\/(p|li|h\d|tr|div)>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#8217;|&#39;|&rsquo;/g, "'").replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n');
+    const i = near ? t.search(new RegExp(near, 'i')) : -1;
+    return t.slice(Math.max(0, i), Math.max(0, i) + 14000);
+  } catch (e) { return ''; }
+}
+/** Reads a source, asks the AI for picks that are really on the page, adds them UNVERIFIED and asks Julián once. */
+function findFreePicks(kind) {
+  const src = FREE_SOURCES[kind], props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = new Date();
+  const month = Utilities.formatDate(kind === 'bday' ? new Date(now.getTime() + 10 * 864e5) : now, tz, 'MMMM');
+  const text = sourceText(src.url, kind === 'food' ? month : ''); if (text.length < 300) return 0;
+  const from = Utilities.formatDate(now, tz, 'MMMM d, yyyy'), to = Utilities.formatDate(new Date(now.getTime() + 9 * 864e5), tz, 'MMMM d, yyyy');
+  const ask = kind === 'food'
+    ? 'List free food deals on this page that happen between ' + from + ' and ' + to + ' at businesses that have locations in Las Vegas (national chains are fine).'
+    : 'List birthday freebies on this page from businesses that have locations in Las Vegas (national chains are fine). Include what you must do to get it (app, rewards signup).';
+  let out = {items: []};
+  try {
+    out = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: 'You extract facts from a web page. Use ONLY what the page text says; never add offers, dates or businesses that are not in it. If unsure, leave it out. Reply as JSON {"items":[{"what":"business: offer, date or requirement, under 140 characters"}]}, at most 6 items.'},
+      {role: 'user', content: ask + '\n\nPAGE TEXT:\n' + text}], {maxTokens: 700}));
+  } catch (e) { console.log('Free picks: ' + e.message); return 0; }
+  const sh = freeTab(), have = sh.getLastRow() > 1 ? sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues().map(r => String(r[0]).toLowerCase()) : [];
+  const picks = (out.items || []).map(x => String(x.what || '').trim().slice(0, 160)).filter(w => w && have.indexOf(w.toLowerCase()) < 0).slice(0, 6);
+  if (!picks.length) return 0;
+  const rows = picks.map(w => { sh.appendRow([new Date(), cell(w), src.url, '', '', src.name, kind === 'bday' ? 'birthday' : 'free']); return {row: sh.getLastRow(), what: w}; });
+  const n = addPending({kind: 'freepicks', rows: rows, label: kind === 'bday' ? 'birthday freebies' : 'Free in Vegas picks', count: rows.length, at: Date.now()});
+  bossTextSafe((kind === 'bday' ? '🎂 Birthday freebies I found on Freebl:' : '🎉 Possible Free in Vegas picks from Deals Finders:') + '\n\n' + picks.map(w => '• ' + w).join('\n') +
+    '\n\nThey\'re in the Free in Vegas tab, not on the list yet. Want me to add them? ' + yesHint(n));
+  return rows.length;
+}
 function addFreeItem(text) {
   const t = String(text || '').trim(); if (!t) return 'what\'s the free thing? Send what, where and when.';
-  const link = (t.match(/https?:\/\/\S+/) || [''])[0], what = t.replace(link, '').replace(/\s+/g, ' ').trim();
-  ensureTab(getSS(), FREE_TAB).appendRow([new Date(), cell(what), link, 'Y', '']);
+  const link = (t.match(/https?:\/\/\S+/) || [''])[0];
+  let what = t.replace(link, '').replace(/\s+/g, ' ').trim();
+  if (what.length < 8 && link) { const m = pageMeta(link); what = String(m.details || m.title || what).replace(/^[\d,.KkMm]+ likes?, [\d,.KkMm]+ comments? - [^:]+:\s*/i, '').replace(/^["“]|["”]$/g, '').slice(0, 200).trim(); }
+  if (!what) return 'I couldn\'t read that post. Send me what it is, where and when.';
+  freeTab().appendRow([new Date(), cell(what), link, 'Y', '', /instagram\.com/.test(link) ? 'Instagram' : 'Julián', /birthday/i.test(what) ? 'birthday' : 'free']);
   return 'added to Free in Vegas: ' + what + '. It goes in the next Thursday text (with your OK) and on juliancrider.com/?free. ✅';
 }
 function freeItems(max) {
   const sh = getSS().getSheetByName(FREE_TAB.name); if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, FREE_TAB.headers.length).getValues()
+  return sh.getRange(2, 1, sh.getLastRow() - 1, Math.max(5, sh.getLastColumn())).getValues().map(r => r.concat(['', '']))
     .filter(r => /^y/i.test(String(r[3])) && r[1]).reverse().slice(0, max || 30)
-    .map(r => ({added: r[0] instanceof Date ? r[0].toISOString() : '', what: String(r[1]), link: String(r[2] || '')}));
+    .map(r => ({added: r[0] instanceof Date ? r[0].toISOString() : '', what: String(r[1]), link: String(r[2] || ''), kind: String(r[6] || 'free')}));
 }
 function freeSubscribers(extraTag) {
   const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, out = [];
@@ -1586,10 +1633,12 @@ function runFreeVegas() {
   const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd'), dow = Utilities.formatDate(now, tz, 'u'), dom = Utilities.formatDate(now, tz, 'd');
   const q = ensureTab(getSS(), TEXT_QUEUE_TAB), noon = Utilities.parseDate(today + ' 12:00', tz, 'yyyy-MM-dd HH:mm');
   const sendAt = noon > now ? noon : new Date(now.getTime() + 30 * 6e4), when = noon > now ? 'today at noon' : 'in about 30 minutes';
+  if (dow === '3' && props.getProperty('FREE_FIND') !== today) { props.setProperty('FREE_FIND', today); try { findFreePicks('food'); } catch (e) { console.log('Free finder: ' + e.message); } }
+  if (dom === '25' && props.getProperty('BDAY_FIND') !== today) { props.setProperty('BDAY_FIND', today); try { findFreePicks('bday'); } catch (e) { console.log('Birthday finder: ' + e.message); } }
   if (dow === '4' && props.getProperty('FREE_RUN') !== today) {  // Thursday: the weekend list
     props.setProperty('FREE_RUN', today);
-    const sh = ensureTab(getSS(), FREE_TAB), rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, FREE_TAB.headers.length).getValues() : [];
-    const pick = rows.map((r, i) => ({r: r, row: i + 2})).filter(x => /^y/i.test(String(x.r[3])) && x.r[1] && !x.r[4]).slice(0, 3);
+    const sh = freeTab(), rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, FREE_TAB.headers.length).getValues() : [];
+    const pick = rows.map((r, i) => ({r: r, row: i + 2})).filter(x => /^y/i.test(String(x.r[3])) && x.r[1] && !x.r[4] && x.r[6] !== 'birthday').slice(0, 3);
     const subs = pick.length ? freeSubscribers() : [];
     if (pick.length && subs.length) {
       const body = pick.map(x => '• ' + x.r[1] + (x.r[2] ? ' ' + x.r[2] : '')).join('\n'), step = 'free-' + today.replace(/-/g, '');
@@ -1604,7 +1653,8 @@ function runFreeVegas() {
     const month = Utilities.formatDate(now, tz, 'MMMM'), subs = freeSubscribers('Bday ' + month);
     if (subs.length) {
       const step = 'bday-' + today.replace(/-/g, '');
-      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell('Happy birthday month, ' + realFirst(p) + '! 🎂 Hope it\'s a great one. Julián')]));
+      const gifts = freeItems(40).filter(x => x.kind === 'birthday').slice(0, 3).map(x => '• ' + x.what).join('\n');
+      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell('Happy birthday month, ' + realFirst(p) + '! 🎂 Hope it\'s a great one.' + (gifts ? ' A few birthday freebies around town:\n\n' + gifts + '\n\nMore: juliancrider.com/?free' : '') + ' Julián')]));
       const n = addPending({kind: 'holiday', step: step, label: 'birthday month', count: subs.length, when: when, at: Date.now()});
       bossTextSafe('🎂 ' + subs.length + ' of your Free in Vegas people have a birthday this month (' + subs.slice(0, 4).map(p => realFirst(p)).join(', ') + '). Want me to text them "Happy birthday month" ' + when + '? ' + yesHint(n));
     }
@@ -3115,7 +3165,7 @@ function addPending(item) {
 function pendingLabel(x) {
   if (!x.who || /^(undefined|unknown|null)$/i.test(String(x.who))) x = Object.assign({}, x, {who: x.phone ? String(x.phone).replace(/^\+1/, '') : 'someone'});
   return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
-    : x.kind === 'holiday' ? x.label + ' texts to ' + x.count + ' people' : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
+    : x.kind === 'holiday' ? x.label + ' texts to ' + x.count + ' people' : x.kind === 'freepicks' ? x.count + ' ' + x.label : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
 }
 // No reply instructions in her texts (Julián, Nov 12: "this isn't 2020"): she asks like a person; "yes", "send it", "go" work.
 // With several approvals waiting, just the number so "yes to 2" is possible.
@@ -3974,8 +4024,13 @@ function bossCommand(text, tries) {
   if (picked && !pend) return say('I don\'t have a #' + picked + ' waiting. ' + (queue.length ? 'Waiting now: ' + queue.map(x => '#' + x.n + ' ' + pendingLabel(x)).join(', ') : 'Nothing is waiting for your OK.'));
   if (pend && pend.kind !== 'schedule' && ym) {
     dropPend(pend);
-    if (Date.now() - pend.at > (/^(email|deal|event|invite|holiday)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+    if (Date.now() - pend.at > (/^(email|deal|event|invite|holiday|freepicks)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
     stat('approved');
+    if (pend.kind === 'freepicks') {  // picks Shawna found on his sources: mark them verified
+      const sh = freeTab(); let n = 0;
+      (pend.rows || []).forEach(x => { try { if (String(sh.getRange(x.row, 2).getValue()) === x.what) { sh.getRange(x.row, 4).setValue('Y'); n++; } } catch (e) {} });
+      return say('done. ' + n + ' ' + pend.label + ' added. They\'re on juliancrider.com/?free' + (pend.label === 'birthday freebies' ? ' and in next month\'s birthday texts.' : ' and in Thursday\'s text (with your OK).') + ' ✅');
+    }
     if (pend.kind === 'holiday') {  // the holiday texts waiting in the Text Queue (status "review") go out on the day
       const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name); let n = 0;
       if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach((r, i) => {

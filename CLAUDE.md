@@ -489,6 +489,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   tab, Verified Y). `runFreeVegas` (daily hook): Thursdays up to 3 verified unsent picks → one text per subscriber as
   "review" + one approval (noon); 1st of month → "Happy birthday month" for tag Bday <Month>, same approval.
   Never list a pick nobody checked (Julián's rule: verified only).
+  Free finder (Nov 13, his sources): FREE_SOURCES food = dealsfinders.com/free-food-days (Wednesdays, deals in the next 9
+  days) and bday = freebl.co (25th, birthday freebies) → `findFreePicks` (sourceText + Groq "only what the page says") →
+  rows Verified blank + Source + Kind (free|birthday) → one approval (pending kind 'freepicks') → YES marks Y. Birthday
+  rows show on ?free under "Birthday freebies" and go in the birthday-month text. Instagram (@secretlasvegas_smn) can't be
+  read automatically: "free: <post link>" fills the pick from the post's caption (pageMeta). Claude's container can't
+  reach those sites (DNS blocked); Apps Script can.
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
