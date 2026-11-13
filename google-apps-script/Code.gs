@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-mine';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-sifter';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -991,12 +991,19 @@ function scoreFubDatabase() {
   // Legacy or not-DNC-checked contacts. Set the Script Property SCORECARD_TAGS to "no" to turn this off.
   const TIERS = {Hot: 'Tier A', Warm: 'Tier B', Nurture: 'Tier C', Cold: 'Tier C', 'Do not contact': ''};
   let tagged = 0, tasks = 0, unfinished = false;
+  // The sifter (Nov 13, Julián: "a top 100 or 200 that keep flowing through the database"): the 200 best-scored Hot/Warm/
+  // Nurture contacts carry the tag "Top 200" (a Smart List shows them); every night some move up, some fall back.
+  const topIds = {}, moves = {up: [], down: []}, RANK = {'Tier A': 3, 'Tier B': 2, 'Tier C': 1};
+  rows.filter(r => /^(Hot|Warm|Nurture)$/.test(r.s.tier)).slice(0, 200).forEach(r => topIds[r.p.id] = 1);
   if (PropertiesService.getScriptProperties().getProperty('SCORECARD_TAGS') !== 'no') {
     for (const {p, s} of rows) {
       if (!(s.tier in TIERS)) continue;  // past clients, partners and active clients keep their own tags
       const old = (p.tags || []).slice(), hasT = t => old.indexOf(t) >= 0;
       let next = old.filter(t => !/^Tier [ABC]$/.test(t));
       if (TIERS[s.tier]) next.push(TIERS[s.tier]);
+      next = next.filter(t => t !== 'Top 200'); if (topIds[p.id]) next.push('Top 200');
+      const was = ['Tier A', 'Tier B', 'Tier C'].filter(hasT)[0], now = TIERS[s.tier], nm = p.name || [p.firstName, p.lastName].join(' ');
+      if (was && now && RANK[now] > RANK[was]) moves.up.push(nm + ' (' + now.replace('Tier ', '') + ')'); else if (was && now && RANK[now] < RANK[was]) moves.down.push(nm);
       // Farm, legacy and not-DNC-checked contacts get a Tier but never an automatic plan (legacy goes out in batches).
       if (!hasT('Farm') && !hasT('Not DNC checked') && !old.some(t => /^Legacy/.test(t))) {
         if (s.tier === 'Hot' && !hasT('Hot')) { next = next.filter(t => t !== 'Warm').concat('Hot'); s.newlyHot = p.newHot = true; }
@@ -1016,6 +1023,7 @@ function scoreFubDatabase() {
     ScriptApp.newTrigger('scoreFubContinue').timeBased().after(60 * 1000).create();
     console.log('Ran out of time; continuing automatically in about a minute.');
   } else {
+    try { funnelSnapshot(rows, moves); } catch (err) { console.error('Funnel history: ' + err); }
     try { runFunnel(people); } catch (err) { console.error('Funnel: ' + err); }
     try { findDuplicates(people); } catch (err) { console.error('Duplicates: ' + err); }
     try { runPastClientLoop(people); } catch (err) { console.error('Closed client loop: ' + err); }
@@ -3393,11 +3401,41 @@ function weeklyScorecard() {
       lines.push('📧 people who opened or clicked your emails: ' + Object.keys(rows.reduce((o, r) => (o[r[2]] = 1, o), {})).length + ' (' + rows.filter(r => r[3] === 'click').length + ' clicked)');
     }
   } catch (e) {}
+  try { const f = funnelWeekText(); if (f) lines.push(f); } catch (e) {}
   lines.push('📞 calls Shawna answered: ' + (st.calls || 0) + ' · 📅 appointments confirmed: ' + (st.booked || 0));
   lines.push('💬 texts Shawna handled: ' + (st.shawnaTexts || 0) + ' · needed you: ' + (st.neededYou || 0) + ' · client emails briefed: ' + (st.emailsIn || 0) + ' · your approvals: ' + (st.approved || 0));
   const msg = 'Your week 📊\n\n' + lines.join('\n') + '\n\nHave a great weekend. Reply "how\'s my week look" anytime for what\'s next.';
   if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
   try { MailApp.sendEmail({to: NOTIFY_EMAIL, subject: 'Your week with Shawna', body: msg, name: 'Shawna'}); } catch (e) {}
+}
+
+// ---------- Funnel analytics (Nov 13): one row per night, so the next 1-2 months show what works ----------
+const FUNNEL_HISTORY_TAB = {name: 'Funnel History', color: '#0F9D58', headers: ['Date', 'Contacts', 'Tier A (Hot)', 'Tier B (Warm)', 'Tier C (Nurture)',
+  'Top 200: A', 'Top 200: B', 'Top 200: C', 'Moved up', 'Fell back', 'JC Hot', 'JC Warm', 'JC Legacy', 'JC Farm Best', 'JC Long-Term Nurture',
+  'Text OK', 'Opened Email', 'Clicked Email', 'Bounced', 'Unsubscribed', 'Active clients', 'In escrow', 'Who moved up']};
+function funnelSnapshot(rows, moves) {
+  const has = (p, t) => (p.tags || []).indexOf(t) >= 0, n = f => rows.filter(r => f(r.p)).length;
+  const top = r => has(r.p, 'Top 200');
+  ensureTab(getSS(), FUNNEL_HISTORY_TAB).appendRow([new Date(), rows.length, n(p => has(p, 'Tier A')), n(p => has(p, 'Tier B')), n(p => has(p, 'Tier C')),
+    rows.filter(r => top(r) && has(r.p, 'Tier A')).length, rows.filter(r => top(r) && has(r.p, 'Tier B')).length, rows.filter(r => top(r) && has(r.p, 'Tier C')).length,
+    moves.up.length, moves.down.length, n(p => has(p, 'JC Hot')), n(p => has(p, 'JC Warm')), n(p => has(p, 'JC Legacy Re-Intro')), n(p => has(p, 'JC Farm Best')),
+    n(p => has(p, 'JC Long-Term Nurture')), n(p => has(p, 'Text OK')), n(p => has(p, 'Opened Email')), n(p => has(p, 'Clicked Email')), n(p => has(p, 'Bounced')),
+    n(p => has(p, 'Unsubscribed')), n(p => /active client/i.test(String(p.stage || ''))), n(p => /pending/i.test(String(p.stage || ''))), cell(moves.up.slice(0, 15).join(', '))]);
+  const props = PropertiesService.getScriptProperties(), wk = JSON.parse(props.getProperty('FUNNEL_WEEK') || '{}');
+  if (wk.key !== weekKey()) { wk.key = weekKey(); wk.up = []; wk.down = 0; }
+  wk.up = (wk.up || []).concat(moves.up).slice(-25); wk.down = (wk.down || 0) + moves.down.length;
+  props.setProperty('FUNNEL_WEEK', JSON.stringify(wk));
+}
+/** The funnel lines for the Friday scorecard: this week vs a week ago. */
+function funnelWeekText() {
+  const sh = getSS().getSheetByName(FUNNEL_HISTORY_TAB.name); if (!sh || sh.getLastRow() < 2) return '';
+  const all = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues(), last = all[all.length - 1];
+  const ago = all.filter(r => r[0] instanceof Date && Date.now() - r[0].getTime() >= 6.5 * 864e5).slice(-1)[0];
+  const d = (i) => ago ? ' (' + (last[i] - ago[i] >= 0 ? '+' : '') + (last[i] - ago[i]) + ')' : '';
+  const wk = JSON.parse(PropertiesService.getScriptProperties().getProperty('FUNNEL_WEEK') || '{}');
+  return '🎯 Funnel: Hot ' + last[2] + d(2) + ' · Warm ' + last[3] + d(3) + ' · Nurture ' + last[4] + d(4) +
+    '\n⬆️ moved up this week: ' + ((wk.up || []).length ? wk.up.slice(-6).join(', ') : 'nobody yet') + ' · fell back: ' + (wk.down || 0) +
+    '\n📈 opened ' + last[16] + d(16) + ' · clicked ' + last[17] + d(17) + ' · text OK ' + last[15] + d(15) + ' · bounced ' + last[18] + d(18);
 }
 
 /** Nightly (after scoring): possible duplicate contacts (same phone, email or full name) → "Duplicates" tab. */
