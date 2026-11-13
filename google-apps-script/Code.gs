@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-auto';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-nofree';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1664,7 +1664,10 @@ function freeSubscribers(extraTag) {
   return out.filter(p => (!p.assignedUserId || p.assignedUserId === me) && (p.tags || []).indexOf('Text OK') >= 0 &&
     !(p.tags || []).some(t => /^(text opt-out|deceased|unsubscribed|do not contact)$/i.test(t)) && !isTestPerson(p) && realFirst(p));
 }
+// Turned off Nov 13 (Julián: not valuable for his luxury relocation buyers). FREE_LIVE true brings it back.
+const FREE_LIVE = false;
 function runFreeVegas() {
+  if (!FREE_LIVE) return;
   const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = new Date();
   const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd'), dow = Utilities.formatDate(now, tz, 'u'), dom = Utilities.formatDate(now, tz, 'd');
   const q = ensureTab(getSS(), TEXT_QUEUE_TAB), noon = Utilities.parseDate(today + ' 12:00', tz, 'yyyy-MM-dd HH:mm');
@@ -2736,7 +2739,7 @@ function bbWebhook(e) {
       try { shawnaDirectReply(from, String(data.text).slice(0, 1000), ''); } catch (e) { console.log('Allowed contact: ' + e.message); }
       return json({status: 'ok'});
     }
-    if (/^\s*free\s*[.!]*\s*$/i.test(String(data.text || ''))) {  // Free in Vegas from a new number: the sign-up page collects their name
+    if (FREE_LIVE && /^\s*free\s*[.!]*\s*$/i.test(String(data.text || ''))) {  // Free in Vegas from a new number: the sign-up page collects their name
       try { bbSend(from, "Thanks for texting! Tap here to join the Free in Vegas list: juliancrider.com/?free"); } catch (e) {}
       return json({status: 'ok'});
     }
@@ -2758,7 +2761,7 @@ function bbWebhook(e) {
     return json({status: 'ok'});
   }
   // "FREE" (Nov 13): they asked to join the Free in Vegas texts, which is their consent for those texts.
-  if (/^\s*free\s*[.!]*\s*$/i.test(text)) {
+  if (FREE_LIVE && /^\s*free\s*[.!]*\s*$/i.test(text)) {
     try { fubFetch('people/' + person.id + '?mergeTags=true', {tags: ['Free in Vegas', 'Text OK']}, 'put'); fubFetch('notes', {personId: person.id, subject: 'Free in Vegas', body: 'Texted FREE: joined the Free in Vegas list (text consent).'}); } catch (e) {}
     try { bbSend(from, "You're in 🎉 Every couple of weeks I'll text you free things worth doing around Vegas. Here's the list so far: juliancrider.com/?free Reply STOP anytime."); } catch (e) {}
     return json({status: 'ok'});
@@ -4233,7 +4236,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
-  else if (/^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
+  else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(note to self|personal( note)?|jot( this| that)?( down)?|write (this|that) down)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'personal', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(done|finished|complete|check off)\s*#?\d+([\s,&]+(and\s+)?#?\d+)*\s*[.!]*\s*$/i.test(text)) a = {action: 'taskdone', message: text.replace(/^\D+/, '')};  // "done 5": no AI needed
