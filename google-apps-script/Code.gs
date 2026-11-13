@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-campaigns';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-propfile';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -305,7 +305,7 @@ function setupAutoUpdate() {
  *  Assessor parcel page text for that parcel. Read-only; public records only. Runs once from the hourly update. */
 function propertyDiscover() {
   const props = PropertiesService.getScriptProperties();
-  props.setProperty('PROP_DISCOVERED', '2');
+  props.setProperty('PROP_DISCOVERED', '3');
   const ss = getSS(), name = 'Property Lookup Setup';
   const sh = ss.getSheetByName(name) || ss.insertSheet(name);
   sh.clear(); sh.appendRow(['What', 'URL', 'Found']);
@@ -353,6 +353,11 @@ function propertyDiscover() {
     log('parcel page', pd, r.code + ' ' + r.text.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 6000));
   } else log('parcel page', '', 'no sample parcel number found');
   if (rows.length) sh.getRange(2, 1, rows.length, 3).setValues(rows);
+  // Also as a plain text file in Drive, so Claude can read every line in full (sheet previews cut cells short).
+  try {
+    const old = DriveApp.getFilesByName('Property Lookup Setup.txt'); while (old.hasNext()) old.next().setTrashed(true);
+    DriveApp.createFile('Property Lookup Setup.txt', rows.map(r => '### ' + r[0] + ' | ' + r[1] + '\n' + r[2]).join('\n\n'), MimeType.PLAIN_TEXT);
+  } catch (e) { console.log('Property file: ' + e.message); }
 }
 
 function autoUpdateFromGitHub() {
@@ -363,7 +368,7 @@ function autoUpdateFromGitHub() {
   try { processAllowNotes(); } catch (e) { console.log('Shawna allow: ' + e.message); }
   try { cleanupOldTasks(); } catch (e) { console.log('Old tasks: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
-  try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '2') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
+  try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '3') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
