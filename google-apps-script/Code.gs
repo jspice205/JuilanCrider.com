@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-drafts';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-allclear';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3172,7 +3172,7 @@ function unsubscribeContact(p, how, said) {
 function logAlert(msg) {
   try {
     const props = PropertiesService.getScriptProperties(), t = String(msg || '').replace(/\s+/g, ' ').trim();
-    if (!t || /^(🧪|Shawna here|I am connected|I'm back online)/.test(t)) return;
+    if (!t || /^(🧪|Shawna here|I am connected|I'm back online)/.test(t) || /\bjulian test\b|\(email test\)/i.test(t)) return;
     let log = JSON.parse(props.getProperty('ALERT_LOG') || '[]').filter(x => Date.now() - x.at < 3 * 864e5);
     log.push({at: Date.now(), t: t.slice(0, 220)});
     while (JSON.stringify(log).length > 7000) log.shift();
@@ -3184,7 +3184,7 @@ function logAlert(msg) {
  *  Covers everything since the last full update (at most 3 days, at least the last 18 hours). */
 function whatsNewText() {
   const props = PropertiesService.getScriptProperties(), now = Date.now();
-  const since = Math.max(now - 3 * 864e5, Math.min(Number(props.getProperty('WHATSNEW_AT') || 0) || 0, now - 18 * 36e5));
+  const since = Math.max(now - 3 * 864e5, Number(props.getProperty('WHATSNEW_AT') || 0) || (now - 18 * 36e5));  // since the last update or clear (Nov 13)
   const fmt = t => Utilities.formatDate(new Date(t), 'America/Los_Angeles', now - t > 20 * 36e5 ? 'EEE h:mm a' : 'h:mm a');
   const out = [], alerts = JSON.parse(props.getProperty('ALERT_LOG') || '[]').filter(x => x.at > since);
   // Calls Shawna answered (Follow Up Boss call notes), unless an alert already covered that call.
@@ -3236,12 +3236,15 @@ function agendaText(week) {
   const range = week ? 'week' : 'today';
   const parts = [calendarText(range), whatsNewText(), todoText(range)];
   PropertiesService.getScriptProperties().setProperty('WHATSNEW_AT', String(Date.now()));
+  if (/nothing new came in/.test(parts[1]) && /nothing on your to-do list/.test(parts[2]) && !/waiting on you|waiting for your OK|scheduled texts/.test(parts[2]))
+    parts.push('🎉 Everything\'s done for today. Nice work.');
   return parts.join('\n\n');
 }
 
 // ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
 function pendingQueue() {
-  return JSON.parse(PropertiesService.getScriptProperties().getProperty('BOSS_QUEUE') || '[]').filter(x => Date.now() - x.at < 6 * 36e5 && !(x.phone && bbE164(x.phone) === TEXTING.myNumber));
+  return JSON.parse(PropertiesService.getScriptProperties().getProperty('BOSS_QUEUE') || '[]').filter(x => Date.now() - x.at < 6 * 36e5 && !(x.phone && bbE164(x.phone) === TEXTING.myNumber) &&
+    !/\btest\b/i.test(String(x.who || '')) && !/^julian\.crider@gmail\.com$/i.test(String(x.email || '')));
 }
 function addPending(item) {
   const props = PropertiesService.getScriptProperties();
@@ -4095,6 +4098,7 @@ function processAssistantQueue() {
 // EMAIL_NUDGE_MIN (default 60) minutes, one reminder. Push only between 7am and 10pm PT; later ones wait for morning.
 // ============================================================
 function notifyJulian(title, msg, url, who) {
+  if (/\btest\b/i.test(String(who || '') + ' ' + String(title || ''))) return false;  // his test contacts never alert him (Nov 13)
   // Two ways to reach Julián: a text from his business number to his personal phone (ALERT_TEXT_TO, falls back to
   // TEST_TEXT_TO; a different phone, so it actually alerts him) and/or a push through the free ntfy app (NTFY_TOPIC).
   const props = PropertiesService.getScriptProperties(), topic = props.getProperty('NTFY_TOPIC');
@@ -4117,8 +4121,8 @@ function checkClientEmails() {
   const me = Number(props.getProperty('FUB_ME') || 0) || (() => { const id = fubFetch('me', null, 'get').id; props.setProperty('FUB_ME', id); return id; })();
   const since = Date.now() - 12 * 6e4, hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const watch = JSON.parse(props.getProperty('EMAIL_WATCH') || '{}');  // emailId -> {p, name, at, nudged}
-  const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,lastActivity,assignedUserId', null, 'get').people || [])
-    .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me));
+  const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,lastActivity,assignedUserId,tags,phones', null, 'get').people || [])
+    .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me) && !isTestPerson(p));
   people.forEach(p => {
     const em = (fubFetch('emails?personId=' + p.id + '&limit=3&fields=id,status,date,relatedPeople', null, 'get').emails || []);
     const last = em[0];
@@ -4145,7 +4149,8 @@ function checkClientEmails() {
     if (Date.now() - w.at > 2 * 864e5) { delete watch[id]; return; }
     if (hour < 7 || hour >= 22) return;
     if (!w.told) { w.told = 1; return; }  // no bare "you got an email" alert: Shawna's email brief tells him what it says
-    if (!w.nudged && Date.now() - w.at > nudgeMin * 6e4) {
+    if (!w.nudged && Date.now() - w.at > nudgeMin * 6e4 && !props.getProperty('NUDGED_' + id)) {
+      props.setProperty('NUDGED_' + id, String(Date.now()));
       const replied = (fubFetch('emails?personId=' + w.p + '&limit=3&fields=id,status,date,relatedPeople', null, 'get').emails || [])
         .some(e => new Date(e.date).getTime() > w.at && (e.status === 'Sent' || (e.relatedPeople || []).some(r => r.personId === w.p && r.sentByPerson === false)));
       if (!replied) notifyJulian('Still waiting: ' + w.name, w.name + ' emailed you ' + Math.round((Date.now() - w.at) / 6e4) + ' min ago and hasn\'t heard back yet. Want me to read it to you?', link, w.name);
@@ -4217,15 +4222,32 @@ function bossCommand(text, tries) {
   }
   // "clear all" / "read all" / "delete all" / "clear everything": past-due and today's tasks checked off, waiting texts
   // marked read, expired approvals removed. Future tasks stay (those go one at a time: "done 3").
-  if (/^\s*(clear|delete|read|done|mark)\s+(them\s+|it\s+)?(all|everything)(\s+(done|read|tasks?|messages?|texts?))?\s*[.!]*\s*$/i.test(text)) {
+  if (/^\s*(clear|delete|read|done|mark)\s+(them\s+|it\s+)?(all|everything|it|the list|my list)(\s+(done|read|tasks?|messages?|texts?|out))?\s*[.!]*\s*$|^\s*clear\s*[.!]*\s*$/i.test(text)) {
     let tn = 0, mn = 0;
+    // Nov 13 (Julián: "it should say everything done for the day so I feel accomplished"): clearing also empties the
+    // "since your last update" alerts and the approvals, so the next update starts clean.
+    const qn = pendingQueue().length; props.deleteProperty('BOSS_QUEUE'); props.deleteProperty('BOSS_PENDING');
+    props.setProperty('WHATSNEW_AT', String(Date.now())); props.setProperty('ALERT_LOG', '[]');
     try {
       const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, t0 = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
       (fubFetch('tasks?assignedUserId=' + me + '&isCompleted=false&limit=100&fields=id,dueDate', null, 'get').tasks || [])
         .filter(t => String(t.dueDate || '').slice(0, 10) <= t0).forEach(t => { try { fubFetch('tasks/' + t.id, {isCompleted: true}, 'put'); tn++; } catch (e) {} });
     } catch (e) {}
     try { const log = JSON.parse(props.getProperty('TEXT_LOG') || '[]'); log.forEach(x => { if (!x.reply && !x.read) { x.read = 1; mn++; } }); props.setProperty('TEXT_LOG', JSON.stringify(log)); } catch (e) {}
-    return say('done ✅ ' + tn + ' past-due task' + (tn === 1 ? '' : 's') + ' checked off and ' + mn + ' waiting text' + (mn === 1 ? '' : 's') + ' marked read. Future tasks are still there; clear those one at a time ("done 3").');
+    let future = 0;
+    try { const me2 = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+      future = (fubFetch('tasks?assignedUserId=' + me2 + '&isCompleted=false&limit=50&fields=id', null, 'get').tasks || []).length; } catch (e) {}
+    const did = [tn && tn + ' task' + (tn === 1 ? '' : 's') + ' checked off', mn && mn + ' text' + (mn === 1 ? '' : 's') + ' marked read', qn && qn + ' approval' + (qn === 1 ? '' : 's') + ' cleared (nothing sent)'].filter(Boolean);
+    return say('🎉 All clear. Everything\'s done for today.' + (did.length ? '\n\n' + did.join(', ') + '.' : '') + (future ? '\n\nStill on the calendar for later days: ' + future + ' task' + (future === 1 ? '' : 's') + '.' : ''));
+  }
+  if (/^\s*(cancel|drop|delete|forget|scratch|kill)\b/i.test(text) && queue.length) {  // "cancel Deborah and Susan email"
+    const words = text.toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+    const hit = queue.filter(x => String(x.who || '').toLowerCase().split(/\s+/).some(n => n.length > 2 && words.indexOf(n) >= 0));
+    if (hit.length) {
+      props.setProperty('BOSS_QUEUE', JSON.stringify(pendingQueue().filter(x => !hit.some(h => h.at === x.at))));
+      const cur = JSON.parse(props.getProperty('BOSS_PENDING') || 'null'); if (cur && hit.some(h => h.at === cur.at)) props.deleteProperty('BOSS_PENDING');
+      return say('canceled ' + hit.map(pendingLabel).join(', ') + '. Nothing was sent.');
+    }
   }
   const nm = text.match(/^\s*(?:no|n|nah|cancel|stop|don.?t)\s*(?:#|number)?\s*(\d)?(?:\s*[.!]*\s*$|\b)/i);
   const picked = (ym && ym[1]) || (nm && nm[1]);
