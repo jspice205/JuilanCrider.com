@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-12-propdiscover';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-campaigns';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2787,6 +2787,80 @@ function personCampaigns(personId) {
   return lines.join('\n');
 }
 
+// ---------- Campaign progress (Nov 13, Julián: who's in which campaign, what they got, how many are left) ----------
+/** An action plan's steps with template names (cached 6 h): {id, name, running, steps: [{pos, action, days, tpl, tplName}]}. */
+function planInfo(planId) {
+  const c = CacheService.getScriptCache(), k = 'APINFO_' + planId, hit = c.get(k);
+  if (hit) return JSON.parse(hit);
+  const ap = fubFetch('actionPlans/' + planId, null, 'get'), tn = {};
+  (ap.emailTemplates || []).forEach(t => tn[t.id] = t.name);
+  const info = {id: ap.id, name: ap.name, running: ap.contactsRunningCount || 0, steps: (ap.steps || []).sort((x, y) => x.position - y.position)
+    .map(st => ({pos: st.position, action: st.action, days: Number(st.runAfterDays || 0), tpl: st.emailTemplateId || null, tplName: tn[st.emailTemplateId] || ''}))};
+  c.put(k, JSON.stringify(info), 6 * 3600);
+  return info;
+}
+const stepWord = st => st.action === 'sendEmail' ? 'email' : /text|sms/i.test(st.action) ? 'text' : /task/i.test(st.action) ? 'task' : 'step';
+/** One person: every campaign they're on, what went out (real sent emails from Follow Up Boss), what's next and how
+ *  many are left, plus Shawna's own text sequence (Text Queue). */
+function campaignDetailText(personId, who) {
+  const fmt = d => Utilities.formatDate(new Date(d), 'America/Los_Angeles', 'EEE MMM d'), out = [];
+  const plans = fubFetch('actionPlansPeople?personId=' + personId + '&limit=20', null, 'get').actionPlansPeople || [];
+  let emails = [];
+  try { emails = fubFetch('emails?personId=' + personId + '&limit=50&sort=-created', null, 'get').emails || []; } catch (e) {}
+  plans.sort((x, y) => String(y.created).localeCompare(String(x.created))).slice(0, 6).forEach(ap => {
+    let info; try { info = planInfo(ap.actionPlanId); } catch (e) { return; }
+    const sent = emails.filter(e => e.status === 'Sent' && e.actionPlanId === ap.actionPlanId);
+    const sentTpl = sent.map(e => e.emailTemplateId);
+    const emailSteps = info.steps.filter(st => st.action === 'sendEmail');
+    const doneSteps = emailSteps.filter(st => sentTpl.indexOf(st.tpl) >= 0);
+    const left = info.steps.filter(st => st.action === 'sendEmail' ? sentTpl.indexOf(st.tpl) < 0 : st.days > (Date.now() - new Date(ap.created).getTime()) / 864e5);
+    const status = {Running: 'running', Paused: 'paused', Completed: 'finished'}[ap.status] || String(ap.status).toLowerCase();
+    let line = '• ' + info.name + ' (' + status + '): ' + doneSteps.length + ' of ' + emailSteps.length + ' emails sent';
+    if (sent.length) line += ', last "' + (info.steps.filter(st => st.tpl === sent[0].emailTemplateId)[0] || {}).tplName + '" on ' + fmt(sent[0].created);
+    if (ap.status === 'Running' && left.length) {
+      const nx = left[0], when = new Date(new Date(ap.created).getTime() + nx.days * 864e5);
+      line += '. Next: ' + stepWord(nx) + (nx.tplName ? ' "' + nx.tplName + '"' : '') + (when > new Date() ? ' around ' + fmt(when) : ' any day now') + '. ' + left.length + ' left';
+    } else if (ap.status !== 'Running' && left.length) line += ', ' + left.length + ' not sent';
+    out.push(line + '.');
+  });
+  try {
+    const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+    if (sh && sh.getLastRow() > 1) {
+      const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues().filter(r => String(r[1]) === String(personId));
+      if (rows.length) {
+        const sentT = rows.filter(r => r[4] === 'sent'), pend = rows.filter(r => r[4] === 'pending').sort((x, y) => new Date(x[0]) - new Date(y[0]));
+        let line = '• Texts from Shawna: ' + sentT.length + ' sent' + (sentT.length ? ' (last ' + fmt(sentT[sentT.length - 1][6] || sentT[sentT.length - 1][0]) + ')' : '');
+        line += pend.length ? ', ' + pend.length + ' still to go, next ' + Utilities.formatDate(new Date(pend[0][0]), 'America/Los_Angeles', 'EEE MMM d h:mm a') : ', none left';
+        const skipped = rows.filter(r => /^skipped/.test(String(r[4]))).length;
+        out.push(line + (skipped ? ' (' + skipped + ' skipped because they replied or have an agent)' : '') + '.');
+      }
+    }
+  } catch (e) {}
+  return out.length ? (who ? who + ':\n' : '') + out.join('\n') : (who || 'They') + ' isn\'t on any campaign right now.';
+}
+/** Who's on a campaign ("who's in JC Hot") with roughly how far along each is, or with no name, every campaign running. */
+function campaignRosterText(query) {
+  const all = fubFetch('actionPlans?limit=100', null, 'get').actionPlans || [];
+  const q = String(query || '').toLowerCase().replace(/campaign|drip|plan|action|the|who'?s|in|on|is|are|people/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!q) {
+    const live = all.filter(a => (a.contactsRunningCount || 0) > 0).sort((x, y) => y.contactsRunningCount - x.contactsRunningCount);
+    return live.length ? 'campaigns running now:\n' + live.map(a => '• ' + a.name + ': ' + a.contactsRunningCount + ' people').join('\n') : 'no campaigns are running right now.';
+  }
+  const words = q.split(' ');
+  const plan = all.filter(a => words.every(w => String(a.name).toLowerCase().indexOf(w) >= 0)).sort((x, y) => (y.contactsRunningCount || 0) - (x.contactsRunningCount || 0))[0];
+  if (!plan) return 'I don\'t see a campaign called "' + query + '".';
+  const info = planInfo(plan.id), emailCount = info.steps.filter(st => st.action === 'sendEmail').length;
+  const ppl = (fubFetch('actionPlansPeople?actionPlanId=' + plan.id + '&status=Running&limit=100', null, 'get').actionPlansPeople || []).filter(x => x.status === 'Running');
+  if (!ppl.length) return 'nobody is on ' + plan.name + ' right now.';
+  const lines = ppl.slice(0, 25).map(x => {
+    let nm = 'Contact ' + x.personId;
+    try { const pp = fubFetch('people/' + x.personId + '?fields=id,name,firstName,lastName', null, 'get'); nm = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {}
+    const age = (Date.now() - new Date(x.created).getTime()) / 864e5, done = info.steps.filter(st => st.action === 'sendEmail' && st.days <= age).length;
+    return '• ' + nm + ': about ' + done + ' of ' + emailCount + ' sent';
+  });
+  return plan.name + ' (' + emailCount + ' emails), ' + ppl.length + (ppl.length === 1 ? ' person' : ' people') + ' on it:\n' + lines.join('\n') + (ppl.length > 25 ? '\n…and ' + (ppl.length - 25) + ' more' : '');
+}
+
 // Tags Shawna adds on her own when a text, email or DM tells her something (Julián, Nov 11). Partner keeps them out of
 // the buyer/seller drips (the funnel skips Partner and Has Agent).
 const SHAWNA_TAGS = {
@@ -3318,7 +3392,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -3335,6 +3409,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- campaigns: anything about campaigns, drips or action plans: what campaign someone is on, whether they got the email or text, how many emails or texts they have left, when the next one goes ("what campaign is Lisa in", "did Dan get the email", "how many emails does Ika have left") → "who" = the person. Who is on a campaign or which campaigns are running ("who's in JC Hot", "what campaigns are running") → no "who", "message" = the campaign name (empty for all).
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
 - hot: list his hottest leads right now.
 - texts: he asks who texted him / what came in / what you answered for him.
@@ -3627,6 +3702,15 @@ Examples (all mean the same as the action shown):
       }
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
+    }
+    if (a.action === 'campaigns') {  // "what campaign is Lisa on", "who's in JC Hot", "what campaigns are running"
+      if (a.who) {
+        const p = findOne(a.who);
+        if (!p) return say('I couldn\'t find "' + a.who + '" in Follow Up Boss.');
+        if (p.many) return askWhich(p.many);
+        return say(campaignDetailText(p.id, p.name || a.who));
+      }
+      return say(campaignRosterText(a.message || ''));
     }
     if (a.action === 'lookup') {
       const p = findOne(a.who);

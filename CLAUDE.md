@@ -332,6 +332,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   matches (Ika ≠ Tamika), prefers LAST_PERSON (set whenever one person is resolved, 3 h); pronouns/missing who on person
   actions = LAST_PERSON; `askWhich` stores PICK_WAIT (action + options, 30 min) so a short answer ("Ika Frogel", "the
   first one", "2") re-runs the original request with personId; router prompt "FOLLOW THE CONVERSATION LIKE A PERSON".
+  Campaigns (Nov 13): boss action `campaigns`: with who → `campaignDetailText` (each action plan: emails sent of total from
+  FUB emails with actionPlanId/emailTemplateId, last one, next step + date from plan steps runAfterDays since enrolment,
+  how many left; plus Text Queue texts sent/pending/skipped); without who → `campaignRosterText` (all running plans with
+  counts, or one plan's people with "about N of M" by elapsed days). `planInfo` caches plan steps 6 h (APINFO_).
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
