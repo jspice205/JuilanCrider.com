@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-escrowview';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-rightperson';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3295,6 +3295,16 @@ function moveDeal(pend) {
   return sg.label;
 }
 
+// ---------- Wrong-person guard (Nov 13: "Rewrite the email" to Emilee went to Deborah Faustina) ----------
+/** The name a draft greets ("Hi Emilee," / "Hey Lisa") or ''. */
+function greetName(body) { const m = String(body || '').match(/^\s*(?:hi|hey|hello|dear|good (?:morning|afternoon|evening))\s+([A-Za-zÀ-ÿ'’-]{2,})/i); return m ? m[1] : ''; }
+/** True when the greeting names someone other than the recipient (first name, nickname-tolerant: same first 3 letters). */
+function greetMismatch(body, p) {
+  const g = greetName(body).toLowerCase(); if (!g || /^(there|all|team|everyone|guys|friend|neighbor)$/.test(g)) return false;
+  const first = String(realFirst(p) || p.firstName || String(p.name || '').split(' ')[0] || '').toLowerCase();
+  return !!first && g.slice(0, 3) !== first.slice(0, 3);
+}
+
 // ---------- Deal cards by text + automatic cards (Nov 13, Julián: "I want Shawna to be able to move deal cards") ----------
 // His own words are the approval: "Lisa is in escrow, closing Dec 20", "Dan's offer got accepted", "list Lisa's house",
 // "Lisa's listing is live", "start a buyer deal for Dan". The flow messages for the new stage start right away.
@@ -4255,6 +4265,8 @@ function bossCommand(text, tries) {
     }
     if (pend.kind === 'email') {
       let r;
+      if (pend.personId) { try { const pp = fubFetch('people/' + pend.personId + '?fields=id,name,firstName,lastName', null, 'get');
+        if (greetMismatch(pend.message, pp)) return say('I stopped that one: it says "Hi ' + greetName(pend.message) + '" but it was going to ' + (pp.name || pend.who) + '. Nothing was sent. Who should get it?'); } catch (e) {} }
       if (pend.threadId) {  // reply inside their email thread, from julianc@bcolv.com
         const html = '<div style="font:15px/1.6 Helvetica,Arial,sans-serif;color:#111">' + String(pend.message).split(/\n{2,}|\n/).map(par => '<p style="margin:0 0 12px">' +
           par.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</p>').join('') + '<p style="margin:0">Julián</p>' + EMAIL_FOOTER + '</div>';
@@ -4520,6 +4532,18 @@ Examples (all mean the same as the action shown):
     }
     if (a.action === 'email') {
       if (!PropertiesService.getScriptProperties().getProperty('BCOLV_MAILER_URL')) return say('email isn\'t connected yet. Set up the bcolv mailer first (Claude has the steps).');
+      // A rewrite of the email waiting for his OK stays with the SAME person and thread, unless he names someone new.
+      const pend0 = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
+      if (pend0 && pend0.kind === 'email' && Date.now() - pend0.at < 6 * 36e5 && a.message) {
+        const newFirst = String(a.who || '').trim().split(/\s+/)[0];
+        const namedNew = newFirst && newFirst.length > 1 && new RegExp('\\b' + newFirst.replace(/[^\w]/g, '') + '\\b', 'i').test(text) &&
+          String(pend0.who || '').toLowerCase().indexOf(newFirst.toLowerCase()) !== 0;
+        if (!namedNew) {
+          const body0 = humanize(a.message);
+          addPending({kind: 'email', personId: pend0.personId, who: pend0.who, email: pend0.email, subject: pend0.subject, message: body0, threadId: pend0.threadId || '', at: Date.now()});
+          return say((pend0.threadId ? 'reply to ' + pend0.who + '\'s email' : 'send this email to ' + pend0.who) + ' (' + pend0.email + ')?\n\nSubject: ' + pend0.subject + '\n\n' + body0);
+        }
+      }
       const {p} = resolvePerson();
       if (!p || p.many) return p && p.many ? askWhich(p.many) : say('who should I email?');
       let email = a.email;
@@ -4536,6 +4560,7 @@ Examples (all mean the same as the action shown):
         const pick = msgs.find(m => v5 || (!m.fromMe && !msgs.some(o => o.threadId === m.threadId && o.fromMe && o.date > m.date)));
         if (pick) { threadId = pick.threadId; subject = /^re:/i.test(pick.subject) ? pick.subject : 'Re: ' + pick.subject; }
       } catch (e) {}
+      if (greetMismatch(body, p)) return say('hold on: this email says "Hi ' + greetName(body) + '" but ' + (p.name || a.who) + ' is who I found. Who should get it? I didn\'t send anything.');
       addPending({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()});
       return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body);
     }
@@ -4578,6 +4603,7 @@ Examples (all mean the same as the action shown):
         try { a.message = draftThreadReply(p, phone, a.draft ? String(a.message || '') : ''); } catch (e) {}
         if (!a.message) return say('I couldn\'t write that one just now. Tell me what to say and I\'ll send it.');
       }
+      if (greetMismatch(a.message, p)) return say('hold on: this text says "Hey ' + greetName(a.message) + '" but it would go to ' + p.name + '. Who should get it? I didn\'t send anything.');
       const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
       return say(name + ': ' + (sendAt ? 'schedule this for ' + p.name + ' on ' + whenTxt : 'send this to ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"' + (yesHint(n) ? '\n' + yesHint(n) : ''));
     }
