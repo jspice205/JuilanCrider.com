@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-allclear';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-spacing';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3110,7 +3110,7 @@ function calendarText(range) {
   evs.sort((x, y) => x.s - y.s);
   const label = range === 'week' ? 'this week' : range === 'tomorrow' ? 'tomorrow' : 'today';
   if (!evs.length) return '📅 nothing on your calendars ' + label + '.';
-  return '📅 ' + label + ':\n' + evs.slice(0, 15).map(x => '• ' + fmt(x.s, range === 'week' ? 'EEE h:mm a' : 'h:mm a') + ' ' + x.t + (x.biz ? ' (business)' : '')).join('\n');
+  return '📅 ' + label + ':\n\n' + evs.slice(0, 15).map(x => '• ' + fmt(x.s, range === 'week' ? 'EEE h:mm a' : 'h:mm a') + '  ' + x.t + (x.biz ? ' (business)' : '')).join('\n\n');
 }
 
 /** His to-do list only: Follow Up Boss tasks due today (overdue included), tomorrow, or this week, plus texts waiting
@@ -3128,9 +3128,9 @@ function todoText(range) {
     list.forEach(t => { if (t.personId && !(t.personId in names)) { try { const pp = fubFetch('people/' + t.personId + '?fields=id,name,firstName,lastName', null, 'get'); names[t.personId] = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) { names[t.personId] = ''; } } });
     if (list.length) props.setProperty('AGENDA_TASKS', JSON.stringify(list.map(t => ({id: t.id, personId: t.personId, due: String(t.dueDate || '').slice(0, 10), name: String(t.name || '').slice(0, 200), who: names[t.personId] || ''}))));
     const label = range === 'week' ? 'this week' : range === 'tomorrow' ? 'tomorrow' : 'today';
-    if (list.length) lines.push('✅ to do ' + label + ' (' + tasks.length + (old ? ', ' + old + ' past due' : '') + '):\n' +
+    if (list.length) lines.push('✅ to do ' + label + ' (' + tasks.length + (old ? ', ' + old + ' past due' : '') + '):\n\n' +
       list.map((t, i) => (i + 1) + '. ' + (names[t.personId] ? names[t.personId] + ': ' : '') + String(t.name || '').replace(/^\w+: /, '').replace(/ Answer today\.| Call them back\./, '').slice(0, 80) +
-        (String(t.dueDate || '').slice(0, 10) > today ? ' (' + fmt(Utilities.parseDate(String(t.dueDate).slice(0, 10), 'America/Los_Angeles', 'yyyy-MM-dd'), 'EEE') + ')' : '')).join('\n') +
+        (String(t.dueDate || '').slice(0, 10) > today ? ' (' + fmt(Utilities.parseDate(String(t.dueDate).slice(0, 10), 'America/Los_Angeles', 'yyyy-MM-dd'), 'EEE') + ')' : '')).join('\n\n') +
       '');
     else lines.push('✅ nothing on your to-do list ' + label + '.');
   } catch (e) { lines.push('✅ I couldn\'t open your tasks just now.'); }
@@ -3141,11 +3141,11 @@ function todoText(range) {
       const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
       if (sh && sh.getLastRow() > 1) {
         const sc = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().filter(r => r[3] === 'scheduled' && r[4] === 'pending' && r[0] instanceof Date && r[0] <= end);
-        if (sc.length) lines.push('🕒 scheduled texts:\n' + sc.slice(0, 6).map(r => '• ' + fmt(r[0], 'EEE h:mm a') + ' to ' + r[2]).join('\n'));
+        if (sc.length) lines.push('🕒 scheduled texts:\n\n' + sc.slice(0, 6).map(r => '• ' + fmt(r[0], 'EEE h:mm a') + ' to ' + r[2]).join('\n\n'));
       }
     } catch (e) {}
     const q = pendingQueue();
-    if (q.length) lines.push('⏳ waiting for your OK:\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n') + '');
+    if (q.length) lines.push('⏳ waiting for your OK:\n\n' + q.map(x => '#' + x.n + ' ' + pendingLabel(x)).join('\n\n') + '');
   } catch (e) {}
   return lines.join('\n\n');
 }
@@ -3195,11 +3195,11 @@ function whatsNewText() {
     const calls = notes.slice(0, 6).map(n => {
       let who = '';
       try { const pp = fubFetch('people/' + n.personId + '?fields=id,name,firstName,lastName,tags,phones', null, 'get'); if (isTestPerson(pp)) return ''; who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {}
-      return '• ' + fmt(new Date(n.created).getTime()) + ' ' + (who || 'a caller') + ': ' + String(n.body || '').split('\n')[0].slice(0, 140);
+      return '• ' + fmt(new Date(n.created).getTime()) + ', ' + (who || 'a caller') + '\n' + String(n.body || '').split('\n')[0].slice(0, 140);
     });
-    if (calls.filter(Boolean).length) out.push('📞 calls Shawna took:\n' + calls.filter(Boolean).join('\n'));
+    if (calls.filter(Boolean).length) out.push('📞 calls Shawna took:\n\n' + calls.filter(Boolean).join('\n\n'));
   } catch (e) {}
-  if (alerts.length) out.push('🔔 since your last update:\n' + alerts.slice(-10).map(a => '• ' + fmt(a.at) + ' ' + a.t.slice(0, 170)).join('\n'));
+  if (alerts.length) out.push('🔔 since your last update:\n\n' + alerts.slice(-10).map(a => '• ' + fmt(a.at) + '\n' + a.t.replace(/\s*\(#\d+\)\s*$/, '').slice(0, 170)).join('\n\n'));
   // Replies to his emails, straight from Follow Up Boss, so they show even if he already opened them in Gmail.
   // Automatic replies (a "Received" email within 2 minutes of one he sent them, like out of office) are left out.
   const replied = [];
@@ -3215,7 +3215,7 @@ function whatsNewText() {
         new Date(e.created).getTime() > since && !sentTimes.some(t => { const d = new Date(e.created).getTime() - t; return d >= 0 && d < 45e3; }));  // under 45 s = an automatic reply
       if (got.length) replied.push({who: [realFirst(p), p.lastName].join(' ').trim() || p.name, at: new Date(got[0].created).getTime()});
     });
-    if (replied.length) out.push('📧 replied to your emails:\n' + replied.map(x => '• ' + x.who + ' (' + fmt(x.at) + ')').join('\n'));
+    if (replied.length) out.push('📧 replied to your emails:\n\n' + replied.map(x => '• ' + x.who + ' (' + fmt(x.at) + ')').join('\n\n'));
   } catch (e) {}
   // Other unread emails from real people (not system mail), newest first.
   try {
@@ -3224,7 +3224,7 @@ function whatsNewText() {
       !/delivery status|undeliverable|auto.?reply|out of office/i.test(x.subject || ''))
       .sort((x, y) => y.date - x.date).filter(x => { const k = String(x.from).toLowerCase(); if (seen[k]) return false; seen[k] = 1; return true; })
       .filter(x => !replied.some(r => String(x.from).toLowerCase().indexOf(String(r.who).split(' ')[0].toLowerCase()) >= 0)).slice(0, 6);
-    if (mails.length) out.push('📧 unread emails:\n' + mails.map(x => '• ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + ': ' + String(x.subject || '(no subject)').slice(0, 70)).join('\n') +
+    if (mails.length) out.push('📧 unread emails:\n\n' + mails.map(x => '• ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + '\n' + String(x.subject || '(no subject)').slice(0, 70)).join('\n\n') +
       '');
   } catch (e) {}
   return out.length ? out.join('\n\n') : '🔔 nothing new came in since your last update.';

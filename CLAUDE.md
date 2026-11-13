@@ -595,6 +595,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   no approvals. "cancel <name> email/text" drops matching approvals. Test contacts: notifyJulian skips who/title with "test",
   logAlert skips "Julian TEST"/"(email Test)", pendingQueue drops test who / julian.crider@gmail.com, checkClientEmails skips
   isTestPerson; email nudges are once per email (NUDGED_<id>, Julian TEST got three on Nov 13).
+  Readable updates (Nov 13, Julián: "too hard to read"): every list in calendarText / whatsNewText / todoText has a blank
+  line after its header and between items; alerts, calls and unread emails put the time (or sender) on its own line.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
