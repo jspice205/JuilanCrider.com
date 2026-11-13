@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-notests';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-escrow';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1255,12 +1255,33 @@ const LISTING_FLOW = {
       {id: 'lbe-7', day: 7, subject: 'Inspection check in', text: "Hey {first}, quick check in after the inspection window. Anything on the report that's sitting heavy with you?",
         email: "Hi {first},\n\nQuick check in on the inspection. Anything on the report that's sitting heavy with you? Let's talk it through before the deadline."},
       {id: 'lbe-14', day: 14, subject: 'Appraisal and loan', text: "Hey {first}, appraisal and loan are moving. How are you feeling about the timeline?",
-        email: "Hi {first},\n\nThe appraisal and loan are moving. How are you feeling about the timeline? If anything changes with your lender, tell me right away and I'll handle the other side."}],
+        email: "Hi {first},\n\nThe appraisal and loan are moving. How are you feeling about the timeline? If anything changes with your lender, tell me right away and I'll handle the other side."},
+      // Amitree-style milestones (Nov 13): day = days after acceptance, close = days BEFORE the projected close date on the deal card.
+      {id: 'lbe-2', day: 2, subject: 'Earnest money', text: "Hey {first}, quick one on earnest money 💸 Before you wire anything, call title at the number on their website to confirm the instructions. Never from an email. Did it go through okay?",
+        email: "Hi {first},\n\nQuick one on earnest money. Before you wire anything, call the title company at the number on their official website and confirm the instructions out loud. Never trust wiring instructions from an email, even one that looks like it's from me.\n\nDid it go through okay?"},
+      {id: 'lbe-9', day: 9, subject: 'Due diligence wraps up soon', text: "Hey {first}, due diligence wraps up in the next day or two. Is there anything about the house you're still unsure about? Now's the time to say it.",
+        email: "Hi {first},\n\nDue diligence wraps up in the next day or two. Is there anything about the house you're still unsure about, inspection, HOA documents, insurance quotes? Now's the time to say it, while we still have options."},
+      {id: 'lbe-c7', close: 7, subject: 'Utilities and moving', text: "Hey {first}, one week to closing 🏡 Time to set up utilities in your name for closing day: NV Energy, Southwest Gas, Las Vegas Valley Water District (or your city's water) and trash. Want my list of movers and internet providers?",
+        email: "Hi {first},\n\nOne week to closing. Here's the moving checklist:\n\n• Power: NV Energy\n• Gas: Southwest Gas\n• Water: Las Vegas Valley Water District, or Henderson / North Las Vegas utilities depending on the address\n• Trash: Republic Services\n• Internet and TV\n• Homeowners insurance (your lender needs the policy)\n• Change of address at usps.com\n\nSet each one to start on closing day. Want my list of movers I trust?"},
+      {id: 'lbe-c5', close: 5, subject: 'Loan check', text: "Hey {first}, five days out. Has your lender said \"clear to close\" yet? If anything is still pending, tell me now and I'll chase it today.",
+        email: "Hi {first},\n\nFive days out. Has your lender said \"clear to close\" yet? If they're still waiting on anything from you, send it today and let me know, and I'll chase the rest."},
+      {id: 'lbe-c2', close: 2, subject: 'Final walkthrough', text: "Hey {first}, final walkthrough time 🔑 What time works for you in the next day or so? I'll set it up with the seller's agent.",
+        email: "Hi {first},\n\nIt's final walkthrough time. We'll check that agreed repairs are done and everything is how it should be. What time works for you in the next day or so? I'll set it up with the seller's agent."},
+      {id: 'lbe-c1', close: 1, subject: 'Signing', text: "Hey {first}, almost there 🎉 Bring your photo ID to signing, and don't move money, open credit or buy furniture on credit until we close. Any questions before then?",
+        email: "Hi {first},\n\nAlmost there. For signing, bring a valid photo ID. Until we record, please don't move money around, open new credit or buy anything big on credit, since the lender can re-check.\n\nAny questions before then?"}],
     escrow: [
       {id: 'le-0', day: 0, subject: "You're under contract 🎉", text: "Hey {first}, you're under contract 🎉 The next steps are inspection, appraisal and the buyer's loan. I'll keep you posted at every step, no surprises.",
         email: "Hi {first},\n\nYou're under contract. Here's what happens from here:\n\n1. Inspection (usually in the first week or so)\n2. Appraisal\n3. The buyer's loan approval\n4. Final walkthrough and closing\n\nI'll keep you posted at every step. No surprises."},
       {id: 'le-7', day: 7, subject: 'Escrow check in', text: "Hey {first}, quick escrow check in. Everything is moving. Anything on your mind about the timeline or the move?",
-        email: "Hi {first},\n\nQuick escrow check in. Everything is moving. Anything on your mind about the timeline or the move? Just reply."}]
+        email: "Hi {first},\n\nQuick escrow check in. Everything is moving. Anything on your mind about the timeline or the move? Just reply."},
+      {id: 'le-3', day: 3, subject: 'HOA and disclosures', text: "Hey {first}, quick one. I've got the HOA resale package and disclosures moving. Anything about the house the buyer should know that we haven't written down yet?",
+        email: "Hi {first},\n\nQuick one. The HOA resale package and disclosures are moving. Is there anything about the house the buyer should know that we haven't written down yet? It's always better to share it now than have it come up later."},
+      {id: 'le-c7', close: 7, subject: 'Moving out', text: "Hey {first}, one week to closing 🏡 Time to schedule your utilities to stop the day after closing (NV Energy, Southwest Gas, water, trash) and book movers. Need any names?",
+        email: "Hi {first},\n\nOne week to closing. A few things to line up:\n\n• Stop power (NV Energy), gas (Southwest Gas), water and trash the day AFTER closing\n• Cancel or move internet and alarm service\n• Change of address at usps.com\n• Book movers if you haven't yet\n• Keep homeowners insurance until it records\n\nNeed any names? I have people I trust."},
+      {id: 'le-c2', close: 2, subject: 'Walkthrough and keys', text: "Hey {first}, the buyer's final walkthrough is coming up. Could you leave all keys, garage remotes, gate fobs and appliance manuals on the kitchen counter? 🔑",
+        email: "Hi {first},\n\nThe buyer's final walkthrough is coming up. Please leave all keys, garage remotes, gate fobs, mailbox keys and appliance manuals on the kitchen counter, and leave the house broom clean.\n\nAnything you're unsure about taking or leaving? Just ask."},
+      {id: 'le-c1', close: 1, subject: 'Signing', text: "Hey {first}, almost done 🎉 Bring your photo ID to signing. I'll text you the moment it records.",
+        email: "Hi {first},\n\nAlmost done. Bring a valid photo ID to signing. I'll let you know the moment it records."}]
   }
 };
 // ---------- Deal parties (Nov 13): transaction coordinator + title company, entered PER DEAL at open escrow ----------
@@ -1309,6 +1330,51 @@ function createListingTasks(personId, dealName) {
     fubFetch('tasks', {personId: personId, assignedUserId: 2, name: t.name + (dealName ? ' (' + dealName + ')' : ''), type: 'Follow Up',
       dueDate: Utilities.formatDate(new Date(Date.now() + t.day * 864e5), 'America/Los_Angeles', 'yyyy-MM-dd')});
   } catch (e) {} });
+}
+
+// Escrow timeline (Nov 13, from Julián's Amitree buyer/listing templates): FUB tasks for Julián dated from acceptance
+// (a = days after the card entered escrow) and from the projected close date on the deal card (c = days before).
+// Acceptance tasks are made once when escrow opens; closing tasks once a close date is on the card (Shawna asks for it).
+const ESCROW_TASKS = {
+  buyer: [
+    {a: 0, name: 'Send the accepted contract to the TC, title and lender; confirm earnest money instructions by phone'},
+    {a: 2, name: 'Confirm earnest money received by title'},
+    {a: 3, name: 'Schedule the home inspection (and HOA documents to the buyer)'},
+    {a: 7, name: 'Inspection review with the buyer; repair request if needed (check the contract date)'},
+    {a: 10, name: 'Due diligence deadline (check the contract date)'},
+    {a: 12, name: 'Confirm the appraisal is ordered'},
+    {a: 21, name: 'Appraisal deadline (check the contract date)'},
+    {c: 5, name: 'Loan approval / clear to close from the lender'},
+    {c: 4, name: 'Utilities set up in the buyer\'s name (Shawna sends the list)'},
+    {c: 2, name: 'Final walkthrough'},
+    {c: 1, name: 'Signing: confirm time and place with title'},
+    {c: 0, name: 'Closing: keys to the buyer, move the deal card to CLOSED'}],
+  seller: [
+    {a: 0, name: 'Open escrow: contract to the TC and title; order the HOA resale package'},
+    {a: 2, name: 'Confirm the buyer\'s earnest money is in at title'},
+    {a: 3, name: 'Disclosures and resale package delivered to the buyer\'s agent'},
+    {a: 7, name: 'Inspection deadline (check the contract date)'},
+    {a: 8, name: 'Respond to the repair request with the seller'},
+    {a: 10, name: 'Due diligence deadline (check the contract date)'},
+    {a: 12, name: 'Confirm the buyer\'s appraisal is ordered'},
+    {c: 5, name: 'Check the buyer\'s loan approval with their agent'},
+    {c: 2, name: 'Buyer\'s final walkthrough'},
+    {c: 1, name: 'Seller signing: confirm time and place with title'},
+    {c: 0, name: 'Closing: sign and lockbox off, move the deal card to CLOSED'}]};
+function createEscrowTasks(d, personId, side, sinceTs, closeTs) {
+  const props = PropertiesService.getScriptProperties(), key = 'ESCT_' + d.id, have = props.getProperty(key) || '';
+  const day = ts => Utilities.formatDate(new Date(ts), 'America/Los_Angeles', 'yyyy-MM-dd');
+  const make = list => list.forEach(t => { try {
+    const ts = t.a != null ? sinceTs + t.a * 864e5 : closeTs - t.c * 864e5;
+    fubFetch('tasks', {personId: personId, assignedUserId: 2, type: 'Follow Up', name: t.name + ' (' + (d.name || 'escrow') + ')', dueDate: day(Math.max(ts, Date.now()))});
+  } catch (e) {} });
+  if (have.indexOf('a') < 0) {
+    make(ESCROW_TASKS[side].filter(t => t.a != null)); props.setProperty(key, have + 'a');
+    if (!closeTs) bossTextSafe('📂 ' + (d.name || 'A deal') + ' is in escrow. What\'s the closing date? Put it on the deal card in Follow Up Boss (Projected close date) and I\'ll date the walkthrough, signing and closing reminders from it.');
+  }
+  if (closeTs && (props.getProperty(key) || '').indexOf('c') < 0) {
+    make(ESCROW_TASKS[side].filter(t => t.c != null)); props.setProperty(key, (props.getProperty(key) || '') + 'c');
+  }
 }
 
 // ---------- VIP / sphere holiday texts (Nov 13, from Julián's VIP board) ----------
@@ -1366,12 +1432,17 @@ function runListingFlow(people) {
     const tags = p.tags || [];
     if (['Pause', 'Do Not Email', 'Unsubscribed', 'Deceased'].some(t => tags.indexOf(t) >= 0)) return;
     const age = Math.floor((now - st.since) / 864e5);
+    const closeTs = d.projectedCloseDate ? new Date(d.projectedCloseDate).getTime() : 0;
+    const toClose = closeTs ? Math.ceil((closeTs - now) / 864e5) : null;
+    if (stage === 'escrow' || stage === 'bescrow') { try { createEscrowTasks(d, pid, stage === 'bescrow' ? 'buyer' : 'seller', st.since, closeTs); } catch (e) {} }
     const due = LISTING_FLOW.steps[stage].map(x => {
+      if (x.close != null) return toClose != null && toClose <= x.close && toClose >= Math.max(0, x.close - 3) ? Object.assign({}, x, {day: -1}) : null;
       if (!x.every) return x;
       if (age < x.from) return null;
       const k = Math.floor((age - x.from) / x.every), day = x.from + k * x.every;
       return [14, 21].indexOf(day) >= 0 ? null : Object.assign({}, x, {id: x.id + k, day: day});  // day 14/21 have their own message
-    }).filter(x => x && age >= x.day && age < x.day + 5 && st.done.indexOf(x.id) < 0)[0];
+    }).filter(x => x && (x.day < 0 || (age >= x.day && age < x.day + 5)) && st.done.indexOf(x.id) < 0)
+      .sort((a, b) => (b.close != null) - (a.close != null))[0];  // closing-date steps first, they can't wait
     if (!due) return;
     const phone = bbE164(((p.phones || [])[0] || {}).value || ''), email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
     const textOk = phone && tags.indexOf('Text OK') >= 0 && tags.indexOf('Text Opt-Out') < 0;
@@ -1388,7 +1459,8 @@ function runListingFlow(people) {
       : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: pcFill(due.subject, p), message: msg, at: now});
     st.done.push(due.id); drafted++;
     const label = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age, lost: 'off market, day ' + age,
-      buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage];
+      buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage] +
+      (due.close != null && toClose != null ? ', ' + toClose + ' day' + (toClose === 1 ? '' : 's') + ' to closing' : '');
     if ((stage === 'escrow' || stage === 'bescrow') && due.day === 0) { try { draftPartyHeadsUp(p, who, d, 'opened escrow'); } catch (e) {} }
     bossTextSafe('🏡 ' + who + ' (' + label + '). Here\'s the ' + (textOk ? 'text' : 'email') + ' I\'d send:\n\n"' + msg + '"\n\n' +
       'Want me to send it? ' + yesHint(n));
