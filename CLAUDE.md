@@ -336,6 +336,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   FUB emails with actionPlanId/emailTemplateId, last one, next step + date from plan steps runAfterDays since enrolment,
   how many left; plus Text Queue texts sent/pending/skipped); without who → `campaignRosterText` (all running plans with
   counts, or one plan's people with "about N of M" by elapsed days). `planInfo` caches plan steps 6 h (APINFO_).
+  Property lookup (Nov 13): boss action `property` → `propertyLookupText`: address → APN via county layer
+  Address/Layers/FeatureServer/0 (Number/Direction/Name/Type/Parcel; PROP_ADDR_LAYER) → Assessor ParcelDetail.aspx?hdnParcel=
+  <apn>&hdnInstance=pcl (plain GET; owner + mailing address, recorded date, values, lot, year built, sale) → router model
+  summary; "who" saves a FUB note "Property records"; "Lisa's house" uses her FUB address. propertyDiscover (one-time,
+  PROP_DISCOVERED=3) wrote "Property Lookup Setup.txt" in Drive. Names (Nov 13, Shawna created 2 empty "Emilee Durant"
+  for Emilee Durrant 304; deleted): findOneRaw falls back to same first name + last name nameKey/editDistance ≤2;
+  findDuplicates also groups "similar name".
   Every caller gets one text (Nov 12, Julián's ask): after any non-team call, Text Queue step `call-thanks` (~1 min,
   9am-9pm, sent via sendApprovedText: respects Text Opt-Out, no Text OK needed, one-time informational reply to someone who
   called, ends "Reply STOP to opt out"); callers who said yes to a recap still get the recap (and Text OK). Joey's Nov 12
