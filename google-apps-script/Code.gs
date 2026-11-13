@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-playbook';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-holidays';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -367,6 +367,7 @@ function autoUpdateFromGitHub() {
   try { cleanupProperties(); } catch (e) { console.log('Property cleanup: ' + e.message); }
   try { processAllowNotes(); } catch (e) { console.log('Shawna allow: ' + e.message); }
   try { cleanupOldTasks(); } catch (e) { console.log('Old tasks: ' + e.message); }
+  try { prepareHolidayTexts(); } catch (e) { console.log('Holiday texts: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '3') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
@@ -1308,6 +1309,39 @@ function createListingTasks(personId, dealName) {
     fubFetch('tasks', {personId: personId, assignedUserId: 2, name: t.name + (dealName ? ' (' + dealName + ')' : ''), type: 'Follow Up',
       dueDate: Utilities.formatDate(new Date(Date.now() + t.day * 864e5), 'America/Los_Angeles', 'yyyy-MM-dd')});
   } catch (e) {} });
+}
+
+// ---------- VIP / sphere holiday texts (Nov 13, from Julián's VIP board) ----------
+// The day before each holiday (after 10am), Shawna writes the texts for past clients and contacts tagged VIP who have
+// Text OK, puts them in the Text Queue as "review" (editable) and asks Julián once. His yes releases them for 10am on the
+// day. Mother's/Father's Day are left out (we don't know who is a parent). Max 80 per holiday.
+const HOLIDAYS = [
+  {key: 'newyear', label: 'New Year', date: y => new Date(y, 0, 1), text: "Happy New Year, {first}! 🎉 Wishing you and yours a great {year}. Julián"},
+  {key: 'valentine', label: "Valentine's Day", date: y => new Date(y, 1, 14), text: "Happy Valentine's Day, {first} ❤️ Hope your day is full of the people you love. Julián"},
+  {key: 'july4', label: '4th of July', date: y => new Date(y, 6, 4), text: "Happy 4th of July, {first}! 🇺🇸 Stay cool out there. Julián"},
+  {key: 'labor', label: 'Labor Day', date: y => { const d = new Date(y, 8, 1); while (d.getDay() !== 1) d.setDate(d.getDate() + 1); return d; }, text: "Happy Labor Day, {first}! Hope you get a real day off. Julián"},
+  {key: 'thanks', label: 'Thanksgiving', date: y => { const d = new Date(y, 10, 1); while (d.getDay() !== 4) d.setDate(d.getDate() + 1); d.setDate(d.getDate() + 21); return d; }, text: "Happy Thanksgiving, {first} 🦃 I'm grateful for you. Julián"}];
+function prepareHolidayTexts() {
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = new Date();
+  if (Number(Utilities.formatDate(now, tz, 'H')) < 10) return;
+  const tomorrow = Utilities.formatDate(new Date(now.getTime() + 864e5), tz, 'yyyy-MM-dd'), y = Number(tomorrow.slice(0, 4));
+  const h = HOLIDAYS.filter(x => Utilities.formatDate(x.date(y), tz, 'yyyy-MM-dd') === tomorrow)[0];
+  if (!h || props.getProperty('HOLIDAY_' + h.key + '_' + y)) return;
+  props.setProperty('HOLIDAY_' + h.key + '_' + y, '1');
+  const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, seen = {}, list = [];
+  ['VIP', 'past client', 'Past Client'].forEach(t => { try {
+    (fubFetch('people?limit=100&tags=' + encodeURIComponent(t) + '&fields=id,name,firstName,lastName,tags,stage,assignedUserId', null, 'get').people || []).forEach(p => { if (!seen[p.id]) { seen[p.id] = 1; list.push(p); } });
+  } catch (e) {} });
+  try { (fubFetch('people?limit=100&stage=' + encodeURIComponent('Past Client') + '&fields=id,name,firstName,lastName,tags,stage,assignedUserId', null, 'get').people || []).forEach(p => { if (!seen[p.id]) { seen[p.id] = 1; list.push(p); } }); } catch (e) {}
+  const member = p => (p.tags || []).some(t => /^(vip|past client)$/i.test(t)) || /past client/i.test(String(p.stage || ''));  // never anyone else
+  const ok = list.filter(p => member(p) && (!p.assignedUserId || p.assignedUserId === me) && (p.tags || []).indexOf('Text OK') >= 0 &&
+    !['Text Opt-Out', 'Deceased', 'Pause', 'Unsubscribed', 'Do Not Contact'].some(t => (p.tags || []).indexOf(t) >= 0) && realFirst(p)).slice(0, 80);
+  if (!ok.length) return;
+  const due = Utilities.parseDate(tomorrow + ' 10:00', tz, 'yyyy-MM-dd HH:mm'), sh = ensureTab(getSS(), TEXT_QUEUE_TAB), step = 'holiday-' + h.key + '-' + y;
+  ok.forEach(p => sh.appendRow([due, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell(h.text.replace('{first}', realFirst(p)).replace('{year}', String(y)))]));
+  const n = addPending({kind: 'holiday', step: step, label: h.label, count: ok.length, when: 'tomorrow at 10am', at: Date.now()});
+  bossTextSafe('🎉 ' + h.label + ' is tomorrow. I wrote a text for ' + ok.length + ' past clients and VIPs, like:\n\n"' + h.text.replace('{first}', realFirst(ok[0])).replace('{year}', String(y)) +
+    '"\n\nWant me to send them tomorrow at 10am? ' + yesHint(n));
 }
 
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
@@ -2753,7 +2787,7 @@ function addPending(item) {
 function pendingLabel(x) {
   if (!x.who || /^(undefined|unknown|null)$/i.test(String(x.who))) x = Object.assign({}, x, {who: x.phone ? String(x.phone).replace(/^\+1/, '') : 'someone'});
   return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
-    : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
+    : x.kind === 'holiday' ? x.label + ' texts to ' + x.count + ' people' : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
 }
 // No reply instructions in her texts (Julián, Nov 12: "this isn't 2020"): she asks like a person; "yes", "send it", "go" work.
 // With several approvals waiting, just the number so "yes to 2" is possible.
@@ -3603,8 +3637,14 @@ function bossCommand(text, tries) {
   if (picked && !pend) return say('I don\'t have a #' + picked + ' waiting. ' + (queue.length ? 'Waiting now: ' + queue.map(x => '#' + x.n + ' ' + pendingLabel(x)).join(', ') : 'Nothing is waiting for your OK.'));
   if (pend && pend.kind !== 'schedule' && ym) {
     dropPend(pend);
-    if (Date.now() - pend.at > (/^(email|deal|event|invite)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+    if (Date.now() - pend.at > (/^(email|deal|event|invite|holiday)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
     stat('approved');
+    if (pend.kind === 'holiday') {  // the holiday texts waiting in the Text Queue (status "review") go out on the day
+      const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name); let n = 0;
+      if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach((r, i) => {
+        if (r[3] === pend.step && r[4] === 'review') { sh.getRange(i + 2, 5).setValue('pending'); n++; } });
+      return say('done. ' + n + ' ' + pend.label + ' texts go out ' + pend.when + '. You can still edit them in the Text Queue tab. ✅');
+    }
     if (pend.kind === 'deal') {
       try { return say('done. ' + pend.who + '\'s deal is now in ' + moveDeal(pend) + '. ✅'); } catch (e) { return say('I couldn\'t move that deal: ' + String(e.message).slice(0, 120)); }
     }
@@ -5198,7 +5238,7 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       const res = step === 'scheduled' || step === 'call-thanks' ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
