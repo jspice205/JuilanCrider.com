@@ -575,6 +575,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "✉️ EMAIL from julianc@bcolv.com to …" (+ "reply in their email thread"); voice memos "🎙️ VOICE MEMO by text…";
   pendingLabel shows the number/address. Use these helpers in any new approval message.
 
+- Client gets the last word (Nov 13, Julián): assistantPrompt rule "LET THEM END IT" (no wrap-up sign-offs; leave an easy
+  opening). A client text that only closes ("thanks", "ok", "sounds good", 👍; `closer` regex) gets no reply and no "answer
+  today" task. Alerts are never mixed: `willAnswer` → "💬 X texted (I'm answering)… if you text them yourself, I step back";
+  otherwise "🙋 X needs YOU… I did NOT reply". ASSISTANT_MAX_PER_DAY default 40 (was 12) so she doesn't drop a live thread.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

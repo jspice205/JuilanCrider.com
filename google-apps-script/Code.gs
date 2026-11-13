@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-channel';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-lastword';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3013,14 +3013,6 @@ function assistantReply(person, from, text) {
   learnFromReply(p, out, 'a text');
   if (out.important || out.escalate) stat('neededYou');
   const sens0 = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('No Shawna') >= 0;
-  if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
-    props.setProperty('LAST_ALERT_ID', JSON.stringify({id: person.id, at: Date.now()}));
-    const k = 'IMP_' + person.id;
-    if (Date.now() - Number(props.getProperty(k) || 0) > 2 * 36e5) {
-      props.setProperty(k, String(Date.now()));
-      try { notifyJulian((first || 'A client') + ' needs you', (first || 'They') + ' texted: "' + String(text).slice(0, 140) + '"' + (out.why || out.reason ? ' (' + (out.why || out.reason) + ')' : '') + (out.escalate || sens0 ? '\n\nThis one\'s for you. Want me to write the reply? Just say "reply to ' + (first || 'them') + '" and tell me anything to include.' : ' I\'m handling the reply.'), '', [first, p.lastName].join(' ').trim()); } catch (e) {}
-    }
-  }
   const reply = humanize(out.reply);
   const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0 || tags.indexOf('No Shawna') >= 0;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
@@ -3029,9 +3021,25 @@ function assistantReply(person, from, text) {
   const muted = Number(props.getProperty('AI_MUTE_' + from) || 0) > Date.now();  // Julián is talking with them himself
   // He said "Hey Shawna" in this thread in the last 3 hours: answer right away, no human pacing, any mode.
   const invited = Number(props.getProperty('SHAWNA_ON_' + from) || 0) > Date.now() - 3 * 36e5;
-  const ok = reply && !out.escalate && !sensitive && n < Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12) && !muted;
+  const ok = reply && !out.escalate && !sensitive && n < Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 40) && !muted;
   // Replies to someone who texted first may go until 10pm (ASSISTANT_END_HOUR); texts Julián starts stay 9am-9pm (TCPA).
   const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
+  // The client closed the conversation ("thanks!", "ok", "sounds good", 👍): they get the last word, no reply (Nov 13).
+  const closer = /^\s*(?:(?:ok(?:ay)?|great|perfect|awesome|got it)[,!.\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!🙏👍😊🙂❤️]*$/i.test(text);
+  // Alert wording (Nov 13): either she's answering (he can jump in) or it's his (she did NOT reply). Never both.
+  const willAnswer = ok && !closer && hour >= 8 && hour < endHour && (mode === 'auto' || mode === 'backup' || invited);
+  if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
+    props.setProperty('LAST_ALERT_ID', JSON.stringify({id: person.id, at: Date.now()}));
+    const k = 'IMP_' + person.id;
+    if (Date.now() - Number(props.getProperty(k) || 0) > 2 * 36e5) {
+      props.setProperty(k, String(Date.now()));
+      const quote = (first || 'They') + ' texted: "' + String(text).slice(0, 140) + '"' + (out.why || out.reason ? ' (' + (out.why || out.reason) + ')' : '');
+      try { notifyJulian(willAnswer ? '💬 ' + (first || 'A client') + ' texted (I\'m answering)' : '🙋 ' + (first || 'A client') + ' needs YOU',
+        quote + (willAnswer ? '\n\nI\'m answering and keeping the conversation going. If you text them yourself, I step back.'
+          : '\n\nI did NOT reply: this one\'s for you. Want me to write it? Say "reply to ' + (first || 'them') + '" and anything to include.'), '', [first, p.lastName].join(' ').trim()); } catch (e) {}
+    }
+  }
+  if (closer) return true;  // nothing to answer and no "answer today" task: they wrapped it up
   if (mode === 'backup' && ok && hour >= 8 && hour < endHour && !invited && props.getProperty('ASSISTANT_FAST') === 'off') {  // hold it; send only if Julián hasn't replied in time
     const delay = Number(props.getProperty('ASSISTANT_DELAY_MIN') || 2);
     const q = JSON.parse(props.getProperty('AI_PENDING') || '{}');
@@ -3836,7 +3844,7 @@ function shawnaDirectReply(phone, text, invite) {
   if (!invite && mode === 'draft') return false;
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + phone;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
-  if (n >= Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 12)) return false;
+  if (n >= Number(props.getProperty('ASSISTANT_MAX_PER_DAY') || 40)) return false;
   const name = assistantName(), thread = bbThread(phone);
   const out = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
     {role: 'system', content: assistantPrompt(name, invite ? 'shawna' : assistantPersona(phone)) + '\nThis person is someone Julián knows personally (a friend, family or colleague, not a lead). Be warm and natural, like a helpful friend. Never pitch a call, a meeting, real estate or Julián\'s services, and never ask to "hop on a call"; real estate only if they bring it up or Julián asked. If their message was meant for Julián, keep it short and say you\'ll pass it along. Never greet anyone as "Unknown".'},
@@ -3935,6 +3943,7 @@ Them: "Is the Summerlin one still available?" → "Let me confirm that for you r
 Them: "Not ready yet" → "Totally fair 🙌🏾 I'm here whenever you are. Mind if I send you a couple I think you'd love in the meantime?"
 
 GOALS (gently, over time): understand what they want and when, help them feel taken care of, and when they're ready, offer a quick call (juliancrider.com/?book), a showing (juliancrider.com/?showing) or a home value (juliancrider.com/?value).
+LET THEM END IT (Julián, Nov 13): never close the conversation yourself. No wrap-up sign-offs like "talk soon", "have a great day", "take care" or "let me know if you need anything" as the last line. Leave the door open with something easy to answer or a natural next step, so the client decides when the conversation is over.
 WELL ROUNDED: you know real estate and lending inside out and explain it in plain words: loan types (conventional, FHA, VA, jumbo, ARM), pre approval, down payment, PMI, points, DTI, closing costs, earnest money, inspection, appraisal, escrow, title, HOAs, Nevada and Las Vegas specifics, the steps of buying and selling. You also chat easily about Las Vegas, sports, food, pop culture and what's going on in the world, like a well read friend. For anything current (today's rates, the market, news, scores, events) use only the LIVE INFO given and say where it's from; if there's none, say you'll confirm. Rates: share today's averages, say their own rate depends on credit, down payment and loan type, and offer to connect them with a great lender.
 RULES: never invent facts, listings, prices, availability, rates or promises. General education about loans and the process is great; no personal lending, legal or tax advice (point to their lender or CPA, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
 NAMES: if the contact's name is unknown, never guess or use a placeholder (never "No", "Name" or "there"); when it fits naturally, ask who you're talking with, once.
