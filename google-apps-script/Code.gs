@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-freefind';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-auto';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1544,13 +1544,47 @@ function runTouch21() {
     const home = (p.tags || []).some(t => /likely seller|open house neighbor|farm/i.test(t)), pool = home ? TOUCH21.homeowner : TOUCH21.general;
     const msg = pool[(sentCount[String(p.id)] || 0) % pool.length].replace(/\{first\}/g, realFirst(p));
     if (!sample) sample = msg;
-    sh.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell(msg)]);
+    sh.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, autoMode() ? 'pending' : 'review', 0, '', cell(msg)]);
   });
   const when = at.getTime() > now ? 'today at 11am' : 'in about 30 minutes';
+  if (autoMode()) {
+    autoNote(step, '21-day check-ins');
+    bossTextSafe('💬 Heads up: your 21-day check-ins go to ' + due.length + ' ' + (due.length === 1 ? 'person' : 'people') + ' ' + when + ' (' + due.slice(0, 4).map(p => realFirst(p)).join(', ') + (due.length > 4 ? '…' : '') + '). Like:\n\n"' + sample + '"\n\nSay "hold" if you want me to stop them.');
+    return due.length;
+  }
   const n = addPending({kind: 'holiday', step: step, label: '21-day check-in', count: due.length, when: when, at: now});
   bossTextSafe('💬 Your 21-day check-ins: ' + due.length + ' ' + (due.length === 1 ? 'person' : 'people') + ' today (' +
     due.slice(0, 4).map(p => realFirst(p)).join(', ') + (due.length > 4 ? '…' : '') + '). Like:\n\n"' + sample + '"\n\nWant me to send them ' + when + '? ' + yesHint(n));
   return due.length;
+}
+
+// ---------- Auto mode (Nov 13, Julián: "I want to get to the point where I'm not approving things") ----------
+// AUTO_SEND (default on): the recurring campaigns (21-day check-ins, Free in Vegas, birthday months, holidays, picks from his
+// Free in Vegas sources) and the deal-flow messages go out on their own. Shawna sends ONE heads-up text first; "hold"
+// (or "hold Lisa", "hold the check-ins") stops anything still waiting. Deal-flow messages wait AUTO_DELAY_H (default 2) hours
+// after the heads-up. Still asked first: his own one-off requests, email replies, deal moves, TC/title emails.
+// AUTO_SEND=off in the Settings tab brings back the approvals.
+function autoMode() { return PropertiesService.getScriptProperties().getProperty('AUTO_SEND') !== 'off'; }
+function autoNote(step, label, personId, who) {
+  const props = PropertiesService.getScriptProperties();
+  const list = JSON.parse(props.getProperty('AUTO_LAST') || '[]').filter(x => Date.now() - x.at < 2 * 864e5);
+  list.push({step: step, label: label, personId: personId || '', who: who || '', at: Date.now()});
+  props.setProperty('AUTO_LAST', JSON.stringify(list.slice(-30)));
+}
+/** "hold" / "hold Lisa" / "hold the check-ins": automatic texts and emails still waiting in the Text Queue are held. */
+function holdAuto(text) {
+  const props = PropertiesService.getScriptProperties(), t = String(text || '').toLowerCase();
+  const recent = JSON.parse(props.getProperty('AUTO_LAST') || '[]').filter(x => Date.now() - x.at < 2 * 864e5);
+  const named = recent.filter(x => (x.who && t.indexOf(String(x.who).split(' ')[0].toLowerCase()) >= 0) ||
+    (/check.?in|21/.test(t) && /^t21-/.test(x.step)) || (/free/.test(t) && /^free-/.test(x.step)) || (/birthday|bday/.test(t) && /^bday-/.test(x.step)) || (/holiday/.test(t) && /^holiday-/.test(x.step)));
+  const pick = named.length ? named : recent.slice(-1);
+  if (!pick.length) return 'nothing automatic is waiting to go out right now.';
+  const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name); let n = 0;
+  if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach((r, i) => {
+    if (r[4] === 'pending' && pick.some(x => x.step === r[3] && (!x.personId || String(x.personId) === String(r[1])))) { sh.getRange(i + 2, 5).setValue('held'); n++; }
+  });
+  return n ? 'held ✋ ' + n + ' ' + (n === 1 ? 'message' : 'messages') + ' (' + pick.map(x => x.who || x.label).join(', ') + '). Nothing went out. To send later, change "held" to "pending" in the Text Queue tab.'
+    : 'those already went out, so there was nothing left to hold.';
 }
 
 // ---------- Free in Vegas (Nov 13) ----------
@@ -1598,7 +1632,9 @@ function findFreePicks(kind) {
   const sh = freeTab(), have = sh.getLastRow() > 1 ? sh.getRange(2, 2, sh.getLastRow() - 1, 1).getValues().map(r => String(r[0]).toLowerCase()) : [];
   const picks = (out.items || []).map(x => String(x.what || '').trim().slice(0, 160)).filter(w => w && have.indexOf(w.toLowerCase()) < 0).slice(0, 6);
   if (!picks.length) return 0;
-  const rows = picks.map(w => { sh.appendRow([new Date(), cell(w), src.url, '', '', src.name, kind === 'bday' ? 'birthday' : 'free']); return {row: sh.getLastRow(), what: w}; });
+  const auto = autoMode();
+  const rows = picks.map(w => { sh.appendRow([new Date(), cell(w), src.url, auto ? 'Y' : '', '', src.name, kind === 'bday' ? 'birthday' : 'free']); return {row: sh.getLastRow(), what: w}; });
+  if (auto) { bossTextSafe((kind === 'bday' ? '🎂 Added these birthday freebies from Freebl:' : '🎉 Added these Free in Vegas picks from Deals Finders:') + '\n\n' + picks.map(w => '• ' + w).join('\n') + '\n\nDelete any you don\'t like in the Free in Vegas tab.'); return rows.length; }
   const n = addPending({kind: 'freepicks', rows: rows, label: kind === 'bday' ? 'birthday freebies' : 'Free in Vegas picks', count: rows.length, at: Date.now()});
   bossTextSafe((kind === 'bday' ? '🎂 Birthday freebies I found on Freebl:' : '🎉 Possible Free in Vegas picks from Deals Finders:') + '\n\n' + picks.map(w => '• ' + w).join('\n') +
     '\n\nThey\'re in the Free in Vegas tab, not on the list yet. Want me to add them? ' + yesHint(n));
@@ -1642,10 +1678,13 @@ function runFreeVegas() {
     const subs = pick.length ? freeSubscribers() : [];
     if (pick.length && subs.length) {
       const body = pick.map(x => '• ' + x.r[1] + (x.r[2] ? ' ' + x.r[2] : '')).join('\n'), step = 'free-' + today.replace(/-/g, '');
-      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell('Hey ' + realFirst(p) + ', Free in Vegas this week 🎉\n\n' + body + '\n\nMore: juliancrider.com/?free')]));
+      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, autoMode() ? 'pending' : 'review', 0, '', cell('Hey ' + realFirst(p) + ', Free in Vegas this week 🎉\n\n' + body + '\n\nMore: juliancrider.com/?free')]));
       pick.forEach(x => sh.getRange(x.row, 5).setValue(today));
-      const n = addPending({kind: 'holiday', step: step, label: 'Free in Vegas', count: subs.length, when: when, at: Date.now()});
+      if (autoMode()) { autoNote(step, 'Free in Vegas'); bossTextSafe('🎉 Heads up: Free in Vegas goes to ' + subs.length + ' ' + (subs.length === 1 ? 'person' : 'people') + ' ' + when + ':\n\n' + body + '\n\nSay "hold" to stop it.'); }
+      else {
+        const n = addPending({kind: 'holiday', step: step, label: 'Free in Vegas', count: subs.length, when: when, at: Date.now()});
       bossTextSafe('🎉 Free in Vegas is ready for ' + subs.length + ' ' + (subs.length === 1 ? 'person' : 'people') + ':\n\n' + body + '\n\nWant me to send it ' + when + '? ' + yesHint(n));
+      }
     }
   }
   if (dom === '1' && props.getProperty('BDAY_RUN') !== today) {  // 1st of the month: birthday-month texts
@@ -1654,7 +1693,8 @@ function runFreeVegas() {
     if (subs.length) {
       const step = 'bday-' + today.replace(/-/g, '');
       const gifts = freeItems(40).filter(x => x.kind === 'birthday').slice(0, 3).map(x => '• ' + x.what).join('\n');
-      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell('Happy birthday month, ' + realFirst(p) + '! 🎂 Hope it\'s a great one.' + (gifts ? ' A few birthday freebies around town:\n\n' + gifts + '\n\nMore: juliancrider.com/?free' : '') + ' Julián')]));
+      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, autoMode() ? 'pending' : 'review', 0, '', cell('Happy birthday month, ' + realFirst(p) + '! 🎂 Hope it\'s a great one.' + (gifts ? ' A few birthday freebies around town:\n\n' + gifts + '\n\nMore: juliancrider.com/?free' : '') + ' Julián')]));
+      if (autoMode()) { autoNote(step, 'birthday texts'); bossTextSafe('🎂 Heads up: ' + subs.length + ' of your Free in Vegas people get a "Happy birthday month" text ' + when + ' (' + subs.slice(0, 4).map(p => realFirst(p)).join(', ') + '). Say "hold" to stop them.'); return; }
       const n = addPending({kind: 'holiday', step: step, label: 'birthday month', count: subs.length, when: when, at: Date.now()});
       bossTextSafe('🎂 ' + subs.length + ' of your Free in Vegas people have a birthday this month (' + subs.slice(0, 4).map(p => realFirst(p)).join(', ') + '). Want me to text them "Happy birthday month" ' + when + '? ' + yesHint(n));
     }
@@ -1688,7 +1728,8 @@ function prepareHolidayTexts() {
     !['Text Opt-Out', 'Deceased', 'Pause', 'Unsubscribed', 'Do Not Contact'].some(t => (p.tags || []).indexOf(t) >= 0) && realFirst(p)).slice(0, 80);
   if (!ok.length) return;
   const due = Utilities.parseDate(tomorrow + ' 10:00', tz, 'yyyy-MM-dd HH:mm'), sh = ensureTab(getSS(), TEXT_QUEUE_TAB), step = 'holiday-' + h.key + '-' + y;
-  ok.forEach(p => sh.appendRow([due, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell(h.text.replace('{first}', realFirst(p)).replace('{year}', String(y)))]));
+  ok.forEach(p => sh.appendRow([due, p.id, cell(p.name || realFirst(p)), step, autoMode() ? 'pending' : 'review', 0, '', cell(h.text.replace('{first}', realFirst(p)).replace('{year}', String(y)))]));
+  if (autoMode()) { autoNote(step, h.label + ' texts'); bossTextSafe('🎉 Heads up: ' + h.label + ' is tomorrow. ' + ok.length + ' past clients and VIPs get this at 10am:\n\n"' + h.text.replace('{first}', realFirst(ok[0])).replace('{year}', String(y)) + '"\n\nSay "hold" to stop them.'); return; }
   const n = addPending({kind: 'holiday', step: step, label: h.label, count: ok.length, when: 'tomorrow at 10am', at: Date.now()});
   bossTextSafe('🎉 ' + h.label + ' is tomorrow. I wrote a text for ' + ok.length + ' past clients and VIPs, like:\n\n"' + h.text.replace('{first}', realFirst(ok[0])).replace('{year}', String(y)) +
     '"\n\nWant me to send them tomorrow at 10am? ' + yesHint(n));
@@ -1741,9 +1782,20 @@ function runListingFlow(people) {
     const cpage = props.getProperty('CPAGE_' + p.id);
     let msg = pcFill(tpl, p, {duties: dutiesLink});
     if (cpage && /^l[ab]-w/.test(due.id)) msg += (textOk ? ' Everything is on your page: ' : '\n\nEverything is on your page: ') + clientPageUrl(cpage);
+    st.done.push(due.id); drafted++;
+    if (autoMode()) {  // sends on its own after a heads-up; "hold <name>" stops it
+      const delay = Number(props.getProperty('AUTO_DELAY_H') || 2), at = new Date(now + delay * 36e5), stepId = (textOk ? 'auto-' : 'autoemail-') + due.id;
+      ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([at, p.id, cell(who), stepId, 'pending', 0, '', cell(textOk ? msg : 'Subject: ' + pcFill(due.subject, p) + '\n\n' + msg)]);
+      autoNote(stepId, 'deal update', p.id, who);
+      const lbl = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age, lost: 'off market, day ' + age,
+        buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage];
+      if ((stage === 'escrow' || stage === 'bescrow') && due.day === 0) { try { draftPartyHeadsUp(p, who, d, 'opened escrow'); } catch (e) {} }
+      bossTextSafe('🏡 ' + who + ' (' + lbl + '). This ' + (textOk ? 'text' : 'email') + ' goes out at ' + Utilities.formatDate(at, 'America/Los_Angeles', 'h:mm a') + ':\n\n"' + msg + '"\n\nSay "hold ' + realFirst(p) + '" to stop it.');
+      sheet.appendRow([d.id, who, stage, new Date(st.since), st.done.join(','), new Date()]);
+      return;
+    }
     const n = textOk ? addPending({personId: p.id, who: who, phone: phone, message: msg, at: now, long: true})
       : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: pcFill(due.subject, p), message: msg, at: now});
-    st.done.push(due.id); drafted++;
     const label = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age, lost: 'off market, day ' + age,
       buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage] +
       (due.close != null && toClose != null ? ', ' + toClose + ' day' + (toClose === 1 ? '' : 's') + ' to closing' : '');
@@ -4180,6 +4232,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
+  else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (/^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(note to self|personal( note)?|jot( this| that)?( down)?|write (this|that) down)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'personal', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -4415,6 +4468,7 @@ Examples (all mean the same as the action shown):
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
     }
+    if (a.action === 'holdauto') return say(holdAuto(a.message || text));
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
@@ -5635,9 +5689,16 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
-      const res = step === 'scheduled' || step === 'call-thanks' ? sendApprovedText(id, text) : bbTextPerson(id, text);
+      let res;
+      if (/^autoemail-/.test(step)) {  // automatic deal-flow email (from julianc@bcolv.com): "Subject: …" then the body
+        const pe = fubFetch('people/' + id + '?fields=id,emails,tags', null, 'get'), to = (pe.emails || []).map(e => e.value).filter(validEmail)[0];
+        if (!to || (pe.tags || []).some(t => /^(do not email|unsubscribed)$/i.test(t))) res = 'skipped: no email';
+        else { const sub = (String(text).match(/^Subject: (.*)/) || [, 'Update from Julián'])[1], body = String(text).replace(/^Subject: .*\n+/, '');
+          const r = sendFromBcolv(to, sub, body); if (!r.ok) throw new Error(r.error || 'email failed');
+          fubFetch('notes', {personId: id, subject: 'Email sent', body: 'To ' + to + ' (automatic): "' + sub + '"\n\n' + body}); res = 'sent'; }
+      } else res = step === 'scheduled' || step === 'call-thanks' || /^auto-/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;

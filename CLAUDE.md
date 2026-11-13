@@ -530,6 +530,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
+- AUTO MODE (Nov 13, Julián: "I want to get to the point where I'm not approving things"): `autoMode()` (Script Property
+  AUTO_SEND, default on; "off" restores approvals). Automatic, with ONE heads-up text and no approval: 21-day check-ins,
+  Free in Vegas weekly + birthday months, holiday texts (rows go straight to 'pending'), Free in Vegas source picks (marked
+  Y), and deal-flow messages (runListingFlow → Text Queue step auto-<id> (text via sendApprovedText, Text OK only) or
+  autoemail-<id> ("Subject: …" + body, sent from bcolv by processTextQueue) due in AUTO_DELAY_H hours, default 2).
+  "hold" / "hold Lisa" / "hold the check-ins" (boss fast path → `holdAuto`, AUTO_LAST 2 days) flips waiting rows to 'held'.
+  Still asked first: his own one-off requests (texts/emails he dictates), email replies, deal moves, TC/title emails,
+  calendar events, voice memos.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
