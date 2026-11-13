@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-sifter';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-escrowview';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3347,17 +3347,22 @@ function dealMoveCommand(a, text) {
     (escrow && !iso ? '\n\nWhat\'s the closing date? Tell me ("' + realFirst(p) + ' closes Dec 20") and I\'ll time the walkthrough, signing and closing reminders.' : '');
 }
 /** Boss action pipeline: every open deal by stage, with days in stage. */
-function pipelineText() {
+function pipelineText(ask) {
+  const escrowOnly = /escrow|under contract|pending|closing/i.test(String(ask || ''));
   const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, out = [];
   const byStage = {};
   [1, 2].forEach(pid => (fubFetch('deals?pipelineId=' + pid + '&limit=100', null, 'get').deals || []).forEach(d => {
     if (/closed|lost|gifts/i.test(String(d.stageName || ''))) return;
+    if (escrowOnly && [28, 23, 24, 29].indexOf(Number(d.stageId)) < 0) return;  // Due Diligence, Loan/Appraisal (buyers + sellers)
     if (d.users && d.users.length && !d.users.some(u => Number(u.id) === Number(me))) return;
     const k = (pid === 1 ? 'Buyers' : 'Sellers') + ' › ' + String(d.stageName || d.stageId).trim();
     const days = d.enteredStageAt ? Math.floor((Date.now() - new Date(d.enteredStageAt).getTime()) / 864e5) : null;
-    (byStage[k] = byStage[k] || []).push('• ' + (d.name || 'deal') + (days != null ? ' (' + days + 'd)' : '') + (d.projectedCloseDate ? ' · closes ' + String(d.projectedCloseDate).slice(0, 10) : ''));
+    const toClose = d.projectedCloseDate ? Math.ceil((new Date(d.projectedCloseDate).getTime() - Date.now()) / 864e5) : null;
+    (byStage[k] = byStage[k] || []).push('• ' + (d.name || 'deal') + (days != null ? ' (' + days + 'd in stage)' : '') +
+      (d.projectedCloseDate ? ' · closes ' + Utilities.formatDate(new Date(d.projectedCloseDate), 'America/Los_Angeles', 'MMM d') + (toClose != null && toClose >= 0 ? ' (' + toClose + ' days)' : '') : escrowOnly ? ' · no closing date yet' : ''));
   }));
   Object.keys(byStage).forEach(k => out.push(k + '\n' + byStage[k].join('\n')));
+  if (escrowOnly) return out.length ? '🔑 In escrow right now:\n\n' + out.join('\n\n') : 'Nobody is in escrow right now.';
   return out.length ? '📋 Your deals right now:\n\n' + out.join('\n\n') : 'You don\'t have any open deal cards right now.';
 }
 
@@ -4294,7 +4299,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
 - dealmove: he tells you a client's deal moved or should start ("Lisa is in escrow", "Dan's offer got accepted", "list Lisa's house", "Lisa's listing is live", "start a buyer deal for Dan", "Lisa closed", "Dan's offer fell through"). "who" = the client, "message" = his words, "when" = the closing date if he gave one (YYYY-MM-DD), "price" = price if he gave one, and "stage" = exactly one of: buyer_nurture, hot_buyer (actively looking / signed with him), buyer_offer, buyer_escrow (buyer under contract / in escrow / offer accepted), buyer_loan, buyer_closed, seller_followup (maybe listing later), construction, listing_prep (taking the listing / getting it ready), active_listing (live on MLS), seller_offer (offer on the listing), seller_escrow (listing under contract / in escrow), seller_appraisal, seller_closed, gifts, lost (listing expired or withdrawn). A buyer's deal that fell through goes back to hot_buyer; a seller's escrow that fell through goes back to active_listing. Buyer vs seller: selling their home / their listing = seller stages; buying = buyer stages.
-- pipeline: he wants to see where his deals or clients stand ("where are my deals", "show my pipeline", "who's in escrow").
+- pipeline: he wants to see where his deals or clients stand ("where are my deals", "show my pipeline", "who's in escrow", "who's closing", "who's under contract"). Put his words in "message".
 - freevegas: he gives a free thing to do in Las Vegas for his Free in Vegas list ("add to free in vegas: Bellagio holiday display, through Jan 5"). "message" = the thing, where, when and any link, in his words.
 - clientpage: a client's private page on juliancrider.com: make or send someone's page, add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
@@ -4601,7 +4606,7 @@ Examples (all mean the same as the action shown):
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
     }
     if (a.action === 'dealmove') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(dealMoveCommand(a, text)); }
-    if (a.action === 'pipeline') return say(pipelineText());
+    if (a.action === 'pipeline') return say(pipelineText(a.message || text));
     if (a.action === 'holdauto') return say(holdAuto(a.message || text));
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
