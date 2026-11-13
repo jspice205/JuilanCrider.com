@@ -461,6 +461,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
+- Holiday texts (Nov 13, from his VIP board): prepareHolidayTexts (hourly hook, after 10am the day before) for New Year,
+  Valentine's, 4th of July, Labor Day, Thanksgiving (Mother's/Father's Day left out) → Text Queue rows status "review"
+  step holiday-<key>-<year> for Text OK contacts tagged VIP / past client or stage Past Client (max 80) + one approval
+  (pending kind 'holiday'); YES flips them to pending for 10am. Quarterly VIP call tasks NOT added (his Oct 29
+  inbound-only rule: no outreach/call tasks) unless he asks.
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
   POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
   task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`
