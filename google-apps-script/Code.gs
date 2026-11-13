@@ -158,12 +158,13 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-t21';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-free';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   if (e && e.parameter && e.parameter.action === 'client') return json(clientPageData(String(e.parameter.id || '')));
+  if (e && e.parameter && e.parameter.action === 'free') return json({status: 'ok', items: freeItems(30)});
   if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
 }
@@ -568,6 +569,7 @@ function fubPerson(tabName, d) {
   const isAgent = tabName === 'Sign-Ins' && /Visitor: I.m a real estate agent/.test(d.notes || '');
   if (isAgent) tags.push('Agent', 'Partner');
   if (d.type) tags.push(d.type.replace(/^Consultation:\s*/, ''));
+  const bm = String(d.notes || '').match(/Birthday month: ([A-Z][a-z]+)/); if (bm) tags.push('Bday ' + bm[1]);
   if (tabName !== 'Sign-Ins') tags.push('Text OK');  // website forms carry the "agree to be contacted by text" line
   scoreLead(tabName, d).forEach(t => { if (tags.indexOf(t) < 0 && !(isAgent && /^(Hot|Warm|Likely Seller)$/.test(t))) tags.push(t); });
   const person = {firstName: parts.shift() || '', lastName: parts.join(' '), tags: tags};
@@ -668,7 +670,7 @@ function sendToFub(tabName, d) {
   // Website forms: a welcome text from Julián's number (the forms carry the text-consent line). Bookings and showing
   // requests skip it because they get a booking confirmation text instead.
   if (tabName !== 'Sign-Ins' && d.phone && person.tags.indexOf('Has Agent') < 0 && !/consultation|showing|book/i.test(String(d.type || ''))) {
-    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, 'website'); }
+    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, d.type === 'Free in Vegas' ? 'free' : 'website'); }
     catch (err) { console.error('Website welcome text: ' + err); }
   }
   // A task only when they reached out from the website (showing request, consultation). Open house sign-ins get
@@ -1010,6 +1012,7 @@ function scoreFubDatabase() {
     try { runPastClientLoop(people); } catch (err) { console.error('Closed client loop: ' + err); }
     try { runListingFlow(people); } catch (err) { console.error('Listing flow: ' + err); }
     try { runTouch21(); } catch (err) { console.error('21-day texts: ' + err); }
+    try { runFreeVegas(); } catch (err) { console.error('Free in Vegas: ' + err); }
   }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
@@ -1548,6 +1551,64 @@ function runTouch21() {
   bossTextSafe('💬 Your 21-day check-ins: ' + due.length + ' ' + (due.length === 1 ? 'person' : 'people') + ' today (' +
     due.slice(0, 4).map(p => realFirst(p)).join(', ') + (due.length > 4 ? '…' : '') + '). Like:\n\n"' + sample + '"\n\nWant me to send them ' + when + '? ' + yesHint(n));
   return due.length;
+}
+
+// ---------- Free in Vegas (Nov 13) ----------
+// A free list people join at juliancrider.com/?free (or by texting FREE). Julián adds things he has checked by texting
+// Shawna "free: <what, where, when, link>" (saved in the "Free in Vegas" tab, Verified = Y because he sent it; rows he
+// types in the tab need Y too). Thursdays, up to 3 verified unsent items become one text to subscribers (tag Free in
+// Vegas + Text OK), held as "review" for his single yes (goes out at noon). On the 1st of each month, subscribers whose
+// birthday month it is (tag "Bday <Month>") get a happy-birthday-month text, same approval. Nothing is made up.
+const FREE_TAB = {name: 'Free in Vegas', color: '#F4B400', headers: ['Added', 'What', 'Link', 'Verified (Y)', 'Sent']};
+function addFreeItem(text) {
+  const t = String(text || '').trim(); if (!t) return 'what\'s the free thing? Send what, where and when.';
+  const link = (t.match(/https?:\/\/\S+/) || [''])[0], what = t.replace(link, '').replace(/\s+/g, ' ').trim();
+  ensureTab(getSS(), FREE_TAB).appendRow([new Date(), cell(what), link, 'Y', '']);
+  return 'added to Free in Vegas: ' + what + '. It goes in the next Thursday text (with your OK) and on juliancrider.com/?free. ✅';
+}
+function freeItems(max) {
+  const sh = getSS().getSheetByName(FREE_TAB.name); if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, FREE_TAB.headers.length).getValues()
+    .filter(r => /^y/i.test(String(r[3])) && r[1]).reverse().slice(0, max || 30)
+    .map(r => ({added: r[0] instanceof Date ? r[0].toISOString() : '', what: String(r[1]), link: String(r[2] || '')}));
+}
+function freeSubscribers(extraTag) {
+  const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, out = [];
+  for (let off = 0; off < 2000; off += 100) {
+    const page = fubFetch('people?limit=100&offset=' + off + '&tags=' + encodeURIComponent(extraTag || 'Free in Vegas') + '&fields=id,name,firstName,lastName,tags,assignedUserId,phones', null, 'get').people || [];
+    out.push(...page); if (page.length < 100) break;
+  }
+  return out.filter(p => (!p.assignedUserId || p.assignedUserId === me) && (p.tags || []).indexOf('Text OK') >= 0 &&
+    !(p.tags || []).some(t => /^(text opt-out|deceased|unsubscribed|do not contact)$/i.test(t)) && !isTestPerson(p) && realFirst(p));
+}
+function runFreeVegas() {
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = new Date();
+  const today = Utilities.formatDate(now, tz, 'yyyy-MM-dd'), dow = Utilities.formatDate(now, tz, 'u'), dom = Utilities.formatDate(now, tz, 'd');
+  const q = ensureTab(getSS(), TEXT_QUEUE_TAB), noon = Utilities.parseDate(today + ' 12:00', tz, 'yyyy-MM-dd HH:mm');
+  const sendAt = noon > now ? noon : new Date(now.getTime() + 30 * 6e4), when = noon > now ? 'today at noon' : 'in about 30 minutes';
+  if (dow === '4' && props.getProperty('FREE_RUN') !== today) {  // Thursday: the weekend list
+    props.setProperty('FREE_RUN', today);
+    const sh = ensureTab(getSS(), FREE_TAB), rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, FREE_TAB.headers.length).getValues() : [];
+    const pick = rows.map((r, i) => ({r: r, row: i + 2})).filter(x => /^y/i.test(String(x.r[3])) && x.r[1] && !x.r[4]).slice(0, 3);
+    const subs = pick.length ? freeSubscribers() : [];
+    if (pick.length && subs.length) {
+      const body = pick.map(x => '• ' + x.r[1] + (x.r[2] ? ' ' + x.r[2] : '')).join('\n'), step = 'free-' + today.replace(/-/g, '');
+      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell('Hey ' + realFirst(p) + ', Free in Vegas this week 🎉\n\n' + body + '\n\nMore: juliancrider.com/?free')]));
+      pick.forEach(x => sh.getRange(x.row, 5).setValue(today));
+      const n = addPending({kind: 'holiday', step: step, label: 'Free in Vegas', count: subs.length, when: when, at: Date.now()});
+      bossTextSafe('🎉 Free in Vegas is ready for ' + subs.length + ' ' + (subs.length === 1 ? 'person' : 'people') + ':\n\n' + body + '\n\nWant me to send it ' + when + '? ' + yesHint(n));
+    }
+  }
+  if (dom === '1' && props.getProperty('BDAY_RUN') !== today) {  // 1st of the month: birthday-month texts
+    props.setProperty('BDAY_RUN', today);
+    const month = Utilities.formatDate(now, tz, 'MMMM'), subs = freeSubscribers('Bday ' + month);
+    if (subs.length) {
+      const step = 'bday-' + today.replace(/-/g, '');
+      subs.forEach(p => q.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell('Happy birthday month, ' + realFirst(p) + '! 🎂 Hope it\'s a great one. Julián')]));
+      const n = addPending({kind: 'holiday', step: step, label: 'birthday month', count: subs.length, when: when, at: Date.now()});
+      bossTextSafe('🎂 ' + subs.length + ' of your Free in Vegas people have a birthday this month (' + subs.slice(0, 4).map(p => realFirst(p)).join(', ') + '). Want me to text them "Happy birthday month" ' + when + '? ' + yesHint(n));
+    }
+  }
 }
 
 // ---------- VIP / sphere holiday texts (Nov 13, from Julián's VIP board) ----------
@@ -2573,6 +2634,10 @@ function bbWebhook(e) {
       try { shawnaDirectReply(from, String(data.text).slice(0, 1000), ''); } catch (e) { console.log('Allowed contact: ' + e.message); }
       return json({status: 'ok'});
     }
+    if (/^\s*free\s*[.!]*\s*$/i.test(String(data.text || ''))) {  // Free in Vegas from a new number: the sign-up page collects their name
+      try { bbSend(from, "Thanks for texting! Tap here to join the Free in Vegas list: juliancrider.com/?free"); } catch (e) {}
+      return json({status: 'ok'});
+    }
     const pending = !!props.getProperty('NEWNUM_' + from);
     if (mode === 'off' || props.getProperty('SHAWNA_NEW_NUMBERS') === 'off' || (!pending && macContactByPhone(from))) return json({status: 'ok'});
     // Julián, Nov 11: no more "No Name" contacts. Shawna answers (they texted first) and asks who it is; they go into
@@ -2588,6 +2653,12 @@ function bbWebhook(e) {
   if (/^\s*(stop|stopall|unsubscribe|end|quit|cancel|opt ?out|stop texting( me)?|remove me)\s*[.!]*\s*$/i.test(text)) {  // the whole text only
     const tags = (person.tags || []).filter(t => t !== 'Text OK').concat('Text Opt-Out');
     fubFetch('people/' + person.id, {tags: tags}, 'put');
+    return json({status: 'ok'});
+  }
+  // "FREE" (Nov 13): they asked to join the Free in Vegas texts, which is their consent for those texts.
+  if (/^\s*free\s*[.!]*\s*$/i.test(text)) {
+    try { fubFetch('people/' + person.id + '?mergeTags=true', {tags: ['Free in Vegas', 'Text OK']}, 'put'); fubFetch('notes', {personId: person.id, subject: 'Free in Vegas', body: 'Texted FREE: joined the Free in Vegas list (text consent).'}); } catch (e) {}
+    try { bbSend(from, "You're in 🎉 Every couple of weeks I'll text you free things worth doing around Vegas. Here's the list so far: juliancrider.com/?free Reply STOP anytime."); } catch (e) {}
     return json({status: 'ok'});
   }
   // "JULIAN": they want him, not Shawna. Tell Julián on his personal phone, answer them, skip Shawna.
@@ -3968,7 +4039,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"clientpage|dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"freevegas|clientpage|dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -3985,6 +4056,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- freevegas: he gives a free thing to do in Las Vegas for his Free in Vegas list ("add to free in vegas: Bellagio holiday display, through Jan 5"). "message" = the thing, where, when and any link, in his words.
 - clientpage: a client's private page on juliancrider.com: make or send someone's page, add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
 - property: look up a property in Clark County public records (owner, last sale, value, size, year built): "look up 123 Desert Rose Ln", "who owns 456 Summit Club Dr", "pull the records on Lisa's house". "message" = the street address or parcel number exactly as he wrote it; "who" = the client if he wants it saved to their file.
@@ -4053,6 +4125,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
+  else if (/^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(note to self|personal( note)?|jot( this| that)?( down)?|write (this|that) down)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'personal', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(done|finished|complete|check off)\s*#?\d+([\s,&]+(and\s+)?#?\d+)*\s*[.!]*\s*$/i.test(text)) a = {action: 'taskdone', message: text.replace(/^\D+/, '')};  // "done 5": no AI needed
@@ -4287,6 +4360,7 @@ Examples (all mean the same as the action shown):
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
     }
+    if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
       const raw = String(a.message || text), role = /\btitle\b|escrow (officer|company)/i.test(raw) ? 'title' : 'tc', x = parseParty(raw);
@@ -5324,6 +5398,9 @@ const OPEN_HOUSE_TEXTS = {
     {step: 'oh-2h', hours: 2, text: "Hey {first}, it's Julián from the open house today 👋🏾 Thanks for stopping by, neighbor. It's always good to meet the people who actually live here. || [contact card] || juliancrider.com/?relocate || [voice]"},
     {step: 'oh-72h', hours: 72, text: "Hey {first}, Julián again. A few neighbors asked what their own homes would sell for after the open house. Would it be crazy if I ran a quick, private number for yours? No visit needed. 🏡"}],
   // Website forms (home value, guides, account, questions) that didn't already book a time: a welcome text.
+  // Free in Vegas sign-ups (juliancrider.com/?free): just the welcome, no real estate pitch.
+  free: [
+    {step: 'free-welcome', hours: 0.05, text: "Hey {first}, it's Julián 👋🏾 You're on my Free in Vegas list. Every couple of weeks I'll text you free things worth doing around town. Here's the list so far: juliancrider.com/?free || [contact card]"}],
   website: [
     {step: 'web-welcome', hours: 0.05, text: "Hey {first}, it's Julián Crider with The DeBenedetto Team 👋🏾 Thanks for reaching out through my site. As a developer and luxury advisor, I help people buy and sell across Las Vegas and Henderson, and I'm glad you found me. Just curious, what has you looking right now? || [contact card]"},
     {step: 'web-2d', hours: 48, text: "Hey {first}, Julián again. What would make the next few months feel like a win for you on the real estate side? 🏡"}],
@@ -5503,7 +5580,7 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       const res = step === 'scheduled' || step === 'call-thanks' ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }

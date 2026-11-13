@@ -901,6 +901,11 @@ img{max-width:100%;display:block}
         <p style="color:var(--ink2);font-size:15px;margin:4px 0 12px">Full-length tours and market updates. New videos appear here automatically once the channel launches.</p>
         <button class="pill block" data-open="signup" data-why="Get notified when the YouTube channel launches.">Notify me</button>
       </div>
+      <div class="textcard" style="margin:14px 0 0">
+        <div class="who" style="font-size:16px">Free in Vegas 🎉</div>
+        <p style="color:var(--ink2);font-size:15px;margin:4px 0 12px">Free things worth doing around town, picked by Julián and texted every couple of weeks.</p>
+        <button class="pill block" data-open="free">See the list</button>
+      </div>
     </div>
 
     <h2 class="h">The DeBenedetto Team</h2>
@@ -2182,6 +2187,7 @@ function openSheet(kind, opt={}){
   if (kind==='buyer') openBuyer(opt);
   if (kind==='net') openNet();
   if (kind==='book') bookFlow(opt.type);
+  if (kind==='free') freePage();
   if (kind==='sell') sellPresentation();
   if (kind==='listing') listingFlow();
 }
@@ -2311,6 +2317,42 @@ function clientPage(id){
       nb.querySelector('button').onclick = () => { const v = nb.querySelector('input').value.trim(); if (!v) return; send(item, b.dataset.r, v); nb.hidden = true; };
     }));
   }).catch(() => { $('sheetBody').innerHTML = doneHTML('Can’t load right now','Please try again in a minute, or text Julián at 702-498-2571.'); });
+}
+// Free in Vegas (Nov 13, juliancrider.com/?free): long-running free spots + this week's picks Julián added (texted to
+// Shawna "free: …"), and a sign-up for the texts (tag Free in Vegas + Text OK; birthday month for a birthday text).
+const FREE_SPOTS = [
+  ['Bellagio Fountains','The Strip','Water and music shows in front of the Bellagio, afternoons and evenings.'],
+  ['Bellagio Conservatory','The Strip','Seasonal flower and garden displays inside the Bellagio. Open around the clock.'],
+  ['Fremont Street Experience','Downtown','The light-canopy shows over Fremont Street, every evening.'],
+  ['“Welcome to Fabulous Las Vegas” sign','South Strip','The classic photo spot, with a small parking lot.'],
+  ['Seven Magic Mountains','Off I-15 near Jean','Giant stacked-boulder art in the desert, about 25 minutes south.'],
+  ['Ethel M Chocolates cactus garden','Henderson','A big botanical cactus garden next to the chocolate factory. Holiday lights in winter.'],
+  ['Flamingo Wildlife Habitat','The Strip','Flamingos, pelicans and koi in the gardens at the Flamingo.'],
+  ['Clark County Wetlands Park','East valley','Trails, ponds and a nature center.'],
+  ['Downtown Container Park','Downtown','Shops and a treehouse playground built from shipping containers.']];
+function freePage(){
+  const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  openRaw('', `<article class="reader"><div class="kick">Free in Vegas</div><h1>Free things worth doing around town</h1>
+    <p>Living here doesn’t have to cost a fortune. These are the free spots I send people to, plus new picks every couple of weeks.</p>
+    <div id="freeNew"></div>
+    <h2>Always free</h2>
+    ${FREE_SPOTS.map(x => `<div style="margin:0 0 14px"><b style="display:block">${x[0]}</b><span style="color:var(--ink2);font-size:15px">${x[1]}. ${x[2]}</span></div>`).join('')}
+    <p class="fine">Hours and shows change, so check before you go.</p>
+    <h2>Get the picks by text</h2>
+    <p>Every couple of weeks I text a few free things to do. Tell me your birthday month and I’ll send a birthday note too.</p>
+    ${contactFields}
+    <div class="field"><label for="frBday">Birthday month (optional)</label><select id="frBday"><option value="">Choose</option>${months.map(m => `<option>${m}</option>`).join('')}</select></div>
+    <p class="err" id="fErr">Add your first name and phone.</p><button class="pill block" id="frGo">Text me the free list</button>
+    <p class="fine">You’ll get Free in Vegas texts and the occasional real estate note from Julián. Reply STOP anytime.</p>
+    <button class="pill ghost block" style="margin-top:8px" onclick="closeSheet()">Back to the site</button></article>`);
+  $('frGo').onclick = () => { if (!requireContact()) return;
+    sendLead({tab:'Website Leads', type:'Free in Vegas', ...contactVals(), property:'', timeline:'', source:'juliancrider.com', notes: joinNotes(['Birthday month: ' + $('frBday').value, 'Joined: Free in Vegas'])});
+    $('sheetBody').innerHTML = doneHTML('You’re on the list 🎉', 'Look for a text from Julián in a minute. New free picks come every couple of weeks.'); };
+  fetch(SHEET_URL + '?action=free').then(r => r.json()).then(d => {
+    const items = (d.items || []).slice(0, 8); if (!items.length || !$('freeNew')) return;
+    $('freeNew').innerHTML = '<h2>New picks</h2>' + items.map(x => `<div style="margin:0 0 14px"><b style="display:block">${e(x.what)}</b>${x.link ? `<a class="link" href="${e(x.link)}" target="_blank" rel="noopener">Details ›</a>` : ''}</div>`).join('');
+  }).catch(() => {});
 }
 // Seller presentation (Nov 13, juliancrider.com/?sell): the listing presentation as a page Julián sends before every
 // listing appointment. No made-up stats or promises; it explains how he prices, markets and communicates.
@@ -2482,6 +2524,7 @@ function askIntent(){
   // juliancrider.com/?client=<id> opens that client's private page.
   const cpm = location.search.match(/[?&]client=([a-f0-9]{12,})/);
   if (cpm) { setTimeout(() => clientPage(cpm[1]), 200); return; }
+  if (/[?&]free\b/.test(location.search)) { setTimeout(() => openSheet('free'), 300); return; }
   // juliancrider.com/?sell opens the seller presentation; ?listing opens Book a listing appointment.
   if (/[?&]sell\b/.test(location.search)) { setTimeout(() => openSheet('sell'), 300); return; }
   if (/[?&]listing\b/.test(location.search)) { setTimeout(() => openSheet('listing'), 300); return; }
