@@ -573,6 +573,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   LAST_PERSON when the draft's greeting matches that person; otherwise the greeted name becomes "who". On a mismatch the
   email/text action looks up the greeted name and switches to that person (one match), asks which (several), or asks for
   the full name (none).
+  Draft-only emails (Nov 13, Susan Krygiell had no email; his "just write it" looped on Deborah): the email action writes the
+  draft, saves FUB note "Email draft (not sent)" on the person and texts it to him ("📝 DRAFT only, nothing was sent")
+  when there's no email on file or he says just draft / I'll send it myself / don't send / format of an email / in notes.
+  findOne's personId path (PICK_WAIT answers) now sets LAST_PERSON too.
 
 - Channel line (Nov 13, Julián: "have her say text or email"): every approval / heads-up names how it goes out:
   `viaText(phone)` "📱 TEXT (iMessage/SMS) from your business line 702-498-2571 to 702-…" or `viaEmail(addr, thread)`
