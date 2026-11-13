@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-nofree';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-deals';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -265,6 +265,15 @@ function bookSlot(d) {
       try { fubFetch('appointments', {title: title, description: desc, start: slot.toISOString(), end: end.toISOString(),
         location: showing || listing ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
       if (listing) { try { fubFetch('people/' + pid + '?mergeTags=true', {tags: ['Likely Seller', 'Listing Appointment']}, 'put'); } catch (e) {} }
+      // Deal cards start themselves (Nov 13): a listing appointment opens a Sellers card; a pre-approved (or cash) buyer who
+      // books a consult or a showing opens a Buyers card in NURTURE. Never a second open card.
+      try {
+        const buyerType = /buy|relocat|new construction/i.test(String(d.type || '')) || m.kind === 'showing';
+        const ready = /Pre-approved: (Yes|Paying cash)/i.test(String(d.notes || ''));
+        const openIn = pl => (fubFetch('deals?personId=' + pid + '&limit=10', null, 'get').deals || []).some(x => Number(x.pipelineId) === pl && !/closed|lost/i.test(String(x.stageName || '')));
+        if (listing && !openIn(2)) setDealStage(pid, 'seller_followup', {name: String(d.name).trim() + ' · ' + String(d.property).split(',')[0], why: 'Listing appointment booked on juliancrider.com ' + label});
+        else if (!listing && !golf && buyerType && ready && !openIn(1)) setDealStage(pid, 'buyer_nurture', {why: 'Pre-approved buyer booked on juliancrider.com ' + label});
+      } catch (e) { console.log('Auto deal card: ' + e.message); }
       fubFetch('notes', {personId: pid, subject: 'Booked: ' + m.label, body: `${label} (${m.minutes} min)${showing || listing ? ' at ' + d.property : ''}${link ? '\nVideo: ' + link : ''}\n${desc}`});
       if (!golf) createCallTask(pid, showing ? `showing ${label} at ${d.property}` : listing ? `listing appointment ${label} at ${d.property} (bring the CMA)` : `${m.label.toLowerCase()} ${label}`);
     }
@@ -1785,6 +1794,11 @@ function runListingFlow(people) {
     const cpage = props.getProperty('CPAGE_' + p.id);
     let msg = pcFill(tpl, p, {duties: dutiesLink});
     if (cpage && /^l[ab]-w/.test(due.id)) msg += (textOk ? ' Everything is on your page: ' : '\n\nEverything is on your page: ') + clientPageUrl(cpage);
+    // Client pages start themselves (Nov 13): a buyer's page when the card hits HOT BUYERS, a seller's at Listing Prep/Active.
+    if (/^(lb-0|lp-0|la-0)$/.test(due.id) && !cpage) { try {
+      const addr = String(d.name || '').split('·').slice(-1)[0].trim(), pg = clientPageFor(p, stage === 'buyer' ? 'buyer' : 'seller', stage !== 'buyer' && /\d/.test(addr) ? addr : '');
+      msg += (textOk ? ' ' : '\n\n') + (stage === 'buyer' ? 'I made you a private page for the homes I send you. Tap Love, Pass or Tour on each one: ' : 'I made you a private page for your sale, with showing feedback and market updates: ') + clientPageUrl(pg.token);
+    } catch (e) { console.log('Client page: ' + e.message); } }
     st.done.push(due.id); drafted++;
     if (autoMode()) {  // sends on its own after a heads-up; "hold <name>" stops it
       const delay = Number(props.getProperty('AUTO_DELAY_H') || 2), at = new Date(now + delay * 36e5), stepId = (textOk ? 'auto-' : 'autoemail-') + due.id;
@@ -3252,6 +3266,9 @@ function suggestDeal(personId, signal, why) {
   if (boss) { try { bbSend(boss, msg); bossMemory('assistant', msg); } catch (e) {} }
 }
 function moveDeal(pend) {
+  const sideSeller = (fubFetch('deals?personId=' + pend.personId + '&limit=10', null, 'get').deals || []).some(d => Number(d.pipelineId) === 2 && !/closed|lost/i.test(String(d.stageName || '')));
+  const key = {offer: sideSeller ? 'seller_offer' : 'buyer_offer', under_contract: sideSeller ? 'seller_escrow' : 'buyer_escrow', closed: sideSeller ? 'seller_closed' : 'buyer_closed', listing: 'listing_prep'}[pend.signal];
+  if (key) { const r = setDealStage(pend.personId, key, {why: 'Julián approved by text.'}); try { runListingFlow([]); } catch (e) {} return r.label; }
   const sg = DEAL_SIGNALS[pend.signal], me = fubFetch('me', null, 'get').id;
   const deals = fubFetch('deals?personId=' + pend.personId + '&limit=10', null, 'get').deals || [];
   const open = deals.filter(d => !/closed|lost/i.test(String(d.stageName || '')))[0] || deals[0];
@@ -3262,6 +3279,72 @@ function moveDeal(pend) {
   try { fubFetch('people/' + pend.personId, {stage: sg.contact}, 'put'); } catch (e) {}
   fubFetch('notes', {personId: pend.personId, subject: 'Deal moved', body: 'Deal moved to ' + sg.label + ' (Julián approved by text).'});
   return sg.label;
+}
+
+// ---------- Deal cards by text + automatic cards (Nov 13, Julián: "I want Shawna to be able to move deal cards") ----------
+// His own words are the approval: "Lisa is in escrow, closing Dec 20", "Dan's offer got accepted", "list Lisa's house",
+// "Lisa's listing is live", "start a buyer deal for Dan". The flow messages for the new stage start right away.
+const DEAL_STAGES = {
+  buyer_nurture: {id: 32, p: 1, label: 'Buyers › NURTURE', contact: ''}, hot_buyer: {id: 19, p: 1, label: 'Buyers › HOT BUYERS', contact: 'Active Client'},
+  buyer_offer: {id: 21, p: 1, label: 'Buyers › OFFER', contact: 'Pending'}, buyer_escrow: {id: 28, p: 1, label: 'Buyers › DUE DILIGENCE (escrow)', contact: 'Pending'},
+  buyer_loan: {id: 23, p: 1, label: 'Buyers › LOAN/APPRAISAL', contact: 'Pending'}, buyer_closed: {id: 25, p: 1, label: 'Buyers › CLOSED', contact: 'Closed'},
+  seller_followup: {id: 35, p: 2, label: 'Sellers › PERSONAL LISTINGS (follow up)', contact: ''}, construction: {id: 34, p: 2, label: 'Sellers › CONSTRUCTION', contact: ''},
+  listing_prep: {id: 20, p: 2, label: 'Sellers › LISTING PREP', contact: 'Active Client'}, active_listing: {id: 22, p: 2, label: 'Sellers › ACTIVE LISTINGS', contact: 'Active Client'},
+  seller_offer: {id: 36, p: 2, label: 'Sellers › OFFERS', contact: 'Pending'}, seller_escrow: {id: 24, p: 2, label: 'Sellers › DUE DILIGENCE (escrow)', contact: 'Pending'},
+  seller_appraisal: {id: 29, p: 2, label: 'Sellers › APPRAISAL/LOAN', contact: 'Pending'}, seller_closed: {id: 26, p: 2, label: 'Sellers › CLOSED', contact: 'Closed'},
+  gifts: {id: 30, p: 2, label: 'Sellers › CLIENT GIFTS', contact: ''}, lost: {id: 37, p: 2, label: 'Sellers › LOST', contact: ''}};
+const CONTACT_ORDER = ['lead', 'active client', 'pending', 'closed', 'past client'];
+/** Moves (or creates) the person's deal card. Returns the label. opts: {closeDate: 'YYYY-MM-DD', name, price, quiet}. */
+function setDealStage(personId, key, opts) {
+  const st = DEAL_STAGES[key]; if (!st) throw new Error('unknown stage ' + key);
+  opts = opts || {};
+  const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+  const deals = (fubFetch('deals?personId=' + personId + '&limit=20', null, 'get').deals || []).filter(d => Number(d.pipelineId) === st.p);
+  const open = deals.filter(d => !/closed|lost/i.test(String(d.stageName || '')))[0] || (key.match(/closed|lost|gifts/) ? deals[0] : null);
+  const body = {stageId: st.id};
+  if (opts.closeDate) body.projectedCloseDate = opts.closeDate;
+  if (opts.price) body.price = Number(opts.price);
+  let deal;
+  if (open) deal = fubFetch('deals/' + open.id, body, 'put');
+  else {
+    const pp = fubFetch('people/' + personId + '?fields=id,name,firstName,lastName', null, 'get'), who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name;
+    deal = fubFetch('deals', Object.assign({name: opts.name || (who + (st.p === 2 ? ' · listing' : ' · buying')), peopleIds: [personId], userIds: [me]}, body));
+  }
+  if (st.contact) { try {
+    const cur = String((fubFetch('people/' + personId + '?fields=stage', null, 'get') || {}).stage || '').toLowerCase();
+    if (CONTACT_ORDER.indexOf(cur) < CONTACT_ORDER.indexOf(st.contact.toLowerCase())) fubFetch('people/' + personId, {stage: st.contact}, 'put');
+  } catch (e) {} }
+  try { fubFetch('notes', {personId: personId, subject: 'Deal moved', body: 'Deal ' + (open ? 'moved' : 'created') + ': ' + st.label + (opts.closeDate ? ' · closing ' + opts.closeDate : '') + (opts.why ? '\n' + opts.why : '')}); } catch (e) {}
+  return {label: st.label, created: !open, deal: deal};
+}
+/** Boss action dealmove. */
+function dealMoveCommand(a, text) {
+  const raw = String(a.message || text || '');
+  if (!a.who) return 'whose deal?';
+  const p = findOne(a.who); if (!p) return 'I couldn\'t find ' + a.who + ' in Follow Up Boss.';
+  const key = String(a.stage || '').trim();
+  if (!DEAL_STAGES[key]) return 'which stage? For example: listing prep, active listing, offer, escrow, closed.';
+  const iso = String(a.when || '').match(/^\d{4}-\d{2}-\d{2}/);
+  const r = setDealStage(p.id, key, {closeDate: iso ? iso[0] : '', price: a.price, why: 'Julián by text: "' + raw.slice(0, 200) + '"'});
+  let extra = '';
+  try { const n = runListingFlow([]); if (n) extra = ' The first update for this stage is lined up; I texted you what it says.'; } catch (e) { console.log('Flow after move: ' + e.message); }
+  const escrow = /escrow|appraisal|loan/.test(key);
+  return (r.created ? 'started ' : 'moved ') + (p.name || a.who) + '\'s deal ' + (r.created ? 'in ' : 'to ') + r.label + (iso ? ', closing ' + iso[0] : '') + '. ✅' + extra +
+    (escrow && !iso ? '\n\nWhat\'s the closing date? Tell me ("' + realFirst(p) + ' closes Dec 20") and I\'ll time the walkthrough, signing and closing reminders.' : '');
+}
+/** Boss action pipeline: every open deal by stage, with days in stage. */
+function pipelineText() {
+  const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, out = [];
+  const byStage = {};
+  [1, 2].forEach(pid => (fubFetch('deals?pipelineId=' + pid + '&limit=100', null, 'get').deals || []).forEach(d => {
+    if (/closed|lost|gifts/i.test(String(d.stageName || ''))) return;
+    if (d.users && d.users.length && !d.users.some(u => Number(u.id) === Number(me))) return;
+    const k = (pid === 1 ? 'Buyers' : 'Sellers') + ' › ' + String(d.stageName || d.stageId).trim();
+    const days = d.enteredStageAt ? Math.floor((Date.now() - new Date(d.enteredStageAt).getTime()) / 864e5) : null;
+    (byStage[k] = byStage[k] || []).push('• ' + (d.name || 'deal') + (days != null ? ' (' + days + 'd)' : '') + (d.projectedCloseDate ? ' · closes ' + String(d.projectedCloseDate).slice(0, 10) : ''));
+  }));
+  Object.keys(byStage).forEach(k => out.push(k + '\n' + byStage[k].join('\n')));
+  return out.length ? '📋 Your deals right now:\n\n' + out.join('\n\n') : 'You don\'t have any open deal cards right now.';
 }
 
 /** 8am every day: Shawna texts Julián his day (calendar, numbered to-dos, what's waiting) plus hot leads who opened or
@@ -4149,7 +4232,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"freevegas|clientpage|dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"dealmove|pipeline|freevegas|clientpage|dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "stage":"for dealmove only: the stage key", "price":"for dealmove: price if he said one, else empty", "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -4166,6 +4249,8 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- dealmove: he tells you a client's deal moved or should start ("Lisa is in escrow", "Dan's offer got accepted", "list Lisa's house", "Lisa's listing is live", "start a buyer deal for Dan", "Lisa closed", "Dan's offer fell through"). "who" = the client, "message" = his words, "when" = the closing date if he gave one (YYYY-MM-DD), "price" = price if he gave one, and "stage" = exactly one of: buyer_nurture, hot_buyer (actively looking / signed with him), buyer_offer, buyer_escrow (buyer under contract / in escrow / offer accepted), buyer_loan, buyer_closed, seller_followup (maybe listing later), construction, listing_prep (taking the listing / getting it ready), active_listing (live on MLS), seller_offer (offer on the listing), seller_escrow (listing under contract / in escrow), seller_appraisal, seller_closed, gifts, lost (listing expired or withdrawn). A buyer's deal that fell through goes back to hot_buyer; a seller's escrow that fell through goes back to active_listing. Buyer vs seller: selling their home / their listing = seller stages; buying = buyer stages.
+- pipeline: he wants to see where his deals or clients stand ("where are my deals", "show my pipeline", "who's in escrow").
 - freevegas: he gives a free thing to do in Las Vegas for his Free in Vegas list ("add to free in vegas: Bellagio holiday display, through Jan 5"). "message" = the thing, where, when and any link, in his words.
 - clientpage: a client's private page on juliancrider.com: make or send someone's page, add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
@@ -4471,6 +4556,8 @@ Examples (all mean the same as the action shown):
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
     }
+    if (a.action === 'dealmove') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(dealMoveCommand(a, text)); }
+    if (a.action === 'pipeline') return say(pipelineText());
     if (a.action === 'holdauto') return say(holdAuto(a.message || text));
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }

@@ -2231,7 +2231,7 @@ function showingFlow(prefill){
       if (signed) { $('sheetBody').innerHTML = doneHTML('Thank you','Since you have a signed agreement with another agent, they should schedule this tour for you. Julián is happy to answer questions anytime.'); return; }
       if (!st.slot) { $('sheetBody').innerHTML = doneHTML('Request sent', 'Julián will reach out to set the day and time' + (prop ? '' : ' and line up the homes worth seeing') + '. The buyer agreement is in your email to look over.'); return; }
       $('sheetBody').innerHTML = `<p class="fine">Booking…</p>`;
-      fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'book', slot: st.slot, kind:'showing', property: prop || 'Home to be chosen with Julián', ...contactVals(), notes: 'Showing request: ' + (prop || 'home to be chosen')})})
+      fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'book', slot: st.slot, kind:'showing', property: prop || 'Home to be chosen with Julián', ...contactVals(), notes: 'Showing request: ' + (prop || 'home to be chosen') + ' | Pre-approved: ' + (chipVal(sheet,'spre') || '')})})
         .then(r => r.json()).then(res => {
           if (res.status === 'taken') return times(res.message || 'That time was just taken. Please pick another.');
           $('sheetBody').innerHTML = res.status === 'success'
@@ -2410,7 +2410,7 @@ function bookFlow(preset){
           'Working with agent: '+(st.ag==='Yes, signed with one'?'Yes, with a signed agreement':(st.ag||'')), 'Note: '+$('fNote').value.trim()])});
       if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
       const video = /Video/.test(st.how||'');
-      pickTime({...contactVals(), kind: video ? 'video' : 'phone', minutes: video && /45/.test(st.len||'') ? 45 : 30, type: st.type, notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl].filter(Boolean).join(' · ')}); };
+      pickTime({...contactVals(), kind: video ? 'video' : 'phone', minutes: video && /45/.test(st.len||'') ? 45 : 30, type: st.type, notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl, st.pa && 'Pre-approved: ' + st.pa].filter(Boolean).join(' · ')}); };
   }
   s1();
 }

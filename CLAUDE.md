@@ -540,6 +540,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Still asked first: his own one-off requests (texts/emails he dictates), email replies, deal moves, TC/title emails,
   calendar events, voice memos.
 
+- Deal cards (Nov 13): boss action `dealmove` ("Lisa is in escrow, closing Dec 20", "list Lisa's house", "Dan's offer got
+  accepted"; router picks a DEAL_STAGES key) → `setDealStage` (moves the open card in that pipeline or creates one, sets
+  projectedCloseDate/price, contact stage forward only, FUB note) → runListingFlow right away. His words are the approval.
+  Boss action `pipeline` → `pipelineText` (open deals by stage, days in stage, closing date). moveDeal (suggestDeal YES) uses
+  setDealStage too. Automatic cards: bookSlot kind listing → Sellers 35 "PERSONAL LISTINGS (follow up)"; a pre-approved/cash
+  buyer booking a consult or showing → Buyers 32 NURTURE (no flow messages in those stages). Client pages start themselves
+  at lb-0 (HOT BUYERS) / lp-0 / la-0 (link added to that first message). Julián's views: FUB Deals board + smart lists
+  (Hot leads = tag Tier A, Active clients = stage Active Client, In escrow = stage Pending, Past clients); no separate dashboard.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
