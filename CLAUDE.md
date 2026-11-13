@@ -482,6 +482,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   waiting, a text sent in 14 days, a reply in 14 days (BB_TASK_ date) or TEXT_LOG in 14 days. Daily batch ≤15 → Text Queue
   status "review" step t21-YYYYMMDD + one approval (pending kind 'holiday', label "21-day check-in") → YES sends at 11am;
   unapproved batches become "not approved" the next morning. T21_RUN = once per day.
+- Free in Vegas (Nov 13): juliancrider.com/?free (`freePage`: FREE_SPOTS long-running free spots + "New picks" from GET
+  ?action=free + sign-up → Website Leads type "Free in Vegas" → tags Free in Vegas, Text OK, Bday <Month>; welcome text
+  OPEN_HOUSE_TEXTS.free). Card on the Relocate tab. Texting FREE: FUB contacts get tags + reply; unknown numbers get the
+  sign-up link (no nameless contacts). Julián adds picks by texting "free: …" (boss action `freevegas` → "Free in Vegas"
+  tab, Verified Y). `runFreeVegas` (daily hook): Thursdays up to 3 verified unsent picks → one text per subscriber as
+  "review" + one approval (noon); 1st of month → "Happy birthday month" for tag Bday <Month>, same approval.
+  Never list a pick nobody checked (Julián's rule: verified only).
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
@@ -516,6 +523,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Messaging style: Chris Voss (labels, no-oriented questions, calibrated how/what questions).
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
+
+## Later, when Julián starts paying for tools (Nov 13)
+ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
+juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
+He's not renaming the Buyers stages for now.
 
 ## Open to-dos (as of Oct 2026)
 1. Templates loaded: Hot/Warm/Legacy 1–4 (141–152), JC Nurture 01–24, JC Farm Best 1–4. Julián builds the JC
