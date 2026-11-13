@@ -565,6 +565,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Julián's plan: run it with real clients 1-2 months, keep what works. The 12 old FUB smart lists (2024 defaults) are
   shared with the team: leave them; he adds his own.
 
+- Wrong-person guard (Nov 13: his "Rewrite the email" for Emilee Durrant 304 was re-routed to Deborah Faustina 1475, a farm
+  contact, and sent after his YES; subject "Re: Your comp report for 6522 Castalnova Bend"): an email action while an email
+  approval is waiting keeps the SAME person/email/thread and only swaps the text unless he names someone new;
+  `greetMismatch(body, person)` ("Hi Emilee" to a non-Emilee) blocks the draft (email + text) and again at YES before sending.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
