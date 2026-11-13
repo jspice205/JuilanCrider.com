@@ -158,11 +158,7 @@ function doPost(e) {
   }
 }
 
-<<<<<<< HEAD
 const CODE_VERSION = '2026-11-13-clientpages';  // bump when a change must be confirmed live (GET ?action=version)
-=======
-const CODE_VERSION = '2026-11-13-sell';  // bump when a change must be confirmed live (GET ?action=version)
->>>>>>> origin/main
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
