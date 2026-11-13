@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-dealparties';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-playbook';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1289,6 +1289,27 @@ function draftPartyHeadsUp(p, who, d, event) {
   });
 }
 
+// Listing playbook (Nov 13, from Julián's Listing Checklist + Selling Process, old team/brand removed): when a card first
+// enters Listing Prep, these become Follow Up Boss tasks for Julián, due over the first week (day = days after).
+const LISTING_PLAYBOOK = [
+  {day: 0, name: 'Listing paperwork: listing agreement, Duties Owed (sent by Shawna), SRPD, Consent to Act if needed, wire fraud, CIC/HOA request'},
+  {day: 0, name: 'Order prelim / lien summary from title and pull the tax record'},
+  {day: 1, name: 'Walk through staging and repairs with the seller (Shawna sent the prep list)'},
+  {day: 2, name: 'Book photos (and video or drone if it fits the home)'},
+  {day: 3, name: 'Order sign and lockbox; home warranty if offered'},
+  {day: 4, name: 'Write the property description and pick the photo selects'},
+  {day: 5, name: 'Enter in MLS (draft or Coming Soon); check Zillow and Realtor.com once live'},
+  {day: 6, name: 'Just-listed marketing: Instagram reel + story, email to sphere, neighbor note, listing page on juliancrider.com'},
+  {day: 7, name: 'Set the first open house and the showing instructions'}];
+function createListingTasks(personId, dealName) {
+  const props = PropertiesService.getScriptProperties(), k = 'LPLAY_' + personId + '_' + String(dealName || '').slice(0, 20);
+  if (props.getProperty(k)) return; props.setProperty(k, '1');
+  LISTING_PLAYBOOK.forEach(t => { try {
+    fubFetch('tasks', {personId: personId, assignedUserId: 2, name: t.name + (dealName ? ' (' + dealName + ')' : ''), type: 'Follow Up',
+      dueDate: Utilities.formatDate(new Date(Date.now() + t.day * 864e5), 'America/Los_Angeles', 'yyyy-MM-dd')});
+  } catch (e) {} });
+}
+
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
 /** Daily (after scoring): for each Sellers card in Listing Prep / Active / Offers / escrow, drafts the next due message
  *  for Julián's OK (approvals queue + a text to him). Nothing reaches the client until he says yes. */
@@ -1303,8 +1324,10 @@ function runListingFlow(people) {
   deals.forEach(d => {
     const stage = LISTING_FLOW.stages[Number(d.stageId)];
     let st = state[d.id];
-    if (!st || st.stage !== stage) st = state[d.id] = {stage: stage, since: d.enteredStageAt ? new Date(d.enteredStageAt).getTime() : now, done: []};
-    const pid = ((d.people || [])[0] || {}).id; if (!pid || drafted >= LISTING_FLOW.perDay) return;
+    const fresh = !st || st.stage !== stage;
+    if (fresh) st = state[d.id] = {stage: stage, since: d.enteredStageAt ? new Date(d.enteredStageAt).getTime() : now, done: []};
+    const pid = ((d.people || [])[0] || {}).id;
+    if (fresh && stage === 'prep' && pid) { try { createListingTasks(pid, d.name); } catch (e) {} } if (!pid || drafted >= LISTING_FLOW.perDay) return;
     const p = byId[pid] || fubFetch('people/' + pid + '?fields=id,name,firstName,lastName,tags,emails,phones,assignedUserId', null, 'get');
     const tags = p.tags || [];
     if (['Pause', 'Do Not Email', 'Unsubscribed', 'Deceased'].some(t => tags.indexOf(t) >= 0)) return;
