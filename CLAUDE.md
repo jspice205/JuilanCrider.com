@@ -569,6 +569,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   contact, and sent after his YES; subject "Re: Your comp report for 6522 Castalnova Bend"): an email action while an email
   approval is waiting keeps the SAME person/email/thread and only swaps the text unless he names someone new;
   `greetMismatch(body, person)` ("Hi Emilee" to a non-Emilee) blocks the draft (email + text) and again at YES before sending.
+  Follow-up (Nov 13, "Hi Susan" draft resolved to Deborah again via LAST_PERSON): doAction only fills a missing "who" from
+  LAST_PERSON when the draft's greeting matches that person; otherwise the greeted name becomes "who". On a mismatch the
+  email/text action looks up the greeted name and switches to that person (one match), asks which (several), or asks for
+  the full name (none).
 
 - Channel line (Nov 13, Julián: "have her say text or email"): every approval / heads-up names how it goes out:
   `viaText(phone)` "📱 TEXT (iMessage/SMS) from your business line 702-498-2571 to 702-…" or `viaEmail(addr, thread)`

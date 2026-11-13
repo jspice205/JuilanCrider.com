@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-lastword';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-greetwho';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4455,8 +4455,12 @@ Examples (all mean the same as the action shown):
   const doAction = a => {
     // "email him", "text her back", or no name at all right after talking about someone: that person (Nov 12).
     const lpp = JSON.parse(props.getProperty('LAST_PERSON') || 'null');
-    if (lpp && Date.now() - lpp.at < 3 * 36e5 && (/^(him|her|them|they|he|she|that person|same person)$/i.test(String(a.who || '').trim()) ||
+    const gN = greetName(a.message || '');  // "Hi Susan," in the draft names who it's for (Nov 13: drafts kept going to Deborah)
+    const lpMatchesGreet = !gN || /^(there|all|team|everyone|guys)$/i.test(gN) || String((lpp && lpp.name) || '').toLowerCase().indexOf(gN.toLowerCase().slice(0, 3)) === 0;
+    if (lpp && Date.now() - lpp.at < 3 * 36e5 && lpMatchesGreet && (/^(him|her|them|they|he|she|that person|same person)$/i.test(String(a.who || '').trim()) ||
         (!a.who && !a.phone && /^(email|text|voicememo|note|task|tag|lookup|read|taskdone)$/.test(a.action || '')))) { a.who = lpp.name; a.personId = lpp.id; }
+    else if (gN && !/^(there|all|team|everyone|guys)$/i.test(gN) && /^(email|text)$/.test(a.action || '') &&
+        (!a.who || /^(him|her|them|they|he|she)$/i.test(String(a.who).trim()))) { a.who = gN; delete a.personId; }
     const askWhich = many => {
       const opts = many.slice(0, 5).map(x => ({id: x.id, name: x.name}));
       props.setProperty('PICK_WAIT', JSON.stringify({a: a, opts: opts, at: Date.now()}));
@@ -4558,8 +4562,14 @@ Examples (all mean the same as the action shown):
           return say('email ' + pend0.who + '?\n' + viaEmail(pend0.email, pend0.threadId) + '\n\nSubject: ' + pend0.subject + '\n\n' + body0);
         }
       }
-      const {p} = resolvePerson();
+      let {p} = resolvePerson();
       if (!p || p.many) return p && p.many ? askWhich(p.many) : say('who should I email?');
+      if (greetMismatch(a.message, p)) {  // the draft greets someone else: that someone is who it's for
+        const alt = findOne(greetName(a.message));
+        if (alt && alt.many) return askWhich(alt.many);
+        if (!alt) return say('this email says "Hi ' + greetName(a.message) + '" but I can\'t find ' + greetName(a.message) + ' in Follow Up Boss. What\'s their full name or email? I didn\'t send anything.');
+        p = alt; a.email = '';
+      }
       let email = a.email;
       if (!email) { const full = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); email = ((full.emails || []).filter(e => !/invalid|bounced/i.test(e.status || ''))[0] || {}).value; }
       if (!email) return say((p.name || a.who) + ' has no email yet. Send me their email and I\'ll write it.');
@@ -4574,7 +4584,7 @@ Examples (all mean the same as the action shown):
         const pick = msgs.find(m => v5 || (!m.fromMe && !msgs.some(o => o.threadId === m.threadId && o.fromMe && o.date > m.date)));
         if (pick) { threadId = pick.threadId; subject = /^re:/i.test(pick.subject) ? pick.subject : 'Re: ' + pick.subject; }
       } catch (e) {}
-      if (greetMismatch(body, p)) return say('hold on: this email says "Hi ' + greetName(body) + '" but ' + (p.name || a.who) + ' is who I found. Who should get it? I didn\'t send anything.');
+      if (greetMismatch(body, p)) return say('this email says "Hi ' + greetName(body) + '" but it would go to ' + (p.name || a.who) + '. What\'s the full name of who should get it? I didn\'t send anything.');
       addPending({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()});
       return say('email ' + (p.name || a.who) + '?\n' + viaEmail(email, threadId) + '\n\nSubject: ' + subject + '\n\n' + body);
     }
@@ -4603,7 +4613,7 @@ Examples (all mean the same as the action shown):
       }
       const tags = p.tags || [];
       if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
-      const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+      let phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
       if (!phone) return say(p.name + ' has no mobile number yet. Send me their number and I\'ll text them.');
       const wm = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
       let sendAt = wm ? Utilities.parseDate(wm[1] + ' ' + wm[2], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm').getTime() : 0;
@@ -4617,7 +4627,15 @@ Examples (all mean the same as the action shown):
         try { a.message = draftThreadReply(p, phone, a.draft ? String(a.message || '') : ''); } catch (e) {}
         if (!a.message) return say('I couldn\'t write that one just now. Tell me what to say and I\'ll send it.');
       }
-      if (greetMismatch(a.message, p)) return say('hold on: this text says "Hey ' + greetName(a.message) + '" but it would go to ' + p.name + '. Who should get it? I didn\'t send anything.');
+      if (greetMismatch(a.message, p)) {
+        const alt = findOne(greetName(a.message));
+        if (alt && alt.many) return askWhich(alt.many);
+        if (!alt || greetMismatch(a.message, alt)) return say('this text says "Hey ' + greetName(a.message) + '" but it would go to ' + p.name + '. What\'s the full name of who should get it? I didn\'t send anything.');
+        const altPhone = (alt.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
+        if (!altPhone) return say(alt.name + ' has no mobile number yet. Send me their number and I\'ll text them.');
+        if ((alt.tags || []).indexOf('Text Opt-Out') >= 0) return say(alt.name + ' opted out of texts, so I can\'t text them.');
+        p = alt; phone = altPhone;
+      }
       const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
       return say(name + ': ' + (sendAt ? 'schedule this text for ' + p.name + ' on ' + whenTxt : 'text ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n' + viaText(phone) + '\n\n"' + a.message + '"' + (yesHint(n) ? '\n' + yesHint(n) : ''));
     }
