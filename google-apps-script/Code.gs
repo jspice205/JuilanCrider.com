@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-clientpages';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-t21';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1009,6 +1009,7 @@ function scoreFubDatabase() {
     try { findDuplicates(people); } catch (err) { console.error('Duplicates: ' + err); }
     try { runPastClientLoop(people); } catch (err) { console.error('Closed client loop: ' + err); }
     try { runListingFlow(people); } catch (err) { console.error('Listing flow: ' + err); }
+    try { runTouch21(); } catch (err) { console.error('21-day texts: ' + err); }
   }
   console.log(`Scored ${rows.length} people: ` + TIER_ORDER.filter(t => counts[t]).map(t => `${t} ${counts[t]}`).join(', '));
   return {rows, counts};
@@ -1466,6 +1467,87 @@ function createEscrowTasks(d, personId, side, sinceTs, closeTs) {
   if (closeTs && (props.getProperty(key) || '').indexOf('c') < 0) {
     make(ESCROW_TASKS[side].filter(t => t.c != null)); props.setProperty(key, (props.getProperty(key) || '') + 'c');
   }
+}
+
+// ---------- Every-21-days check-in texts (Nov 13, from his "text every 21 days" boards) ----------
+// For Julián's own contacts who said yes to texts (tag Text OK) and aren't in a deal, a past client (they have their
+// own loop), an agent, opted out or not interested: one short human text every 21 days, rotating through TOUCH21
+// (homeowner wording for Likely Seller / neighbors). Skips anyone texted or texting in the last 14 days, or with other
+// texts waiting in the Text Queue. Each morning the day's batch (max 15) goes to the Text Queue as "review" and Julián
+// gets ONE approval; his yes sends them at 11am. Batches he doesn't approve expire and those people come up again later.
+const TOUCH21 = {
+  live: true, perDay: 15, every: 21, quietDays: 14,
+  general: [
+    "Hey {first}, Julián here 👋🏾 Quick one. Is a move still on the radar for you, or has that changed?",
+    "Hey {first}, saw a few homes come up that made me think of you. Would you be against me sending 2 or 3 over?",
+    "Hey {first}, quick question. Are you still looking in the same area, or has the wish list changed?",
+    "Hey {first}, no real estate today. Hope the week is treating you well 🙏🏾",
+    "Hey {first}, Julián here. What would have to be true for this to feel like the right time to make a move?",
+    "Hey {first}, rates move every week. Would it be a bad idea to send you what today's numbers look like for a payment you're comfortable with?",
+    "Hey {first}, would it be crazy to grab 15 minutes and map out a plan, even if the move is a ways out? juliancrider.com/?book",
+    "Hey {first}, if someone you know is thinking about a move, would you be against passing my number along? I'll take good care of them."],
+  homeowner: [
+    "Hey {first}, Julián here 🏡 Would it be crazy if I ran a fresh number on what your home is worth today? Takes me 10 minutes, no visit needed.",
+    "Hey {first}, homes near you have been moving. Would you be against me sending a quick look at what sold nearby?",
+    "Hey {first}, no real estate today. How's the house treating you?",
+    "Hey {first}, quick one. Is selling anywhere on the radar in the next year, or not at all?",
+    "Hey {first}, ever wonder what you'd walk away with if you sold? This takes a minute: juliancrider.com/?net",
+    "Hey {first}, if anyone you know is thinking about selling, would it be a bad idea to pass my number along?"]};
+function runTouch21() {
+  if (!TOUCH21.live) return 0;
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = Date.now();
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), step = 't21-' + today.replace(/-/g, '');
+  if (props.getProperty('T21_RUN') === today) return 0;
+  props.setProperty('T21_RUN', today);
+  const sh = ensureTab(getSS(), TEXT_QUEUE_TAB), last = sh.getLastRow();
+  const rows = last > 1 ? sh.getRange(2, 1, last - 1, TEXT_QUEUE_TAB.headers.length).getValues() : [];
+  const lastSent = {}, sentCount = {}, busy = {};
+  rows.forEach((r, i) => {
+    const [due, id, , st, status, , sent] = r, k = String(id);
+    if (/^t21-/.test(st) && status === 'review' && st !== step) { sh.getRange(i + 2, 5).setValue('not approved'); return; }  // yesterday's batch he didn't OK
+    if (/^t21-/.test(st) && status === 'sent') sentCount[k] = (sentCount[k] || 0) + 1;
+    const t = sent instanceof Date ? sent.getTime() : 0;
+    if (status === 'sent' && t) lastSent[k] = Math.max(lastSent[k] || 0, t);
+    if (/^t21-/.test(st) && status === 'sent' && t) lastSent['t21_' + k] = Math.max(lastSent['t21_' + k] || 0, t);
+    if (status === 'pending' || status === 'review') busy[k] = 1;  // other texts already lined up for them
+  });
+  const recentLog = {}; try { JSON.parse(props.getProperty('TEXT_LOG') || '[]').forEach(x => { if (now - x.at < TOUCH21.quietDays * 864e5) recentLog[String(x.phone || '').replace(/\D/g, '').slice(-10)] = 1; }); } catch (e) {}
+  const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+  const list = [];
+  for (let off = 0; off < 2000; off += 100) {
+    const page = fubFetch('people?limit=100&offset=' + off + '&tags=' + encodeURIComponent('Text OK') + '&fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones,created', null, 'get').people || [];
+    list.push(...page); if (page.length < 100) break;
+  }
+  const NO_TAGS = /^(text opt-out|unsubscribed|not interested|deceased|pause|has agent|no shawna|agent|partner|referral partner|past client|vip|not dnc checked|do not contact|bounced elsewhere|bought elsewhere)$/i;
+  const due = list.filter(p => {
+    const k = String(p.id), tags = p.tags || [];
+    if (p.assignedUserId && p.assignedUserId !== me) return false;
+    if (tags.some(t => NO_TAGS.test(t)) || isTestPerson(p) || !realFirst(p)) return false;
+    if (/trash|active client|pending|under contract|closed|past client/i.test(String(p.stage || ''))) return false;
+    const replied = props.getProperty('BB_TASK_' + p.id);  // date they last texted in
+    if (busy[k] || (replied && now - new Date(replied + 'T12:00:00').getTime() < TOUCH21.quietDays * 864e5)) return false;
+    if (now - new Date(p.created || 0).getTime() < TOUCH21.every * 864e5) return false;  // brand new: their welcome texts handle it
+    if (lastSent[k] && now - lastSent[k] < TOUCH21.quietDays * 864e5) return false;
+    if (lastSent['t21_' + k] && now - lastSent['t21_' + k] < TOUCH21.every * 864e5) return false;
+    const ph = String(((p.phones || [])[0] || {}).value || '').replace(/\D/g, '').slice(-10);
+    if (!ph || recentLog[ph] || isOwnNumber(ph)) return false;
+    return true;
+  }).sort((a, b) => (lastSent['t21_' + a.id] || 0) - (lastSent['t21_' + b.id] || 0)).slice(0, TOUCH21.perDay);
+  if (!due.length) return 0;
+  const at = Utilities.parseDate(today + ' 11:00', tz, 'yyyy-MM-dd HH:mm');
+  const sendAt = at.getTime() > now ? at : new Date(now + 30 * 6e4);
+  let sample = '';
+  due.forEach(p => {
+    const home = (p.tags || []).some(t => /likely seller|open house neighbor|farm/i.test(t)), pool = home ? TOUCH21.homeowner : TOUCH21.general;
+    const msg = pool[(sentCount[String(p.id)] || 0) % pool.length].replace(/\{first\}/g, realFirst(p));
+    if (!sample) sample = msg;
+    sh.appendRow([sendAt, p.id, cell(p.name || realFirst(p)), step, 'review', 0, '', cell(msg)]);
+  });
+  const when = at.getTime() > now ? 'today at 11am' : 'in about 30 minutes';
+  const n = addPending({kind: 'holiday', step: step, label: '21-day check-in', count: due.length, when: when, at: now});
+  bossTextSafe('💬 Your 21-day check-ins: ' + due.length + ' ' + (due.length === 1 ? 'person' : 'people') + ' today (' +
+    due.slice(0, 4).map(p => realFirst(p)).join(', ') + (due.length > 4 ? '…' : '') + '). Like:\n\n"' + sample + '"\n\nWant me to send them ' + when + '? ' + yesHint(n));
+  return due.length;
 }
 
 // ---------- VIP / sphere holiday texts (Nov 13, from Julián's VIP board) ----------
@@ -5421,7 +5503,7 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       const res = step === 'scheduled' || step === 'call-thanks' ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }

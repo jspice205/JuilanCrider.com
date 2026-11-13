@@ -476,6 +476,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   house: …", "market update for Lisa: …", "note for Dan: …", "send Dan his page" (approval; text if Text OK else bcolv
   email). Buyers tap Love/Pass/Tour (+ optional note) → POST clientReact → Reaction cell, FUB note, notifyJulian. Weekly
   listing (la-w) and buyer (lb-w) flow texts add the page link when one exists.
+- 21-day check-ins (Nov 13, `runTouch21` after runListingFlow; TOUCH21): his Text OK contacts (not agents/partners/past
+  clients/VIP/in a deal/opted out/not interested/Has Agent/Not DNC checked/test; not new in the last 21 days) get one text
+  every 21 days, rotating TOUCH21.general or .homeowner (Likely Seller/neighbor/farm). Skips anyone with Text Queue rows
+  waiting, a text sent in 14 days, a reply in 14 days (BB_TASK_ date) or TEXT_LOG in 14 days. Daily batch ≤15 → Text Queue
+  status "review" step t21-YYYYMMDD + one approval (pending kind 'holiday', label "21-day check-in") → YES sends at 11am;
+  unapproved batches become "not approved" the next morning. T21_RUN = once per day.
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
