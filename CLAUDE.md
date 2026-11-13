@@ -458,6 +458,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   `Duties Owed signed`, notifyJulian. Deal parties: boss action `dealparty` ("TC for Lisa's deal is …", "title for Lisa
   is …", "default TC is …") → DEAL_PARTIES_<personId> / DEAL_TC_DEFAULT + FUB note; at escrow day 0 draftPartyHeadsUp
   drafts emails to TC/title for approval (or asks Julián who they are).
+- Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
+  FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
+  warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
   POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
   task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`
