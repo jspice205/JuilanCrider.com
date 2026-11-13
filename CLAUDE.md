@@ -570,6 +570,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   approval is waiting keeps the SAME person/email/thread and only swaps the text unless he names someone new;
   `greetMismatch(body, person)` ("Hi Emilee" to a non-Emilee) blocks the draft (email + text) and again at YES before sending.
 
+- Channel line (Nov 13, Julián: "have her say text or email"): every approval / heads-up names how it goes out:
+  `viaText(phone)` "📱 TEXT (iMessage/SMS) from your business line 702-498-2571 to 702-…" or `viaEmail(addr, thread)`
+  "✉️ EMAIL from julianc@bcolv.com to …" (+ "reply in their email thread"); voice memos "🎙️ VOICE MEMO by text…";
+  pendingLabel shows the number/address. Use these helpers in any new approval message.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

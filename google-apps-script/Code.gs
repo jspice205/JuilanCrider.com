@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-rightperson';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-channel';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1390,7 +1390,7 @@ function clientPageCommand(a, text) {
     if (!textOk && !email) return 'here\'s ' + who + '\'s page: ' + url + '\n\nI don\'t have a way to reach them (no Text OK and no email), so send it yourself.';
     const n = textOk ? addPending({personId: p.id, who: who, phone: phone, message: msg, at: Date.now()})
       : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: isSeller ? 'Your home page' : 'Homes I picked for you', message: msg, at: Date.now()});
-    return 'here\'s the ' + (textOk ? 'text' : 'email') + ':\n\n"' + msg + '"\n\nWant me to send it? ' + yesHint(n);
+    return 'here\'s the ' + (textOk ? 'text' : 'email') + ':\n' + (textOk ? viaText(phone) : viaEmail(email)) + '\n\n"' + msg + '"\n\nWant me to send it? ' + yesHint(n);
   }
   return (pg.isNew ? 'made ' : 'here\'s ') + who + '\'s ' + (isSeller ? 'seller' : 'buyer') + ' page: ' + url + (isSeller
     ? '\n\nText me showing feedback or a market update for them and I\'ll put it on.' : '\n\nSend me listing links for them and I\'ll put the homes on it.');
@@ -1419,7 +1419,7 @@ function draftPartyHeadsUp(p, who, d, event) {
     const body = 'Hi ' + first + ',\n\nQuick heads up: ' + who + (d && d.name ? ' (' + d.name + ')' : '') + ' ' + event + '. ' +
       (k === 'tc' ? 'Could you send me the timeline with every contingency date when you have it?' : 'Could you confirm you have the file open and send the wiring instructions to the client by phone confirmation only?') + '\n\nThank you,\nJulián';
     const n = addPending({kind: 'email', personId: p.id, who: x.name || k, email: x.email, subject: who + ': ' + event, message: body, at: Date.now()});
-    bossTextSafe('📂 Heads up for ' + (k === 'tc' ? 'your TC ' : 'title ') + (x.name || '') + ' on ' + who + ':\n\n"' + body + '"\n\nWant me to send it? ' + yesHint(n));
+    bossTextSafe('📂 Heads up for ' + (k === 'tc' ? 'your TC ' : 'title ') + (x.name || '') + ' on ' + who + ':\n' + viaEmail(x.email) + '\n\n"' + body + '"\n\nWant me to send it? ' + yesHint(n));
   });
 }
 
@@ -1821,7 +1821,7 @@ function runListingFlow(people) {
       const lbl = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age, lost: 'off market, day ' + age,
         buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage];
       if ((stage === 'escrow' || stage === 'bescrow') && due.day === 0) { try { draftPartyHeadsUp(p, who, d, 'opened escrow'); } catch (e) {} }
-      bossTextSafe('🏡 ' + who + ' (' + lbl + '). This ' + (textOk ? 'text' : 'email') + ' goes out at ' + Utilities.formatDate(at, 'America/Los_Angeles', 'h:mm a') + ':\n\n"' + msg + '"\n\nSay "hold ' + realFirst(p) + '" to stop it.');
+      bossTextSafe('🏡 ' + who + ' (' + lbl + '). This ' + (textOk ? 'text' : 'email') + ' goes out at ' + Utilities.formatDate(at, 'America/Los_Angeles', 'h:mm a') + ':\n' + (textOk ? viaText(phone) : viaEmail(email)) + '\n\n"' + msg + '"\n\nSay "hold ' + realFirst(p) + '" to stop it.');
       sheet.appendRow([d.id, who, stage, new Date(st.since), st.done.join(','), new Date()]);
       return;
     }
@@ -1831,7 +1831,7 @@ function runListingFlow(people) {
       buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage] +
       (due.close != null && toClose != null ? ', ' + toClose + ' day' + (toClose === 1 ? '' : 's') + ' to closing' : '');
     if ((stage === 'escrow' || stage === 'bescrow') && due.day === 0) { try { draftPartyHeadsUp(p, who, d, 'opened escrow'); } catch (e) {} }
-    bossTextSafe('🏡 ' + who + ' (' + label + '). Here\'s the ' + (textOk ? 'text' : 'email') + ' I\'d send:\n\n"' + msg + '"\n\n' +
+    bossTextSafe('🏡 ' + who + ' (' + label + '). Here\'s the ' + (textOk ? 'text' : 'email') + ' I\'d send:\n' + (textOk ? viaText(phone) : viaEmail(email)) + '\n\n"' + msg + '"\n\n' +
       'Want me to send it? ' + yesHint(n));
     sheet.appendRow([d.id, who, stage, new Date(st.since), st.done.join(','), new Date()]);
   });
@@ -3247,8 +3247,8 @@ function addPending(item) {
 }
 function pendingLabel(x) {
   if (!x.who || /^(undefined|unknown|null)$/i.test(String(x.who))) x = Object.assign({}, x, {who: x.phone ? String(x.phone).replace(/^\+1/, '') : 'someone'});
-  return x.kind === 'email' ? 'email reply to ' + x.who : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
-    : x.kind === 'holiday' ? x.label + ' texts to ' + x.count + ' people' : x.kind === 'freepicks' ? x.count + ' ' + x.label : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite to ' + x.who : 'text to ' + x.who;
+  return x.kind === 'email' ? 'email to ' + x.who + (x.email ? ' (' + x.email + ')' : '') : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
+    : x.kind === 'holiday' ? x.label + ' texts to ' + x.count + ' people' : x.kind === 'freepicks' ? x.count + ' ' + x.label : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite (by text) to ' + x.who : 'text to ' + x.who + (x.phone ? ' (' + prettyPhone(x.phone) + ')' : '');
 }
 // No reply instructions in her texts (Julián, Nov 12: "this isn't 2020"): she asks like a person; "yes", "send it", "go" work.
 // With several approvals waiting, just the number so "yes to 2" is possible.
@@ -3294,6 +3294,11 @@ function moveDeal(pend) {
   fubFetch('notes', {personId: pend.personId, subject: 'Deal moved', body: 'Deal moved to ' + sg.label + ' (Julián approved by text).'});
   return sg.label;
 }
+
+// ---------- How it goes out (Nov 13, Julián: "have her say text or email so I know what's happening") ----------
+function prettyPhone(ph) { const d = String(ph || '').replace(/\D/g, '').slice(-10); return d.length === 10 ? d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6) : String(ph || ''); }
+function viaText(ph) { return '📱 TEXT (iMessage/SMS) from your business line 702-498-2571 to ' + prettyPhone(ph); }
+function viaEmail(addr, thread) { return '✉️ EMAIL from julianc@bcolv.com to ' + addr + (thread ? ' (reply in their email thread)' : ''); }
 
 // ---------- Wrong-person guard (Nov 13: "Rewrite the email" to Emilee went to Deborah Faustina) ----------
 /** The name a draft greets ("Hi Emilee," / "Hey Lisa") or ''. */
@@ -4541,7 +4546,7 @@ Examples (all mean the same as the action shown):
         if (!namedNew) {
           const body0 = humanize(a.message);
           addPending({kind: 'email', personId: pend0.personId, who: pend0.who, email: pend0.email, subject: pend0.subject, message: body0, threadId: pend0.threadId || '', at: Date.now()});
-          return say((pend0.threadId ? 'reply to ' + pend0.who + '\'s email' : 'send this email to ' + pend0.who) + ' (' + pend0.email + ')?\n\nSubject: ' + pend0.subject + '\n\n' + body0);
+          return say('email ' + pend0.who + '?\n' + viaEmail(pend0.email, pend0.threadId) + '\n\nSubject: ' + pend0.subject + '\n\n' + body0);
         }
       }
       const {p} = resolvePerson();
@@ -4562,7 +4567,7 @@ Examples (all mean the same as the action shown):
       } catch (e) {}
       if (greetMismatch(body, p)) return say('hold on: this email says "Hi ' + greetName(body) + '" but ' + (p.name || a.who) + ' is who I found. Who should get it? I didn\'t send anything.');
       addPending({kind: 'email', personId: p.id, who: p.name || a.who, email: email, subject: subject, message: body, threadId: threadId, at: Date.now()});
-      return say((threadId ? 'reply to ' + (p.name || a.who) + '\'s email' : 'send this email to ' + (p.name || a.who)) + ' (' + email + ')?\n\nSubject: ' + subject + '\n\n' + body);
+      return say('email ' + (p.name || a.who) + '?\n' + viaEmail(email, threadId) + '\n\nSubject: ' + subject + '\n\n' + body);
     }
     if (a.action === 'voicememo') {
       if (!props.getProperty('ELEVENLABS_API_KEY') || !props.getProperty('ELEVENLABS_VOICE_ID')) return say('voice memos aren\'t connected yet. Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID (Claude has the steps).');
@@ -4571,7 +4576,7 @@ Examples (all mean the same as the action shown):
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
       if (!phone) return say((p.name || a.who) + ' has no mobile number yet. Send me their number.');
       addPending({kind: 'voice', personId: p.id, who: p.name || a.who, phone: phone, message: humanize(a.message), at: Date.now()});
-      return say('send ' + (p.name || a.who) + ' a voice memo saying:\n\n"' + humanize(a.message) + '"');
+      return say('send ' + (p.name || a.who) + ' a voice memo?\n🎙️ VOICE MEMO by text from your business line 702-498-2571 to ' + prettyPhone(phone) + '\n\n"' + humanize(a.message) + '"');
     }
     if (a.action === 'text' || a.action === 'note' || a.action === 'task') {
       let {p, isNew} = resolvePerson();
@@ -4605,7 +4610,7 @@ Examples (all mean the same as the action shown):
       }
       if (greetMismatch(a.message, p)) return say('hold on: this text says "Hey ' + greetName(a.message) + '" but it would go to ' + p.name + '. Who should get it? I didn\'t send anything.');
       const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
-      return say(name + ': ' + (sendAt ? 'schedule this for ' + p.name + ' on ' + whenTxt : 'send this to ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n\n"' + a.message + '"' + (yesHint(n) ? '\n' + yesHint(n) : ''));
+      return say(name + ': ' + (sendAt ? 'schedule this text for ' + p.name + ' on ' + whenTxt : 'text ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n' + viaText(phone) + '\n\n"' + a.message + '"' + (yesHint(n) ? '\n' + yesHint(n) : ''));
     }
     if (a.action === 'schedule') {
       const m = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
@@ -4816,7 +4821,7 @@ Examples (all mean the same as the action shown):
       const msg = humanize(r.reply || '');
       if (!phone || !msg) return say('I couldn\'t draft that one (no number for ' + who + '). Let me know when it\'s handled.');
       addPending({personId: pp.id, who: who, phone: phone, message: msg, at: Date.now(), taskId: t.id});
-      return say('here\'s what I\'d text ' + who + ':\n\n"' + msg + '"\n\nWant me to send it? I\'ll check the task off.');
+      return say('here\'s what I\'d text ' + who + ':\n' + viaText(phone) + '\n\n"' + msg + '"\n\nWant me to send it? I\'ll check the task off.');
     }
     if (a.action === 'ask') {
       const question = a.message || text, ctx = [], clip = (x, n) => String(x || '').replace(/\s+/g, ' ').slice(0, n);
@@ -5975,7 +5980,7 @@ function processEmailAssistant(list) {
       const r = bcolvCall({action: 'reply', threadId: m.threadId, text: reply + '\n\nJulián', html: html, draft: false});
       if (!r || !r.ok) { console.log('Email assistant: reply not sent for ' + addr + ': ' + ((r && r.error) || 'no answer')); return; }
       fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + subject, body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nReplied from julianc@bcolv.com:\n' + reply});
-      const msg = '📧 ' + who + ' emailed you: ' + said + '\n\nI answered for you:\n"' + reply + '"';
+      const msg = '📧 ' + who + ' emailed you: ' + said + '\n\nI answered for you by email (julianc@bcolv.com to ' + addr + ', same thread):\n"' + reply + '"';
       if (boss) { bossTextSafe(msg); bossMemory('assistant', msg); }
     } else {  // default: tell him what it says and what she'd send; YES sends it in the same thread, or he says what to change
       const pn = addPending({kind: 'email', personId: p.id, who: who, email: addr, subject: subject, message: reply, threadId: m.threadId, at: Date.now()});
@@ -5983,7 +5988,7 @@ function processEmailAssistant(list) {
       fubFetch('notes', {personId: p.id, subject: name + ' suggested reply', body: 'They emailed: "' + String(m.body || '').slice(0, 600) + '"\n\nSuggested reply (waiting for Julián):\n' + reply +
         (sensitive ? '\n\nNeeds you: ' + (out.reason || 'sensitive topic') : '')});
       const msg = '📧 ' + who + ' emailed you: ' + said + (sensitive ? '\n\n(Heads up: ' + (out.reason || 'this one needs you') + '.)' : '') +
-        '\n\nHere\'s what I\'d send back:\n"' + reply + '"\n\nWant me to send it? ' + yesHint(pn);
+        '\n\nHere\'s what I\'d send back:\n' + viaEmail(addr, m.threadId) + '\n"' + reply + '"\n\nWant me to send it? ' + yesHint(pn);
       if (boss) { bossTextSafe(msg); bossMemory('assistant', msg); }
     }
     handled++;
