@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-holidays';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-notests';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1399,6 +1399,8 @@ function runListingFlow(people) {
   return drafted;
 }
 
+// Julián's public Google review link (Nov 13). The REVIEW_LINK setting overrides it.
+const REVIEW_LINK_DEFAULT = 'https://g.page/r/Cbt-6pN_iF5zEAI/review';
 const PAST_CLIENTS_TAB = {name: 'Past Clients', color: '#C9A227', headers: ['Person ID', 'Name', 'Closed on', 'Joined as', 'Touches sent', 'Last touch', 'Status']};
 
 function pcFill(t, p, extra) {
@@ -1473,7 +1475,7 @@ function runPastClientLoop(people) {
   });
   // Send what's due.
   let sent = Number(props.getProperty('PC_DAY') === day ? props.getProperty('PC_COUNT') : 0) || 0;
-  const review = props.getProperty('REVIEW_LINK') || '';
+  const review = props.getProperty('REVIEW_LINK') || REVIEW_LINK_DEFAULT;
   Object.keys(rows).forEach(id => {
     const r = rows[id], p = byId[id];
     if (!p || skip(p) || sent >= PAST_CLIENTS.perDay || !(r.closed instanceof Date || r.closed)) return;
@@ -2725,10 +2727,10 @@ function whatsNewText() {
       .filter(n => !alerts.some(a => /^📞/.test(a.t) && Math.abs(a.at - new Date(n.created).getTime()) < 15 * 6e4));
     const calls = notes.slice(0, 6).map(n => {
       let who = '';
-      try { const pp = fubFetch('people/' + n.personId + '?fields=id,name,firstName,lastName', null, 'get'); who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {}
+      try { const pp = fubFetch('people/' + n.personId + '?fields=id,name,firstName,lastName,tags,phones', null, 'get'); if (isTestPerson(pp)) return ''; who = [realFirst(pp), pp.lastName].join(' ').trim() || pp.name; } catch (e) {}
       return '• ' + fmt(new Date(n.created).getTime()) + ' ' + (who || 'a caller') + ': ' + String(n.body || '').split('\n')[0].slice(0, 140);
     });
-    if (calls.length) out.push('📞 calls Shawna took:\n' + calls.join('\n'));
+    if (calls.filter(Boolean).length) out.push('📞 calls Shawna took:\n' + calls.filter(Boolean).join('\n'));
   } catch (e) {}
   if (alerts.length) out.push('🔔 since your last update:\n' + alerts.slice(-10).map(a => '• ' + fmt(a.at) + ' ' + a.t.slice(0, 170)).join('\n'));
   // Replies to his emails, straight from Follow Up Boss, so they show even if he already opened them in Gmail.
@@ -2736,8 +2738,8 @@ function whatsNewText() {
   const replied = [];
   try {
     const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
-    const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,firstName,lastName,lastActivity,assignedUserId', null, 'get').people || [])
-      .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me));
+    const people = (fubFetch('people?limit=25&sort=-lastActivity&fields=id,name,firstName,lastName,lastActivity,assignedUserId,tags,phones', null, 'get').people || [])
+      .filter(p => new Date(p.lastActivity).getTime() > since && (!p.assignedUserId || p.assignedUserId === me) && !isTestPerson(p));
     people.forEach(p => {
       if (replied.length >= 8) return;
       const ems = fubFetch('emails?personId=' + p.id + '&limit=6&sort=-created', null, 'get').emails || [];
@@ -2961,6 +2963,15 @@ function propertyLookupText(query) {
   const pretty = apn.replace(/(\d{3})(\d{2})(\d{3})(\d{3})/, '$1-$2-$3-$4');
   return '🏠 ' + (where ? where.address : 'Parcel ' + pretty) + ' (parcel ' + pretty + ')\n' + summary + (where && where.more ? '\n(' + where.more + ' other unit(s) share that street number)' : '') +
     '\nFrom Clark County public records.';
+}
+
+/** Julián's own test contacts and accounts: never reported to him (Nov 13). Tag "Test…", a name with "test", his
+ *  requests contact (2221) or one of his own numbers. */
+function isTestPerson(p) {
+  if (!p) return false;
+  if (String(p.id) === String(PropertiesService.getScriptProperties().getProperty('REQUESTS_PERSON_ID') || 2221)) return true;
+  if ((p.tags || []).some(t => /^test\b/i.test(t)) || /\btest\b/i.test([p.name, p.firstName, p.lastName].join(' '))) return true;
+  return (p.phones || []).some(x => { try { return isOwnNumber(bbE164(x.value || '')); } catch (e) { return false; } });
 }
 
 /** Spelling-proof name key: lower case, letters only, doubled letters collapsed (Durrant = Durant). */
@@ -4780,10 +4791,7 @@ function vapiEndOfCall(m, props) {
     body: (summary || 'No summary.') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (num && num === boss) {  // Julián testing from his own phone: no call-back task, but show him what a caller would get
-    try {
-      notifyJulian('🧪 Test call logged', String(summary || 'no summary').slice(0, 300) +
-        (recapInfo && recapInfo.ok ? '\n\nThe caller said yes to a recap, so they\'d get this text:\n"' + (recapInfo.recap || '') + (recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + '"' : '\n\nNo recap text (they didn\'t say yes to one on the call).'));
-    } catch (e) {}
+    // Julián testing from his own phone: logged in FUB, no alert (Nov 13: he doesn't want updates about his own tests).
     return json({status: 'ok'});
   }
   try { notifyJulian((callerName || 'Someone') + ' called', assistantName() + ' took a call' + (num ? ' from ' + num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : '') + ': ' + String(summary || 'no summary').slice(0, 220) + ' There\'s a call-back task in Follow Up Boss.'); } catch (e) {}
@@ -5329,7 +5337,7 @@ function processEmailAssistant(list) {
     const ownWords = String(m.body || '').split(/\n\s*On .{5,200}wrote:|\n-{2,}\s*Original Message|\n\s*>|\nFrom: /i)[0].slice(0, 600);
     if (UNSUB_RE.test(m.subject + ' ' + ownWords)) { unsubscribeContact(p, 'email', ownWords || m.subject); return; }
     const tags = p.tags || [];
-    if (tags.indexOf('No Shawna') >= 0 || tags.indexOf('Partner') >= 0) return;
+    if (tags.indexOf('No Shawna') >= 0 || tags.indexOf('Partner') >= 0 || isTestPerson(p)) return;
     const phone = bbE164(((p.phones || [])[0] || {}).value || ''), first = realFirst(p);
     let out;
     try {
