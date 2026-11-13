@@ -482,7 +482,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   waiting, a text sent in 14 days, a reply in 14 days (BB_TASK_ date) or TEXT_LOG in 14 days. Daily batch ≤15 → Text Queue
   status "review" step t21-YYYYMMDD + one approval (pending kind 'holiday', label "21-day check-in") → YES sends at 11am;
   unapproved batches become "not approved" the next morning. T21_RUN = once per day.
-- Free in Vegas (Nov 13): juliancrider.com/?free (`freePage`: FREE_SPOTS long-running free spots + "New picks" from GET
+- Free in Vegas — TURNED OFF Nov 13 (Julián: not valuable; site card/page/?free removed, FREE_LIVE=false stops the
+  Thursday texts, finder, birthday texts and FREE keyword; code kept). Was: juliancrider.com/?free (`freePage`: FREE_SPOTS long-running free spots + "New picks" from GET
   ?action=free + sign-up → Website Leads type "Free in Vegas" → tags Free in Vegas, Text OK, Bday <Month>; welcome text
   OPEN_HOUSE_TEXTS.free). Card on the Relocate tab. Texting FREE: FUB contacts get tags + reply; unknown numbers get the
   sign-up link (no nameless contacts). Julián adds picks by texting "free: …" (boss action `freevegas` → "Free in Vegas"
