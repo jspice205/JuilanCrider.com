@@ -458,6 +458,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   `Duties Owed signed`, notifyJulian. Deal parties: boss action `dealparty` ("TC for Lisa's deal is …", "title for Lisa
   is …", "default TC is …") → DEAL_PARTIES_<personId> / DEAL_TC_DEFAULT + FUB note; at escrow day 0 draftPartyHeadsUp
   drafts emails to TC/title for approval (or asks Julián who they are).
+- Escrow timeline (Nov 13, from his Amitree templates): bescrow/escrow steps add day-2 earnest money (wire safety), buyer
+  day-9 due diligence, seller day-3 HOA/disclosures, and closing-date steps (`close: N` = N days before the deal card's
+  projectedCloseDate: utilities/movers 7, loan check 5, walkthrough/keys 2, signing 1). `createEscrowTasks` (ESCROW_TASKS,
+  ESCT_<dealId>) makes FUB tasks dated from acceptance once, and from the close date once it's on the card (asks him for it).
 - Listing playbook (Nov 13): first time a Sellers card is seen in Listing Prep, runListingFlow → createListingTasks makes 9
   FUB tasks (LISTING_PLAYBOOK, due days 0-7: paperwork incl. Duties Owed, prelim/tax, staging, photos, sign/lockbox/
   warranty, description, MLS, just-listed marketing, first open house). LPLAY_ dedupe.
