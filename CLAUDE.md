@@ -449,6 +449,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (stage 26) get PC_SELLER_<id> → sellerSteps wording for pc-3d/pc-1w in the past-client loop. Evergreen = plan 26 JC
   Long-Term Nurture (24 emails, monthly then every 60 days); 0 running on Nov 13 because the funnel fills hot/warm/legacy/
   farm first and hands off after 25-65 days.
+- Deal flows (Nov 13, from Julián's Drive "Deal Flows/Deal Stages" boards, old ISLUXURY/Ivan Sher Group/BHH branding and
+  Asana/Calendly/Amitree/Mailchimp steps dropped): LISTING_FLOW also covers Buyers pipeline 19 'buyer' (d0 Duties Owed link,
+  d7, every 14 days "line up 2 or 3 homes"), 21 'boffer', 28/23 'bescrow' (d0 timeline + wire-fraud note, d7, d14) and
+  Sellers 37 'lost' (every 21 days). Seller prep d0 + buyer d0 carry a Duties Owed signing link ({duties}, skipped if tag
+  `Duties Owed signed`). Duties-only signing: createDutiesLink(name,email,phone,'seller'|'buyer') → Buyer Agreements row
+  with property "DUTIES ONLY · <role>"; sign.html hides the agreement; signDutiesOnly → PDF, email copy, FUB tag
+  `Duties Owed signed`, notifyJulian. Deal parties: boss action `dealparty` ("TC for Lisa's deal is …", "title for Lisa
+  is …", "default TC is …") → DEAL_PARTIES_<personId> / DEAL_TC_DEFAULT + FUB note; at escrow day 0 draftPartyHeadsUp
+  drafts emails to TC/title for approval (or asks Julián who they are).
 - Instagram DMs (Nov 10): ManyChat flow collects email (+ optional phone/text consent) → External Request (ManyChat Pro)
   POST to web app ?ig=IG_KEY → `instagramWebhook`: FUB event source "Instagram", tag "Instagram DM", note, one Follow Up
   task, welcome email from bcolv with juliancrider.com/?book; texts only if body has "text_ok": "yes". `setupInstagram`

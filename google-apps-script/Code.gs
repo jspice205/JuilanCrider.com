@@ -157,7 +157,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-13-sellerloop';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-13-dealparties';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1215,11 +1215,12 @@ const PAST_CLIENTS = {
 // day = days since the card entered that stage; 'every' repeats (weekly update while active).
 const LISTING_FLOW = {
   live: true, perDay: 4,
-  stages: {20: 'prep', 22: 'active', 36: 'offers', 24: 'escrow', 29: 'escrow'},
+  // Sellers pipeline + (Nov 13, from Julián's Deal Stages boards) Buyers pipeline and Lost (expired/withdrawn/off market).
+  stages: {20: 'prep', 22: 'active', 36: 'offers', 24: 'escrow', 29: 'escrow', 37: 'lost', 19: 'buyer', 21: 'boffer', 28: 'bescrow', 23: 'bescrow'},
   steps: {
     prep: [
-      {id: 'lp-0', day: 0, subject: 'Getting your home ready', text: "Hey {first}, Julián here 🏡 Excited to get your home ready. I'm sending a short prep list today. What's the one thing you're most worried about before we go live?",
-        email: "Hi {first},\n\nExcited to get your home ready. Here's the short version of what makes the biggest difference before photos:\n\n1. Declutter counters and surfaces (less is more on camera)\n2. Fresh lightbulbs, all the same color, every room\n3. Touch up paint and any small repairs\n4. Backyard and pool sparkling, front entry swept\n5. Put away personal photos and valuables\n\nWhat's the one thing you're most worried about before we go live? Reply and we'll handle it together."},
+      {id: 'lp-0', day: 0, duties: 'seller', subject: 'Getting your home ready', text: "Hey {first}, Julián here 🏡 Excited to get your home ready. First, the quick Nevada form that explains how I work for you: {duties} Then I'll send a short prep list. What's the one thing you're most worried about before we go live?",
+        email: "Hi {first},\n\nExcited to get your home ready. First, here's the Nevada Duties Owed form that explains how I work for you. It takes a minute to sign: {duties}\n\nHere's the short version of what makes the biggest difference before photos:\n\n1. Declutter counters and surfaces (less is more on camera)\n2. Fresh lightbulbs, all the same color, every room\n3. Touch up paint and any small repairs\n4. Backyard and pool sparkling, front entry swept\n5. Put away personal photos and valuables\n\nWhat's the one thing you're most worried about before we go live? Reply and we'll handle it together."},
       {id: 'lp-3', day: 3, subject: 'Photo day', text: "Hey {first}, quick check before photo day. Anything you'd like me to have the photographer focus on? Your favorite spot in the house usually makes the best first photo 📸",
         email: "Hi {first},\n\nQuick check before photo day. Anything you'd like the photographer to focus on? Your favorite spot in the house usually makes the best first photo."}],
     active: [
@@ -1234,6 +1235,26 @@ const LISTING_FLOW = {
     offers: [
       {id: 'lo-0', day: 0, subject: 'We have an offer', text: "Hey {first}, we have an offer 🎉 I'm reviewing the terms now. When's a good time in the next hour or two to walk through it together?",
         email: "Hi {first},\n\nWe have an offer. I'm reviewing the terms now, price and everything else that matters (closing date, contingencies, credits).\n\nWhen's a good time to walk through it together?"}],
+    lost: [  // expired, withdrawn or temporarily off the market: a light touch every 21 days
+      {id: 'll-w', every: 21, from: 21, subject: 'When you are ready', text: "Hey {first}, Julián here. No pressure at all. Would it be crazy to talk about what a relaunch could look like when the timing feels right?",
+        email: "Hi {first},\n\nNo pressure at all. When the timing feels right, would it be crazy to talk about what a relaunch could look like? A fresh price check, new photos and a different launch plan usually change the outcome."}],
+    buyer: [  // Buyers › HOT BUYERS: actively looking
+      {id: 'lb-0', day: 0, duties: 'buyer', subject: 'Before we start touring', text: "Hey {first}, it's Julián. Sounds like you're ready to look for real 🏡 Before we tour, here's the quick Nevada form that explains how I work for you: {duties} What would make this search feel like a win?",
+        email: "Hi {first},\n\nSounds like you're ready to start looking for real. Before we tour, here's the Nevada Duties Owed form that explains how I work for you. It takes a minute to sign: {duties}\n\nWhat would make this search feel like a win for you?"},
+      {id: 'lb-7', day: 7, subject: 'A week in', text: "Hey {first}, a week in. What's been the biggest surprise in what you're seeing so far?",
+        email: "Hi {first},\n\nA week in. What's been the biggest surprise in what you're seeing so far? It helps me tighten the search."},
+      {id: 'lb-w', every: 14, from: 14, subject: 'This weekend?', text: "Hey {first}, Julián here. Would it be a bad idea to line up 2 or 3 homes for you this weekend?",
+        email: "Hi {first},\n\nWould it be a bad idea to line up 2 or 3 homes for you this weekend? Reply with what's working and what isn't, and I'll do the filtering."}],
+    boffer: [
+      {id: 'lbo-0', day: 0, subject: 'Your offer is in', text: "Hey {first}, your offer is in 🤞🏾 I'll text you the moment I hear back. Anything I should know before the seller's agent calls?",
+        email: "Hi {first},\n\nYour offer is in. I'll reach out the moment I hear back. Anything I should know before the seller's agent calls?"}],
+    bescrow: [
+      {id: 'lbe-0', day: 0, subject: "You're in escrow 🎉", text: "Hey {first}, you're in escrow 🎉 The next steps are earnest money at title, inspection, appraisal and the loan. Here's what I can do for you: I'll text you before every deadline so nothing sneaks up on you.",
+        email: "Hi {first},\n\nYou're in escrow. The next steps are:\n\n1. Earnest money to title (wire only after you confirm instructions by phone with title, never from an email)\n2. Inspection\n3. Appraisal\n4. Loan approval\n5. Final walkthrough and signing\n\nI'll reach out before every deadline so nothing sneaks up on you."},
+      {id: 'lbe-7', day: 7, subject: 'Inspection check in', text: "Hey {first}, quick check in after the inspection window. Anything on the report that's sitting heavy with you?",
+        email: "Hi {first},\n\nQuick check in on the inspection. Anything on the report that's sitting heavy with you? Let's talk it through before the deadline."},
+      {id: 'lbe-14', day: 14, subject: 'Appraisal and loan', text: "Hey {first}, appraisal and loan are moving. How are you feeling about the timeline?",
+        email: "Hi {first},\n\nThe appraisal and loan are moving. How are you feeling about the timeline? If anything changes with your lender, tell me right away and I'll handle the other side."}],
     escrow: [
       {id: 'le-0', day: 0, subject: "You're under contract 🎉", text: "Hey {first}, you're under contract 🎉 The next steps are inspection, appraisal and the buyer's loan. I'll keep you posted at every step, no surprises.",
         email: "Hi {first},\n\nYou're under contract. Here's what happens from here:\n\n1. Inspection (usually in the first week or so)\n2. Appraisal\n3. The buyer's loan approval\n4. Final walkthrough and closing\n\nI'll keep you posted at every step. No surprises."},
@@ -1241,6 +1262,33 @@ const LISTING_FLOW = {
         email: "Hi {first},\n\nQuick escrow check in. Everything is moving. Anything on your mind about the timeline or the move? Just reply."}]
   }
 };
+// ---------- Deal parties (Nov 13): transaction coordinator + title company, entered PER DEAL at open escrow ----------
+// Julián texts Shawna "TC for Lisa's deal is Jane Doe jane@x.com 702…" / "title for Lisa is First American, Maria …".
+// Saved per client in DEAL_PARTIES_<personId> + a FUB note. "default TC is …" saves DEAL_TC_DEFAULT for every deal.
+function dealParties(personId) {
+  const props = PropertiesService.getScriptProperties(), o = JSON.parse(props.getProperty('DEAL_PARTIES_' + personId) || '{}');
+  if (!o.tc) { const def = JSON.parse(props.getProperty('DEAL_TC_DEFAULT') || 'null'); if (def) o.tc = Object.assign({isDefault: true}, def); }
+  return o;
+}
+function parseParty(text) {
+  const t = String(text || ''), email = (t.match(/[^\s<>(),;]+@[^\s<>(),;]+\.[a-z]{2,}/i) || [''])[0];
+  const phone = ((t.match(/\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}/) || [''])[0]).replace(/\D/g, '');
+  let name = (t.split(/\bis\b|:/i)[1] || '').replace(email, '').replace(/\(?\d{3}\)?[\s.-]*\d{3}[\s.-]*\d{4}/, '').replace(/[,;]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return {name: name.slice(0, 80), email: email, phone: phone};
+}
+/** Drafts a heads-up email to the deal's TC and title (approval first). If none is on file, asks Julián who they are. */
+function draftPartyHeadsUp(p, who, d, event) {
+  const parties = dealParties(p.id), list = ['tc', 'title'].filter(k => parties[k] && parties[k].email);
+  if (!list.length) { bossTextSafe('📂 ' + who + ' just ' + event + '. Who are the transaction coordinator and title company on this one? Text me like: "TC for ' + realFirst(p) + ' is Jane Doe jane@… 702…" and "title for ' + realFirst(p) + ' is …".'); return; }
+  list.forEach(k => {
+    const x = parties[k], first = String(x.name || '').split(' ')[0] || 'there';
+    const body = 'Hi ' + first + ',\n\nQuick heads up: ' + who + (d && d.name ? ' (' + d.name + ')' : '') + ' ' + event + '. ' +
+      (k === 'tc' ? 'Could you send me the timeline with every contingency date when you have it?' : 'Could you confirm you have the file open and send the wiring instructions to the client by phone confirmation only?') + '\n\nThank you,\nJulián';
+    const n = addPending({kind: 'email', personId: p.id, who: x.name || k, email: x.email, subject: who + ': ' + event, message: body, at: Date.now()});
+    bossTextSafe('📂 Heads up for ' + (k === 'tc' ? 'your TC ' : 'title ') + (x.name || '') + ' on ' + who + ':\n\n"' + body + '"\n\nWant me to send it? ' + yesHint(n));
+  });
+}
+
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
 /** Daily (after scoring): for each Sellers card in Listing Prep / Active / Offers / escrow, drafts the next due message
  *  for Julián's OK (approvals queue + a text to him). Nothing reaches the client until he says yes. */
@@ -1248,7 +1296,8 @@ function runListingFlow(people) {
   if (!LISTING_FLOW.live) return 0;
   const props = PropertiesService.getScriptProperties(), byId = {}; (people || []).forEach(p => byId[p.id] = p);
   const state = JSON.parse(props.getProperty('LF_STATE') || '{}'), now = Date.now();
-  const deals = (fubFetch('deals?pipelineId=2&limit=100', null, 'get').deals || []).filter(d => LISTING_FLOW.stages[Number(d.stageId)]);
+  const deals = [].concat(fubFetch('deals?pipelineId=2&limit=100', null, 'get').deals || [], fubFetch('deals?pipelineId=1&limit=100', null, 'get').deals || [])
+    .filter((d, i, arr) => LISTING_FLOW.stages[Number(d.stageId)] && arr.findIndex(x => x.id === d.id) === i);
   const sheet = ensureTab(getSS(), LISTING_TAB);
   let drafted = 0;
   deals.forEach(d => {
@@ -1270,11 +1319,20 @@ function runListingFlow(people) {
     const phone = bbE164(((p.phones || [])[0] || {}).value || ''), email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
     const textOk = phone && tags.indexOf('Text OK') >= 0 && tags.indexOf('Text Opt-Out') < 0;
     if (!textOk && !email) return;
-    const who = [realFirst(p), p.lastName].join(' ').trim() || p.name, msg = pcFill(textOk ? due.text : due.email, p);
+    const who = [realFirst(p), p.lastName].join(' ').trim() || p.name;
+    // Duties Owed link for the client; if they already signed it (tag), that sentence is left out.
+    const signed = (p.tags || []).indexOf('Duties Owed signed') >= 0;
+    let dutiesLink = '';
+    if (due.duties && !signed) { try { dutiesLink = createDutiesLink(who, email || '', phone || '', due.duties); } catch (e) {} }
+    let tpl = textOk ? due.text : due.email;
+    if (!dutiesLink) tpl = String(tpl).replace(/[^.!?\n]*\{duties\}[^.!?\n]*[.!?]?[ \t]*/, ' ').replace(/(First|Then)[, ]+/, '').replace(/ {2,}/g, ' ');
+    const msg = pcFill(tpl, p, {duties: dutiesLink});
     const n = textOk ? addPending({personId: p.id, who: who, phone: phone, message: msg, at: now, long: true})
       : addPending({kind: 'email', personId: p.id, who: who, email: email, subject: pcFill(due.subject, p), message: msg, at: now});
     st.done.push(due.id); drafted++;
-    const label = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age}[stage];
+    const label = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age, lost: 'off market, day ' + age,
+      buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage];
+    if ((stage === 'escrow' || stage === 'bescrow') && due.day === 0) { try { draftPartyHeadsUp(p, who, d, 'opened escrow'); } catch (e) {} }
     bossTextSafe('🏡 ' + who + ' (' + label + '). Here\'s the ' + (textOk ? 'text' : 'email') + ' I\'d send:\n\n"' + msg + '"\n\n' +
       'Want me to send it? ' + yesHint(n));
     sheet.appendRow([d.id, who, stage, new Date(st.since), st.done.join(','), new Date()]);
@@ -1693,6 +1751,16 @@ function createAgreement(d) {
   return SIGN_PAGE + '?id=' + id;
 }
 
+// Duties Owed on its own (Nov 13, Julián: every flow signs the Nevada Duties Owed, sellers too). Stored in the same
+// Buyer Agreements tab with property "DUTIES ONLY · seller" / "DUTIES ONLY · buyer".
+const DUTIES_ONLY = 'DUTIES ONLY · ';
+function isDutiesOnly(a) { return String(a && a.property || '').indexOf(DUTIES_ONLY) === 0; }
+function dutiesRole(a) { return /seller/i.test(String(a && a.property || '')) ? 'seller' : 'buyer'; }
+/** A signing link for just the Duties Owed form (role: 'seller' or 'buyer'). */
+function createDutiesLink(name, email, phone, role) {
+  return createAgreement({name: name, email: email, phone: phone || '', property: DUTIES_ONLY + (role === 'seller' ? 'seller' : 'buyer')});
+}
+
 function findAgreement(id) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const sheet = getSS().getSheetByName(AGREEMENT_TAB.name);
@@ -1709,6 +1777,7 @@ function getAgreement(id) {
   const a = findAgreement(id);
   if (!a) return json({ok: false, error: 'This signing link is not valid. Please contact Julián.'});
   const s = agreementSettings();
+  if (isDutiesOnly(a.data)) return json({ok: true, live: true, status: a.data.status, buyer: a.data.buyer, dutiesOnly: true, role: dutiesRole(a.data), duties: dutiesHtml(a.data, s, '')});
   return json({ok: true, live: s.live, status: a.data.status, buyer: a.data.buyer, property: a.data.property, reviewOnly: a.data.property === AGREEMENT_TBD, html: agreementHtml(a.data, s), duties: dutiesHtml(a.data, s, '')});
 }
 
@@ -1738,7 +1807,7 @@ function dutiesHtml(a, s, dual, initials) {
 <p><i>This form does not constitute a contract for services nor an agreement to pay compensation.</i></p>
 <p>In Nevada, a real estate licensee is required to provide a form setting forth the duties owed by the licensee to: a) each party for whom the licensee is acting as an agent in the real estate transaction, and b) each unrepresented party to the real estate transaction, if any.</p>
 <p><b>Licensee:</b> The licensee in the real estate transaction is <b>${e(s.licensee)}</b> whose license/permit number is <b>${e(s.licenseNo)}</b>.<br>
-The licensee is acting for <b>${e(a.buyer)}</b>, who is/are the ${box(false)} Seller/Landlord ${box(true)} Buyer/Tenant.<br>
+The licensee is acting for <b>${e(a.buyer)}</b>, who is/are the ${box(dutiesRole(a) === 'seller' && isDutiesOnly(a))} Seller/Landlord ${box(!(dutiesRole(a) === 'seller' && isDutiesOnly(a)))} Buyer/Tenant.<br>
 <b>Broker:</b> The Broker is <b>${s.brokerName ? e(s.brokerName) : 'the designated broker of ' + e(s.brokerage)}</b>, whose company is <b>${e(s.brokerage)}</b>.<br>
 Are there additional licensees involved in this transaction? ${box(false)} Yes ${box(true)} No</p>
 <h2>Licensee's duties owed to all parties</h2><p>A Nevada real estate licensee shall: 1. Not deal with any party to a real estate transaction in a manner which is deceitful, fraudulent or dishonest. 2. Exercise reasonable skill and care with respect to all parties to the real estate transaction. 3. Disclose to each party to the real estate transaction as soon as practicable: a. any material and relevant facts, data or information which licensee knows, or with reasonable care and diligence the licensee should know, about the property; b. each source from which licensee will receive compensation. 4. Abide by all other duties, responsibilities and obligations required of the licensee in law or regulations.</p>
@@ -1761,6 +1830,7 @@ function signAgreement(d) {
   if (d.dutiesAck !== true || ['MAY', 'MAY NOT'].indexOf(dual) < 0) return json({ok: false, error: 'Please choose MAY or MAY NOT and acknowledge the Duties Owed form.'});
   const initials = name.split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 4);
   const s = agreementSettings(), when = new Date().toLocaleString('en-US', {timeZone: 'America/Los_Angeles'});
+  if (isDutiesOnly(a.data)) return signDutiesOnly(a, d, s, name, sig, dual, initials, when);
   const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const doc = `<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#111}h1{font-size:16pt}h2{font-size:11.5pt;margin:14px 0 4px}.sig{margin-top:22px;border-top:1px solid #000;padding-top:10px}.audit{margin-top:18px;font-size:8.5pt;color:#555}</style></head><body>
 ${s.live ? '' : '<p style="color:#b00;font-weight:bold">DRAFT FOR BROKER REVIEW: not a binding agreement.</p>'}
@@ -1781,6 +1851,23 @@ ${dutiesHtml(a.data, s, dual, initials)}
   try { tagInFub(a.data.email, ['Agreement signed'], `Signed single-property buyer agreement for ${a.data.property} on ${when}. PDF: ${file.getUrl()}`); }
   catch (err) { console.error('FUB tag failed', err); }
   try { dealForAgreement(a.data.email, a.data.buyer, a.data.property); } catch (err) { console.error('Deal card failed', err); }
+  return json({ok: true});
+}
+
+/** Signs a Duties-Owed-only link: PDF to Drive, copy to the client (cc Julián), FUB tag + note. */
+function signDutiesOnly(a, d, s, name, sig, dual, initials, when) {
+  const e = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'), role = dutiesRole(a.data);
+  const doc = `<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#111}h1{font-size:16pt}h2{font-size:11.5pt;margin:14px 0 4px}.sig{margin-top:22px;border-top:1px solid #000;padding-top:8px}.audit{margin-top:18px;font-size:9pt;color:#555}</style></head><body>
+${dutiesHtml(a.data, s, dual, initials)}
+<div class="sig"><p><b>${role === 'seller' ? 'Seller/Landlord' : 'Buyer/Tenant'}</b></p><img src="${sig}" style="height:70px"><p>${e(name)}<br>Date/time: ${e(when)} (Pacific)</p></div>
+<div class="audit">Signed electronically on juliancrider.com. Chose: licensee ${e(dual)} act for two or more parties (initials ${e(initials)}). ID ${e(a.data.id)}. Email ${e(a.data.email)}. Device: ${e(String(d.ua || '').slice(0, 160))}</div></body></html>`;
+  const pdf = Utilities.newBlob(doc, 'text/html', 'duties.html').getAs('application/pdf').setName(('Duties Owed - ' + name + ' (' + role + ').pdf').replace(/[\\/:*?"<>|]/g, ''));
+  const file = driveFolder('Signed Buyer Agreements').createFile(pdf);
+  a.sheet.getRange(a.row, 9, 1, 4).setValues([['Signed', when, cell(name), file.getUrl()]]);
+  if (validEmail(a.data.email)) MailApp.sendEmail({to: a.data.email, cc: NOTIFY_EMAIL, replyTo: NOTIFY_EMAIL, name: 'Julián J. Crider', subject: 'Your signed Duties Owed form', attachments: [pdf],
+    htmlBody: '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#1c1c1e"><p>Hi ' + e(String(a.data.buyer).split(/\s+/)[0]) + ',</p><p>Thanks for signing. Your copy of the Nevada Duties Owed form is attached for your records.</p><p>Julián</p></div>'});
+  try { tagInFub(a.data.email, ['Duties Owed signed'], 'Signed the Nevada Duties Owed (' + role + ') on ' + when + '. PDF: ' + file.getUrl()); } catch (err) { console.error('FUB tag failed', err); }
+  try { notifyJulian('✍🏾 ' + a.data.buyer + ' signed the Duties Owed', 'Saved to Drive and in Follow Up Boss.', '', a.data.buyer); } catch (err) {}
   return json({ok: true});
 }
 
@@ -3552,7 +3639,7 @@ function bossCommand(text, tries) {
   const key = props.getProperty('GROQ_API_KEY');
   if (!key) return say(name + ': add GROQ_API_KEY first.');
   const sys = `You are ${name}, the personal AI assistant of Julián Crider, a Las Vegas Realtor. Julián is texting you. Decide what he wants and return JSON only:
-{"action":"property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
+{"action":"dealparty|property|campaigns|jot|notes|tag|research|agenda|taskdone|taskstart|unschedule|text|voicememo|email|note|task|contact|schedule|lookup|hot|emails|calendar|callme|remember|texts|read|unanswered|allow|ask|alerts|claude|chat", "query":"for ask: a Gmail search if email could help (e.g. from:joey newer_than:14d, or summerlin newer_than:7d)", "who":"contact's full name if any", "phone":"their phone if he gave one", "email":"their email if he gave one", "subject":"email subject (for email)", "message":"the text or email body to send / note / task / event title", "when":"for schedule, for a task/reminder due on a later day, and for a text he wants sent LATER (Friday, next week, in 2 weeks, tomorrow morning): YYYY-MM-DDTHH:mm Las Vegas time (no time given: 10:00); empty = send now", "minutes":30, "calendar":"personal|business|unsaid (personal = julian.crider gmail, business = bcolv work calendar; unsaid if he didn't say)", "reply":"your short answer to Julián (for chat)"}
 Today is ${Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd HH:mm')} in Las Vegas.
 About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson; business line 702-498-2571, julianc@bcolv.com, juliancrider.com.
 - agenda: his daily update: everything pressing or new (calendar, calls and emails that came in, new leads, to-dos, who's waiting on him): "what do I have today", "catch me up", "what did I miss", "anything new", "what do I need to do", "anything else I need to do today?", "what's on deck", "what do I got going on", "what's on my to-do list tomorrow". Put "today", "tomorrow" or "week" in "message" (today unless he says otherwise).
@@ -3569,6 +3656,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - emails: who emailed him / did he get any emails ("did I receive any emails", "any emails", "who emailed me", "check my inbox"). calendar: his CALENDAR only (appointments, meetings): "what's on my calendar", "what's my schedule tomorrow", "how's my week look", "am I free Thursday". Put "today", "tomorrow" or "week" in "message". To-dos and calendar are different: never mix them.
 - contact: add a new person to Follow Up Boss (name, phone, email).
 - schedule: put an appointment on his Google Calendar (who, when, minutes, message = what it is, phone if given). New people are added to Follow Up Boss too.
+- dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
 - property: look up a property in Clark County public records (owner, last sale, value, size, year built): "look up 123 Desert Rose Ln", "who owns 456 Summit Club Dr", "pull the records on Lisa's house". "message" = the street address or parcel number exactly as he wrote it; "who" = the client if he wants it saved to their file.
 - campaigns: anything about campaigns, drips or action plans: what campaign someone is on, whether they got the email or text, how many emails or texts they have left, when the next one goes ("what campaign is Lisa in", "did Dan get the email", "how many emails does Ika have left") → "who" = the person. Who is on a campaign or which campaigns are running ("who's in JC Hot", "what campaigns are running") → no "who", "message" = the campaign name (empty for all).
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
@@ -3868,6 +3956,21 @@ Examples (all mean the same as the action shown):
       }
       if (p && p.id) fubFetch('notes', {personId: p.id, subject: 'Appointment', body: title + ' on ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a')});
       return say('on your ' + which + ' calendar: ' + title + ', ' + Utilities.formatDate(start, 'America/Los_Angeles', 'EEE MMM d, h:mm a') + '. ✅');
+    }
+    if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
+      const raw = String(a.message || text), role = /\btitle\b|escrow (officer|company)/i.test(raw) ? 'title' : 'tc', x = parseParty(raw);
+      if (!x.name && !x.email) return say('who is it? Send their name, email and phone.');
+      if (/\bdefault\b|every deal|all (my )?deals/i.test(raw) && role === 'tc') {
+        props.setProperty('DEAL_TC_DEFAULT', JSON.stringify(x));
+        return say('got it. ' + (x.name || x.email) + ' is your default transaction coordinator for every deal unless you tell me otherwise.');
+      }
+      const p = a.who ? findOne(a.who) : null;
+      if (!p) return say('whose deal is it for?');
+      if (p.many) return askWhich(p.many);
+      const o = JSON.parse(props.getProperty('DEAL_PARTIES_' + p.id) || '{}'); o[role] = x;
+      props.setProperty('DEAL_PARTIES_' + p.id, JSON.stringify(o));
+      fubFetch('notes', {personId: p.id, subject: role === 'tc' ? 'Transaction coordinator' : 'Title company', body: [x.name, x.email, x.phone].filter(Boolean).join(' · ')});
+      return say('saved ' + (x.name || x.email) + ' as the ' + (role === 'tc' ? 'transaction coordinator' : 'title company') + ' on ' + (p.name || a.who) + '\'s deal. I\'ll keep them posted at the big milestones, with your OK first.');
     }
     if (a.action === 'property') {  // "look up 123 Desert Rose Ln", "who owns …", "pull the records on Lisa's house"
       let p = null, q = String(a.message || text);
