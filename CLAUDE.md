@@ -111,7 +111,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Gemini (OpenAI-compatible endpoint, GEMINI_API_KEY from aistudio.google.com via the Settings tab, GEMINI_MODEL default
   gemini-2.5-flash). "give me a minute" now names a rejected key (401) or a used-up daily allowance.
 - Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
-  (assistantKnowledge); humanize() strips dashes from everything she writes. Boss actions also: schedule (personal = his gmail
+  (assistantKnowledge); humanize() strips dashes from everything she writes and `darkHands` turns every hand emoji
+  into the darkest skin tone 🏿 (Julián, Nov 14; 🙏🏿 for thank you). Boss actions also: schedule (personal = his gmail
   calendar or business = bcolv calendar via the Shawna Mailer (bcolvCall action event/events; Boeckle's Workspace
   blocks outside edit sharing, Nov 9); asks "personal or
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
