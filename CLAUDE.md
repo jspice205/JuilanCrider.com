@@ -361,7 +361,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "LET THEM END IT" (one short natural line after "that's it", wait for their bye, then end call silently); endCallMessage "Take care!".
   Call replies early (Nov 14, Randall called 8:02am, recap waited for 9am): processTextQueue sends call-recap/call-thanks/
   call-followup from 8am (TCPA window 8am-9pm); everything else still 9am-9pm.
-  One call text per person per 6 h (`recentCallText`; Randall's call-back 12 min later had sent a 2nd "thanks for calling").
+  Recap is guaranteed (Nov 14): a caller who said yes always gets the call-recap (generic line if the AI wrote none); only
+  an earlier recap in 6 h blocks it (not a thank-you). One call text per person per 6 h (`recentCallText`; Randall's call-back 12 min later had sent a 2nd "thanks for calling").
   bbSendNow marks every script send AI_SENDING_ (so its echo isn't logged "Text from Julián"; dedupe JTXT_<guid>) and runs
   darkHands. Recap prompt: the text IS the recap (never "I'll text you a recap").
   Call recordings by text (Nov 14, his ask: "like getting the voicemail"): vapiEndOfCall → `queueCallAudio` (CALL_AUDIO, calls ≥8 s)

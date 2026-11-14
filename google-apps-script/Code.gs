@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-callaudio';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-recap';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5642,6 +5642,7 @@ function vapiEndOfCall(m, props) {
     if (recapInfo && DEAL_SIGNALS[recapInfo.deal]) suggestDeal(person.id, recapInfo.deal, 'said on a call');
   } catch (e) { console.log('Call booking check: ' + e.message); }
   // Recap text after the call: only when the caller said yes to a text on the call (a call alone isn't text consent).
+  if (recapInfo && recapInfo.ok && num && !recapInfo.recap && !recapInfo.appt) recapInfo.recap = 'I passed everything along to Julián and he\'ll follow up soon.';
   if (recapInfo && recapInfo.ok && num && (recapInfo.recap || recapInfo.appt)) {
     try {
       const pp = fubFetch('people/' + person.id + '?fields=id,firstName,tags', null, 'get'), tags = pp.tags || [];
@@ -5651,7 +5652,7 @@ function vapiEndOfCall(m, props) {
         const first = realFirst(pp) || callerName.split(' ')[0] || '';
         const msg = 'Hi' + (first ? ' ' + first : '') + ', it\'s ' + assistantName() + ', Julián\'s assistant 👋🏾 Thanks for calling! ' + (recapInfo.recap || '') +
           (recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + ' If anything changes, just text me here.';
-        if (!recentCallText(person.id)) ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || callerName), 'call-recap', 'pending', 0, '', cell(msg)]);
+        if (!recentCallText(person.id, true)) ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || callerName), 'call-recap', 'pending', 0, '', cell(msg)]);
         ensureTextQueueTrigger();
       }
     } catch (e) { console.log('Call recap: ' + e.message); }
@@ -5835,11 +5836,11 @@ function syncVapiAssistant(force) {
 
 /** True when this person already got (or has waiting) a call recap / thank-you text in the last 6 hours, so a second
  *  call (Randall, Nov 14: called back 12 minutes later) doesn't send a second "thanks for calling". */
-function recentCallText(personId) {
+function recentCallText(personId, recapOnly) {
   const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
   if (!sh || sh.getLastRow() < 2) return false;
   const n = Math.min(300, sh.getLastRow() - 1), rows = sh.getRange(sh.getLastRow() - n + 1, 1, n, 5).getValues();
-  return rows.some(r => String(r[1]) === String(personId) && /^call-(recap|thanks|followup)/.test(String(r[3])) &&
+  return rows.some(r => String(r[1]) === String(personId) && (recapOnly ? /^call-recap/ : /^call-(recap|thanks|followup)/).test(String(r[3])) &&
     r[0] instanceof Date && Date.now() - r[0].getTime() < 6 * 36e5 && !/^(failed|skipped)/.test(String(r[4])));
 }
 
