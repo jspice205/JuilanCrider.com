@@ -598,6 +598,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Readable updates (Nov 13, Julián: "too hard to read"): every list in calendarText / whatsNewText / todoText has a blank
   line after its header and between items; alerts, calls and unread emails put the time (or sender) on its own line.
 
+- Question bank (Nov 14, from Julián's sales question list, rewritten for real estate in Chris Voss style: what/how, no
+  "why", labels, no-oriented asks; B2B, demo and cold-call lines dropped): CLIENT_QUESTIONS (discovery, cost of waiting,
+  vision, sellers, buyers, decision, after a showing, labels, Fair Housing guard) is in assistantPrompt (one per message,
+  only when it fits) and vapiPrompt (one at a time on the phone; pushed by syncVapiAssistant).
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
