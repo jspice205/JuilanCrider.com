@@ -364,6 +364,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   One call text per person per 6 h (`recentCallText`; Randall's call-back 12 min later had sent a 2nd "thanks for calling").
   bbSendNow marks every script send AI_SENDING_ (so its echo isn't logged "Text from Julián"; dedupe JTXT_<guid>) and runs
   darkHands. Recap prompt: the text IS the recap (never "I'll text you a recap").
+  Call recordings by text (Nov 14, his ask: "like getting the voicemail"): vapiEndOfCall → `queueCallAudio` (CALL_AUDIO, calls ≥8 s)
+  → `sendCallAudio` (processAssistantQueue, ≥45 s after the call so the summary lands first): "🎧 Call recording: <name> (x min)"
+  + the Vapi recording as "Call with <name>.wav" (bbPostAttachment) to his phone; retries 20x / 12 h; >60 MB → link note.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
