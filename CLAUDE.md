@@ -47,8 +47,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   phone + video Mon–Sat 9–6 (video 30 or 45 min, Google Meet link via Calendar REST API, VIDEO_LINK fallback), showing,
   golf by private link juliancrider.com/?golf only (Mon/Tue/Fri tee times 8–3, Thu 11–4; 9 holes 2.5 h / 18 holes 5 h;
   asks tee time booked + course). Busy = personal calendar + bcolv calendar (via mailer). Every booking: calendar event,
-  FUB person (created if new), FUB appointment + note (+ task, not for golf), confirmation text; 15-min reminder from
-  remindUpcoming. No coffee/lunch/in-person consults (Julián, Nov 2).
+  FUB person (created if new), FUB appointment + note (+ task, not for golf), confirmation text; 25-min reminder from
+  remindUpcoming (was 15 until Nov 14; events 23-28 min out, later bookings ≥5 min out right away). No coffee/lunch/in-person consults (Julián, Nov 2).
 - Texting (bottom of Code.gs): BlueBubbles 1.9.7 on Mariel's MacBook Air (macOS 10.14, so newer versions won't run;
   auto-update off), Messages signed in as julian.crider@gmail.com / 702-498-2571, Cloudflare proxy (URL changes on
   restart; the `new-server` webhook updates BB_URL). Script Properties BB_URL, BB_PASSWORD, BB_KEY. `bbTextPerson` texts
@@ -70,7 +70,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   if he records one, no open-house voice note). Step 1 (name,
   phone, email, visitor type) signs them in, later answers post action 'enrich' (enrichSignIn: FUB note, re-tier tags, fills the
   Sign-Ins row, cancels queued texts if Has Agent). Notes carry "Form: funnel" / "Form: page" for the A/B answer-rate test.
-  Appointments: bookSlot texts a confirmation; remindUpcoming (every 5 min) texts ~15 min before any Google Calendar
+  Appointments: bookSlot texts a confirmation; remindUpcoming (every 5 min) texts ~25 min before any Google Calendar
   event with a phone number in its notes/location/title ("Showing"/"Tour" in title → showing wording with location);
   one per event, skips Text Opt-Out, logs a FUB note. Triggers are ensured hourly by autoUpdateFromGitHub.
   Request a showing (button "Next: pick a time") with an address (not signed with an agent) then opens pickTime; bookSlot with kind 'showing'
