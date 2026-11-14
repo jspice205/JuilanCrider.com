@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-remind25';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-calltext';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2586,6 +2586,9 @@ function bbSendNow(phone, text) {
   // iPhone users sometimes text from their Apple ID email instead of their number: reply to that address too.
   const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
   if (!to) throw new Error('Not a US mobile number: ' + phone);
+  text = darkHands(text);
+  // Anything the script sends counts as Shawna's, so its echo is never logged as "Text from Julián" (Nov 14: 3 copies on Randall).
+  try { PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + to, String(Date.now())); } catch (e) {}
   // Existing conversation: send into it. New number: on this Mac's macOS (10.14) Messages can't address an unknown
   // "buddy", so start a new chat with the message instead. iMessage first, then green SMS (needs Text Message Forwarding).
   const known = PropertiesService.getScriptProperties().getProperty('BB_CHAT_' + to);
@@ -2803,7 +2806,8 @@ function bbWebhook(e) {
           const fp = (fubFetch('people?limit=1&fields=id&phone=' + to.slice(2), null, 'get').people || [])[0];
           if (fp) {
             // Julián, Nov 12: his side of the conversation goes into Follow Up Boss too, so the history is complete.
-            try { fubFetch('notes', {personId: fp.id, subject: 'Text from Julián', body: String(data.text).slice(0, 2000)}); } catch (e) {}
+            const lk = 'JTXT_' + String(data.guid || Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, to + data.text))).slice(0, 60), lc = CacheService.getScriptCache();
+            if (!lc.get(lk)) { lc.put(lk, '1', 21600); try { fubFetch('notes', {personId: fp.id, subject: 'Text from Julián', body: String(data.text).slice(0, 2000)}); } catch (e) {} }
             rememberJulianText(to, data.text); detectMeeting(to, fp.id, data.text);
           }
         } catch (e) { console.log('His text: ' + e.message); }
@@ -5509,7 +5513,7 @@ function vapiEndOfCall(m, props) {
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
       const r = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly agreed to get a text: they said yes when asked, OR they asked to be texted themselves ("just text me", "text me the details"). appointment: the date, time, type and place of any appointment that was booked or that the caller asked Julián to put on his calendar (a showing, open house, team meeting, dinner, call), as a short title like "Team meeting with Joey at the office", else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
+        {role: 'system', content: 'This is a phone call answered by ' + assistantName() + ', the AI assistant of Julián, a real estate agent. Summarize it for Julián in 2 or 3 short sentences: who called, what they want (timeline, price range, area, pre-approval, agent status if mentioned), and the next step. No dashes. Also give the CALLER\'s name only if the caller said it (never the assistant\'s or Julián\'s name). textOk: true ONLY if the caller clearly agreed to get a text: they said yes when asked, OR they asked to be texted themselves ("just text me", "text me the details"). appointment: the date, time, type and place of any appointment that was booked or that the caller asked Julián to put on his calendar (a showing, open house, team meeting, dinner, call), as a short title like "Team meeting with Joey at the office", else empty. appointmentISO: the appointment start as YYYY-MM-DDTHH:mm in Las Vegas time (today is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE yyyy-MM-dd') + '), else empty. minutes: its length (default 30). deal: offer, under_contract, closed or listing if the caller said so, else empty. recap: 1 or 2 warm sentences to the caller recapping what they talked about and the next step, written as ' + assistantName() + ' (no dashes). This text IS the recap: never say you will text or send a recap. Return JSON {"summary": "...", "name": "caller full name or empty", "textOk": true|false, "appointment": "...", "appointmentISO": "...", "minutes": 30, "deal": "...", "recap": "..."}.'},
         {role: 'user', content: transcript.slice(0, 5000)}]));
       if (!summary) summary = humanize(r.summary || '');
       callerName = String(r.name || '').trim();
@@ -5607,7 +5611,7 @@ function vapiEndOfCall(m, props) {
         const first = realFirst(pp) || callerName.split(' ')[0] || '';
         const msg = 'Hi' + (first ? ' ' + first : '') + ', it\'s ' + assistantName() + ', Julián\'s assistant 👋🏾 Thanks for calling! ' + (recapInfo.recap || '') +
           (recapInfo.appt ? ' You\'re set for ' + recapInfo.appt + '.' : '') + ' If anything changes, just text me here.';
-        ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || callerName), 'call-recap', 'pending', 0, '', cell(msg)]);
+        if (!recentCallText(person.id)) ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([new Date(Date.now() + 60e3), person.id, cell(first || callerName), 'call-recap', 'pending', 0, '', cell(msg)]);
         ensureTextQueueTrigger();
       }
     } catch (e) { console.log('Call recap: ' + e.message); }
@@ -5616,7 +5620,7 @@ function vapiEndOfCall(m, props) {
     // number, ~1 minute after hanging up (9am-9pm; later calls get it in the morning). Never for opted-out numbers.
     try {
       const pp = fubFetch('people/' + person.id + '?fields=id,firstName,lastName,tags', null, 'get'), tags = pp.tags || [];
-      if (tags.indexOf('Text Opt-Out') < 0 && !tags.some(t => /^Test\b/i.test(t))) {
+      if (tags.indexOf('Text Opt-Out') < 0 && !tags.some(t => /^Test\b/i.test(t)) && !recentCallText(person.id)) {
         const first = realFirst(pp) || (callerName && !/^caller\b/i.test(callerName) ? callerName.split(' ')[0] : '');
         const gist = recapInfo && recapInfo.recap ? ' ' + recapInfo.recap : ' I passed your message to Julián and he\'ll get back to you soon.';
         const msg = 'Hi' + (first ? ' ' + first : '') + ', it\'s ' + assistantName() + ', Julián\'s assistant. Thanks for calling!' + gist +
@@ -5787,6 +5791,16 @@ function syncVapiAssistant(force) {
   if (res.getResponseCode() >= 300) throw new Error('Vapi update ' + res.getResponseCode() + ': ' + res.getContentText().slice(0, 300));
   props.setProperty('VAPI_SYNC', hash);
   return 'Vapi updated: new phone instructions, caller lookup and calmer pacing.';
+}
+
+/** True when this person already got (or has waiting) a call recap / thank-you text in the last 6 hours, so a second
+ *  call (Randall, Nov 14: called back 12 minutes later) doesn't send a second "thanks for calling". */
+function recentCallText(personId) {
+  const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+  if (!sh || sh.getLastRow() < 2) return false;
+  const n = Math.min(300, sh.getLastRow() - 1), rows = sh.getRange(sh.getLastRow() - n + 1, 1, n, 5).getValues();
+  return rows.some(r => String(r[1]) === String(personId) && /^call-(recap|thanks|followup)/.test(String(r[3])) &&
+    r[0] instanceof Date && Date.now() - r[0].getTime() < 6 * 36e5 && !/^(failed|skipped)/.test(String(r[4])));
 }
 
 /** Run once by hand to push Shawna's phone setup to Vapi now (it also happens on its own every hour). */
