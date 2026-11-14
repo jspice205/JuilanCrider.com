@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-questions2';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-when';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3306,6 +3306,30 @@ function moveDeal(pend) {
   return sg.label;
 }
 
+// ---------- Dates he types (Nov 14: "Monday at 10a" became Fri Nov 20; the AI miscounts weekdays) ----------
+/** "Monday", "monday the 16th", "the 16th", "tomorrow", "Nov 20" + "10a" / "10:30am" / "2pm" → 'YYYY-MM-DDTHH:mm' Las Vegas, or ''. */
+function resolveWhen(text) {
+  const tz = 'America/Los_Angeles', t = String(text || '').toLowerCase(), now = new Date();
+  const ymd = d => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+  const today = Utilities.parseDate(ymd(now) + ' 12:00', tz, 'yyyy-MM-dd HH:mm');
+  let day = null;
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const md = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/);
+  const dom = t.match(/\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/);
+  const wd = days.findIndex(d => new RegExp('\\b' + d + '\\b').test(t));
+  if (/\btomorrow\b/.test(t)) day = new Date(today.getTime() + 864e5);
+  else if (/\btoday\b|\btonight\b/.test(t)) day = today;
+  else if (md) { const y = Number(Utilities.formatDate(now, tz, 'yyyy')); day = new Date(y, months.indexOf(md[1]), Number(md[2]), 12); if (day < today) day.setFullYear(y + 1); }
+  else if (dom) { day = new Date(today); day.setDate(Number(dom[1])); if (day < today) { day.setMonth(day.getMonth() + 1); } }
+  else if (wd >= 0) { const cur = Number(Utilities.formatDate(now, tz, 'u')) % 7; let add = (wd - cur + 7) % 7; if (add === 0) add = 7; if (/\bnext\s+week\b/.test(t)) add += 7; day = new Date(today.getTime() + add * 864e5); }
+  if (!day) return '';
+  const tm = t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(a|p)\.?m?\.?\b/) || t.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\b/);
+  let h = 10, m = 0;
+  if (tm) { h = Number(tm[1]) % 12; m = Number(tm[2] || 0); if (tm[3] === 'p' || (!tm[3] && h < 8)) h += 12; }
+  return ymd(day) + 'T' + ('0' + h).slice(-2) + ':' + ('0' + m).slice(-2);
+}
+
 // ---------- How it goes out (Nov 13, Julián: "have her say text or email so I know what's happening") ----------
 function prettyPhone(ph) { const d = String(ph || '').replace(/\D/g, '').slice(-10); return d.length === 10 ? d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6) : String(ph || ''); }
 function viaText(ph) { return '📱 TEXT (iMessage/SMS) from your business line 702-498-2571 to ' + prettyPhone(ph); }
@@ -4478,6 +4502,7 @@ Examples (all mean the same as the action shown):
   const doAction = a => {
     // "email him", "text her back", or no name at all right after talking about someone: that person (Nov 12).
     const lpp = JSON.parse(props.getProperty('LAST_PERSON') || 'null');
+    if (/^(text|task|schedule)$/.test(a.action || '')) { const w = resolveWhen(text); if (w) a.when = w; }
     const gN = greetName(a.message || '');  // "Hi Susan," in the draft names who it's for (Nov 13: drafts kept going to Deborah)
     const lpMatchesGreet = !gN || /^(there|all|team|everyone|guys)$/i.test(gN) || String((lpp && lpp.name) || '').toLowerCase().indexOf(gN.toLowerCase().slice(0, 3)) === 0;
     if (lpp && Date.now() - lpp.at < 3 * 36e5 && lpMatchesGreet && (/^(him|her|them|they|he|she|that person|same person)$/i.test(String(a.who || '').trim()) ||
@@ -4670,6 +4695,13 @@ Examples (all mean the same as the action shown):
       }
       const n = addPending({personId: p.id, who: p.name, phone: phone, message: a.message, at: Date.now(), sendAt: sendAt});
       return say(name + ': ' + (sendAt ? 'schedule this text for ' + p.name + ' on ' + whenTxt : 'text ' + p.name) + (tags.indexOf('Text OK') < 0 ? ' (heads up: no Text OK tag)' : '') + '?\n' + viaText(phone) + '\n\n"' + a.message + '"' + (yesHint(n) ? '\n' + yesHint(n) : ''));
+    }
+    // "schedule a text to Emilee Monday at 10a" is a TEXT for later, not a calendar event (Nov 14).
+    if (a.action === 'schedule' && /\btext(s|ing)?\b(?! ?book)/i.test(text) && !/\b(calendar|appointment|meeting|showing|call with)\b/i.test(text)) a.action = 'text';
+    // "Monday the 16th" right after she offered a text: move THAT text, don't make a calendar event.
+    const pendT = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
+    if (a.action === 'schedule' && pendT && !pendT.kind && pendT.phone && Date.now() - pendT.at < 30 * 6e4 && !/\b(calendar|appointment|meeting|showing)\b/i.test(text)) {
+      a.action = 'text'; a.who = pendT.who; a.personId = pendT.personId; a.message = pendT.message;
     }
     if (a.action === 'schedule') {
       const m = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
