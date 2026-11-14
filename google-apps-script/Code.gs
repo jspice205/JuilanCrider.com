@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-bye';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-early';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -6033,7 +6033,10 @@ function sendApprovedText(personId, text) {
 
 function processTextQueue() {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
-  if (hour < 9 || hour >= 21) return;  // quiet hours: wait for the morning
+  // Quiet hours: 9am-9pm. Replies to someone who JUST called and asked for a text (recap/thanks/call-back) may go from 8am
+  // (the TCPA window is 8am-9pm; Nov 14: Randall called at 8:02 running late and his recap waited until 9).
+  if (hour < 8 || hour >= 21) return;
+  const early = hour < 9;
   const sheet = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
   if (!sheet || sheet.getLastRow() < 2) return;
   const props = PropertiesService.getScriptProperties();
@@ -6042,6 +6045,7 @@ function processTextQueue() {
   rows.forEach((r, i) => {
     const [due, id, , step, status, tries, , text] = r;
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
+    if (early && !/^call-(recap|thanks|followup)/.test(step)) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
     if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-|memo-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
