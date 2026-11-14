@@ -608,6 +608,14 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (overrides the router's "when" for text/task/schedule); "schedule a text…" with no calendar words = action text; a date-only
   reply right after a text approval moves that text instead of creating a calendar event.
 
+- Market voice memo (Nov 14): monthly, in Julián's OWN voice (never Shawna's AI voice to clients). `monthlyMarketMemo` (hourly
+  hook, first Tuesday 9am+, MEMO_RUN_<yyyymm>; MARKET_MEMO=off stops it) texts him a 45-second script (`memoScriptText`: only
+  ratesText + webAnswer numbers). Texting "market memo" gets a script any time and opens a 30-min window (MEMO_NEXT). His audio
+  (isMarketMemo: window, starts with "market memo", or a market-sounding recording within 7 days of the script) →
+  `queueMarketMemo`: saved to Drive "Market memo YYYY-MM", Text Queue step memo-YYYYMMDD for Text OK contacts (freeSubscribers
+  'Text OK', not agents/partners/Has Agent/Not Interested, max 150), "Hey {first}, quick market update for you 🎙️ || [file: id]",
+  due max(11am, +2h); heads-up; "hold the memo" stops it. First one: Tue Dec 1, 2026.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

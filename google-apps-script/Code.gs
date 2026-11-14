@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-when';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-memo';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -384,6 +384,7 @@ function autoUpdateFromGitHub() {
   try { processAllowNotes(); } catch (e) { console.log('Shawna allow: ' + e.message); }
   try { cleanupOldTasks(); } catch (e) { console.log('Old tasks: ' + e.message); }
   try { prepareHolidayTexts(); } catch (e) { console.log('Holiday texts: ' + e.message); }
+  try { monthlyMarketMemo(); } catch (e) { console.log('Market memo: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '3') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
@@ -1593,7 +1594,7 @@ function holdAuto(text) {
   const props = PropertiesService.getScriptProperties(), t = String(text || '').toLowerCase();
   const recent = JSON.parse(props.getProperty('AUTO_LAST') || '[]').filter(x => Date.now() - x.at < 2 * 864e5);
   const named = recent.filter(x => (x.who && t.indexOf(String(x.who).split(' ')[0].toLowerCase()) >= 0) ||
-    (/check.?in|21/.test(t) && /^t21-/.test(x.step)) || (/free/.test(t) && /^free-/.test(x.step)) || (/birthday|bday/.test(t) && /^bday-/.test(x.step)) || (/holiday/.test(t) && /^holiday-/.test(x.step)));
+    (/check.?in|21/.test(t) && /^t21-/.test(x.step)) || (/free/.test(t) && /^free-/.test(x.step)) || (/birthday|bday/.test(t) && /^bday-/.test(x.step)) || (/holiday/.test(t) && /^holiday-/.test(x.step)) || (/memo|market/.test(t) && /^memo-/.test(x.step)));
   const pick = named.length ? named : recent.slice(-1);
   if (!pick.length) return 'nothing automatic is waiting to go out right now.';
   const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name); let n = 0;
@@ -1753,6 +1754,74 @@ function prepareHolidayTexts() {
   const n = addPending({kind: 'holiday', step: step, label: h.label, count: ok.length, when: 'tomorrow at 10am', at: Date.now()});
   bossTextSafe('🎉 ' + h.label + ' is tomorrow. I wrote a text for ' + ok.length + ' past clients and VIPs, like:\n\n"' + h.text.replace('{first}', realFirst(ok[0])).replace('{year}', String(y)) +
     '"\n\nWant me to send them tomorrow at 10am? ' + yesHint(n));
+}
+
+// ---------- Monthly market voice memo (Nov 14) ----------
+// Julián's own voice (never Shawna's AI voice to clients: FCC treats AI voices in calls/texts as artificial voice).
+// First Tuesday of each month, 9am+: Shawna texts him a ~45-second, 3-point script built only from today's rate averages
+// and a web answer (no invented numbers). He records it in Voice Memos and texts the audio to the business line (or says
+// "market memo" first). The audio is saved to Drive and queued in the Text Queue (step memo-YYYYMM) for his Text OK
+// contacts, 2 hours later (or 11am, whichever is later), with one heads-up; "hold" / "hold the memo" stops it.
+// Texting "market memo" any time gets a fresh script and opens the 30-minute window for the recording.
+const MEMO = {waitDays: 7, delayH: 2, max: 150};
+function memoScriptText() {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
+  const month = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'MMMM');
+  const facts = [ratesText(), webAnswer('Las Vegas and Henderson housing market this month: median price, inventory, days on market, latest numbers and source')].filter(Boolean).join('\n');
+  let script = '';
+  try {
+    script = String(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: 'Write a 45-second voice memo script (about 110 words) for Julián Crider, a Las Vegas / Henderson Realtor, to record in his own voice for his clients. ' +
+        'Warm, human, plain words, like a friend who knows the market. Open with "Hey, it\'s Julián" and a quick ' + month + ' market update. Exactly 3 points, then one ' +
+        'no-oriented question (e.g. "Would it be a bad idea to text me back if you want the numbers for your neighborhood?"). Use ONLY numbers from FACTS; if a number is not there, ' +
+        'say it without a number. No promises, no predictions, nothing about who should live where (Fair Housing). Answer as JSON only: {"script": "<the script, plain text>"}'},
+      {role: 'user', content: 'FACTS:\n' + (facts || '(none today: keep it general)')}], {maxTokens: 600}));
+    script = String((JSON.parse(script) || {}).script || '').trim();
+  } catch (e) { script = ''; }
+  CacheService.getScriptCache().put('MEMO_NEXT', '1', 1800);
+  props.setProperty('MEMO_WAIT', String(Date.now()));
+  return '🎙️ Your ' + month + ' market memo script:\n\n' + (script || '(I couldn\'t write it right now. Say 3 things you\'re seeing in the market and ask them one question.)') +
+    '\n\nRecord it in Voice Memos (about 45 seconds), then share it here. It goes to your Text OK contacts 2 hours after you send it, and I\'ll tell you who.' +
+    (facts ? '\n\nWhere the numbers come from:\n\n' + facts.slice(0, 600) : '');
+}
+/** Hourly hook: first Tuesday of the month, 9am or later, once a month. */
+function monthlyMarketMemo() {
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = new Date();
+  if (Utilities.formatDate(now, tz, 'u') !== '2' || Number(Utilities.formatDate(now, tz, 'd')) > 7 || Number(Utilities.formatDate(now, tz, 'H')) < 9) return;
+  const k = 'MEMO_RUN_' + Utilities.formatDate(now, tz, 'yyyyMM');
+  if (props.getProperty(k) || props.getProperty('MARKET_MEMO') === 'off') return;
+  props.setProperty(k, '1');
+  bossTextSafe(memoScriptText());
+}
+/** Is this audio from Julián his market memo? "market memo" said first (30 min), spoken at the start, or a long
+ *  recording in the week after the script. */
+function isMarketMemo(att, heard) {
+  const props = PropertiesService.getScriptProperties(), waiting = Date.now() - Number(props.getProperty('MEMO_WAIT') || 0) < MEMO.waitDays * 864e5;
+  if (/^call/i.test(String(att.transferName || ''))) return false;
+  if (CacheService.getScriptCache().get('MEMO_NEXT')) return true;
+  if (/^\W*(market (memo|update)|memo)\b/i.test(heard || '') && waiting) return true;
+  return waiting && String(heard || '').length > 250 && String(heard || '').length < 1500 && /\bmarket\b|\brates?\b|\bprices?\b|\binventory\b/i.test(heard || '');
+}
+/** Saves the recording to Drive and queues it for his Text OK contacts. Returns what to tell him. */
+function queueMarketMemo(att, heard) {
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles', now = new Date();
+  const url = props.getProperty('BB_URL').replace(/\/+$/, '') + '/api/v1/attachment/' + encodeURIComponent(att.guid) + '/download?password=' + encodeURIComponent(props.getProperty('BB_PASSWORD'));
+  const res = UrlFetchApp.fetch(url, {muteHttpExceptions: true});
+  if (res.getResponseCode() >= 300) throw new Error('download ' + res.getResponseCode());
+  const ext = (String(att.transferName || '').match(/\.(\w+)$/) || [, 'm4a'])[1];
+  const file = DriveApp.createFile(res.getBlob().setName('Market memo ' + Utilities.formatDate(now, tz, 'yyyy-MM') + '.' + ext));
+  CacheService.getScriptCache().remove('MEMO_NEXT'); props.deleteProperty('MEMO_WAIT');
+  const people = freeSubscribers('Text OK').filter(p => !(p.tags || []).some(t => /^(not interested|has agent|pause|agent|partner)$/i.test(t))).slice(0, MEMO.max);
+  if (!people.length) return '🎙️ Got your memo (saved in Drive as "' + file.getName() + '"), but nobody has Text OK yet, so nothing was queued.';
+  const eleven = Utilities.parseDate(Utilities.formatDate(now, tz, 'yyyy-MM-dd') + ' 11:00', tz, 'yyyy-MM-dd HH:mm');
+  let due = new Date(Math.max(eleven.getTime(), now.getTime() + MEMO.delayH * 36e5));
+  if (Number(Utilities.formatDate(due, tz, 'H')) >= 20) due = Utilities.parseDate(Utilities.formatDate(new Date(now.getTime() + 864e5), tz, 'yyyy-MM-dd') + ' 11:00', tz, 'yyyy-MM-dd HH:mm');
+  const step = 'memo-' + Utilities.formatDate(now, tz, 'yyyyMMdd'), sh = ensureTab(getSS(), TEXT_QUEUE_TAB);
+  people.forEach(p => sh.appendRow([due, p.id, cell(p.name || realFirst(p)), step, 'pending', 0, '', cell('Hey ' + realFirst(p) + ', quick market update for you 🎙️ || [file: ' + file.getId() + ']')]));
+  autoNote(step, 'market memo');
+  return '🎙️ Got your market memo. 📱 TEXT from your business line 702-498-2571 to ' + people.length + ' Text OK ' + (people.length === 1 ? 'contact' : 'contacts') +
+    ' (' + people.slice(0, 6).map(p => realFirst(p)).join(', ') + (people.length > 6 ? '…' : '') + ') ' + Utilities.formatDate(due, tz, "EEEE 'at' h:mm a") +
+    ':\n\n"Hey {first}, quick market update for you 🎙️" + your recording\n\nSay "hold the memo" to stop it.' + (heard ? '\n\nWhat I heard: "' + heard.slice(0, 300) + (heard.length > 300 ? '…' : '') + '"' : '');
 }
 
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
@@ -2681,6 +2750,10 @@ function bbWebhook(e) {
       c.put(dk, '1', 6 * 3600);
       let heard = '';
       try { heard = transcribeAudio(att); } catch (err) { console.log('Audio: ' + err.message); }
+      if ((addr === bossA || selfA) && isMarketMemo(att, heard)) {  // his monthly market memo → his Text OK contacts
+        let msg; try { msg = queueMarketMemo(att, heard); } catch (err) { msg = '🎙️ I got your market memo but couldn\'t save it (' + err.message + '). Try sending it again.'; }
+        bossTextSafe(msg); return json({status: 'ok'});
+      }
       if (addr === bossA || selfA) {
         if (!heard) { try { notifyJulian('🎤 Shawna', 'I got your audio but couldn\'t listen to it (' + (att.transferName || 'audio') + '). Try sharing it as an m4a, or copy the transcript instead.'); } catch (err) {} return json({status: 'ok'}); }
         const who = (String(att.transferName || '').match(/^call (?:with|from) (.+?)\.\w+$/i) || [])[1] || '';
@@ -4442,6 +4515,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
+  else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -4730,6 +4804,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'dealmove') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(dealMoveCommand(a, text)); }
     if (a.action === 'pipeline') return say(pipelineText(a.message || text));
     if (a.action === 'holdauto') return say(holdAuto(a.message || text));
+    if (a.action === 'memoscript') return say(memoScriptText());
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
@@ -5964,7 +6039,7 @@ function processTextQueue() {
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-|memo-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       let res;
       if (/^autoemail-/.test(step)) {  // automatic deal-flow email (from julianc@bcolv.com): "Subject: …" then the body
@@ -5973,7 +6048,7 @@ function processTextQueue() {
         else { const sub = (String(text).match(/^Subject: (.*)/) || [, 'Update from Julián'])[1], body = String(text).replace(/^Subject: .*\n+/, '');
           const r = sendFromBcolv(to, sub, body); if (!r.ok) throw new Error(r.error || 'email failed');
           fubFetch('notes', {personId: id, subject: 'Email sent', body: 'To ' + to + ' (automatic): "' + sub + '"\n\n' + body}); res = 'sent'; }
-      } else res = step === 'scheduled' || step === 'call-thanks' || /^auto-/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
+      } else res = step === 'scheduled' || step === 'call-thanks' || /^(auto|memo)-/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
