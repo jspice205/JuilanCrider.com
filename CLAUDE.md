@@ -603,6 +603,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   vision, sellers, decision, after a showing, labels, Fair Housing guard; trimmed Nov 14 to the 14 best + 2 labels) is in assistantPrompt (one per message,
   only when it fits) and vapiPrompt (one at a time on the phone; pushed by syncVapiAssistant).
 
+- Scheduling texts (Nov 14: "schedule a text to Emilee Monday at 10a" made calendar events on Fri Nov 20 and Mon Nov 16
+  instead of a text): `resolveWhen(text)` turns weekday / "the 16th" / "Nov 20" / tomorrow + "10a"/"2pm" into the date in code
+  (overrides the router's "when" for text/task/schedule); "schedule a text…" with no calendar words = action text; a date-only
+  reply right after a text approval moves that text instead of creating a calendar event.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
