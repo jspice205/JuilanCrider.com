@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-early';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-remind25';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -278,7 +278,7 @@ function bookSlot(d) {
       if (!golf) createCallTask(pid, showing ? `showing ${label} at ${d.property}` : listing ? `listing appointment ${label} at ${d.property} (bring the CMA)` : `${m.label.toLowerCase()} ${label}`);
     }
   } catch (err) { console.error('Booking FUB: ' + err); }
-  try {  // confirmation text (the 15-minute reminder comes from remindUpcoming)
+  try {  // confirmation text (the 25-minute reminder comes from remindUpcoming)
     const first = String(d.name).trim().split(/\s+/)[0];
     const sent = bbSend(d.phone, showing ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
       : listing ? `Hey ${first}, it's Julián 👋🏾 You're all set: I'll see you at ${String(d.property).split(',')[0]} ${label}. Before then, here's how I sell homes: juliancrider.com/?sell`
@@ -5898,7 +5898,7 @@ function ensureTextQueueTrigger() {
 }
 
 // ============================================================
-// APPOINTMENT REMINDERS: a text about 15 minutes before any event on Julián's Google Calendar that has a phone number
+// APPOINTMENT REMINDERS: a text about 25 minutes before any event on Julián's Google Calendar that has a phone number
 // in its notes (website bookings add "Phone: …" automatically; for a showing, add the client's number to the event).
 // Title with "Showing" → showing wording (uses the event's location). Skips anyone tagged Text Opt-Out.
 // ============================================================
@@ -5991,7 +5991,10 @@ function remindUpcoming() {
   try { processEmailAssistant(); } catch (e) { console.log('Email assistant: ' + e.message); }
   try { applySettings(); } catch (e) { console.log('Settings: ' + e.message); }
   const now = Date.now(), props = PropertiesService.getScriptProperties();
-  const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 9 * 6e4), new Date(now + 21 * 6e4));
+  // About 25 minutes out (Julián, Nov 14; was 15). The 5-minute tick catches each event once when it's 23-28 minutes
+  // away; something booked later than that still gets its reminder right away (at least 5 minutes out).
+  const events = CalendarApp.getDefaultCalendar().getEvents(new Date(now + 5 * 6e4), new Date(now + 28 * 6e4))
+    .filter(ev => ev.getStartTime().getTime() >= now + 5 * 6e4);  // never for something already under way
   events.forEach(ev => {
     const key = 'REM_' + ev.getId().slice(0, 40) + '_' + ev.getStartTime().getTime();
     if (props.getProperty(key) || ev.isAllDayEvent()) return;
@@ -6010,8 +6013,8 @@ function remindUpcoming() {
     const time = Utilities.formatDate(ev.getStartTime(), 'America/Los_Angeles', 'h:mm a');
     const where = String(ev.getLocation() || '').split(',')[0].trim();
     const text = /showing|tour/i.test(ev.getTitle())
-      ? `Hey ${first}, Julián here 👋🏾 Quick reminder, I'll see you ${where ? 'at ' + where + ' ' : ''}at ${time}. If anything changed, just text me. See you soon!`
-      : `Hey ${first}, Julián here 👋🏾 Quick reminder about our ${time} today. See you soon!`;
+      ? `Hey ${first}, Julián here 👋🏿 Quick reminder, I'll see you ${where ? 'at ' + where + ' ' : ''}at ${time}. If anything changed, just text me. See you soon!`
+      : `Hey ${first}, Julián here 👋🏿 Quick reminder about our ${time} today. See you soon!`;
     try {
       bbSend(phone, text);
       if (person) fubFetch('notes', {personId: person.id, subject: 'Reminder text sent', body: text});
