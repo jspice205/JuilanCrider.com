@@ -635,6 +635,17 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   'Text OK', not agents/partners/Has Agent/Not Interested, max 150), "Hey {first}, quick market update for you 🎙️ || [file: id]",
   due max(11am, +2h); heads-up; "hold the memo" stops it. First one: Tue Dec 1, 2026.
 
+- Listing pages (Nov 14, like the ListingCraft app): juliancrider.com/?home=<token> (`homePage` in index.html, navy/gold; GET
+  ?action=listing → `listingPageData`). "Listing Pages" sheet tab (HOME_TAB, one row per home: facts JSON, price, photos JSON
+  [{o: original Drive id, e: enhanced id}], MLS / portal / Instagram copy, Use originals). Boss fast path "listing page <address>,
+  details…" → `listingPageCommand` (Groq pulls his details; Clark County records via parcelForAddress/parcelRecord; Groq writes
+  MLS ~100 words, portal ~150, Instagram; only given facts, Fair Housing safe; LISTING_ACTIVE 6 h). Photos he texts from his
+  phone while a page is active → bbWebhook `queueListingPhotos` (LISTING_PHOTO_Q) → `processListingPhotos` (processAssistantQueue,
+  3 per tick): originals to Drive "Listing Photos/<address>" (shared view-only, page uses drive.google.com/thumbnail), then
+  `geminiEnhance` (GEMINI_API_KEY, GEMINI_IMAGE_MODEL default gemini-2.5-flash-image, ENHANCE_PROMPT = Phase One XC IQ4 look,
+  never change the scene) unless his text says "original"; one summary text when the batch is done. "use original photos" /
+  "use enhanced photos" / "remove photo 3" → `listingPhotoCommand`. No made-up comps/price: price only when he gives it.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

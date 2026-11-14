@@ -158,12 +158,13 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-thanks';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-listingpage';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   if (e && e.parameter && e.parameter.action === 'client') return json(clientPageData(String(e.parameter.id || '')));
+  if (e && e.parameter && e.parameter.action === 'listing') return json(listingPageData(String(e.parameter.id || '')));
   if (e && e.parameter && e.parameter.action === 'free') return json({status: 'ok', items: freeItems(30)});
   if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
@@ -1824,6 +1825,175 @@ function queueMarketMemo(att, heard) {
     ':\n\n"Hey {first}, quick market update for you 🎙️" + your recording\n\nSay "hold the memo" to stop it.' + (heard ? '\n\nWhat I heard: "' + heard.slice(0, 300) + (heard.length > 300 ? '…' : '') + '"' : '');
 }
 
+// ---------- Listing pages (Nov 14) ----------
+// juliancrider.com/?home=<token>: a finished listing for a listing appointment (like ListingCraft). Julián texts Shawna
+// "listing page <address>, 4 bed 3 bath, pool, price 1.2-1.3M" → public records + his details → MLS copy, Zillow story and
+// Instagram caption (Groq, only facts given, Fair Housing safe). Photos he texts next (6 h) go on the page, enhanced by
+// Google Gemini to a Phase One medium-format look (GEMINI_API_KEY, GEMINI_IMAGE_MODEL) unless he says "original".
+// Originals are always kept in Drive "Listing Photos"; "use original photos" / "use enhanced photos" switches the page.
+const HOME_TAB = {name: 'Listing Pages', color: '#B8860B', headers: ['Page', 'Address', 'Parcel', 'Facts', 'Price', 'Photos', 'MLS', 'Portal', 'Instagram', 'Use originals', 'Updated']};
+const ENHANCE_PROMPT = 'Edit this real estate photo so it looks like it was shot on a Phase One XC IQ4 150MP medium format camera by a top architectural photographer: ' +
+  'wide dynamic range (open, detailed shadows and recovered highlights), true to life neutral color and white balance, crisp fine detail, clean bright natural light, straight vertical lines. ' +
+  'Do NOT add, remove, move or change anything in the scene: keep the same rooms, walls, furniture, fixtures, landscaping, sky, views and every permanent feature exactly as they are. ' +
+  'No virtual staging, no sky replacement, no greener lawn, no new objects. Keep the same framing and aspect ratio. Return only the edited photo.';
+function homePageUrl(t) { return 'https://juliancrider.com/?home=' + t; }
+function homeRows() {
+  const sh = ensureTab(getSS(), HOME_TAB), last = sh.getLastRow();
+  return (last > 1 ? sh.getRange(2, 1, last - 1, HOME_TAB.headers.length).getValues() : []).map((r, i) => ({row: i + 2, token: String(r[0]), address: String(r[1]),
+    parcel: String(r[2]), facts: jsonOr(r[3], {}), price: String(r[4] || ''), photos: jsonOr(r[5], []), mls: String(r[6] || ''), portal: String(r[7] || ''),
+    instagram: String(r[8] || ''), originals: /^y/i.test(String(r[9]))}));
+}
+function jsonOr(v, d) { try { return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function homeSave(h) {
+  const sh = ensureTab(getSS(), HOME_TAB), vals = [h.token, cell(h.address), h.parcel || '', JSON.stringify(h.facts || {}), cell(h.price || ''), JSON.stringify(h.photos || []),
+    cell(h.mls || ''), cell(h.portal || ''), cell(h.instagram || ''), h.originals ? 'Y' : '', new Date()];
+  if (h.row) sh.getRange(h.row, 1, 1, vals.length).setValues([vals]); else { sh.appendRow(vals); h.row = sh.getLastRow(); }
+}
+function homeKey(a) { return String(a || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).slice(0, 2).join(' '); }
+/** The listing Shawna is working on: named by address in the text, else the active one (last 6 hours). */
+function homeFor(text) {
+  const rows = homeRows(), t = String(text || '').toLowerCase();
+  const hit = rows.filter(h => { const k = homeKey(h.address); return k.length > 3 && t.indexOf(k) >= 0; }).pop();
+  if (hit) return hit;
+  const act = jsonOr(PropertiesService.getScriptProperties().getProperty('LISTING_ACTIVE'), null);
+  return act && Date.now() - act.at < 6 * 36e5 ? rows.filter(h => h.token === act.token)[0] || null : null;
+}
+function setActiveHome(token) { PropertiesService.getScriptProperties().setProperty('LISTING_ACTIVE', JSON.stringify({token: token, at: Date.now()})); }
+/** Public data for the page. */
+function listingPageData(token) {
+  if (!/^[a-f0-9]{12,}$/.test(token)) return {status: 'error'};
+  const h = homeRows().filter(x => x.token === token)[0];
+  if (!h) return {status: 'error'};
+  const img = id => 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
+  return {status: 'ok', address: h.address, facts: h.facts, price: h.price, mls: h.mls, portal: h.portal, instagram: h.instagram,
+    photos: h.photos.map(p => img(h.originals || !p.e ? p.o : p.e)), enhanced: !h.originals && h.photos.some(p => p.e)};
+}
+/** "listing page 123 Desert Rose Ln, 4 bed 3 bath, pool, price 1.2-1.3M" → create or update the page. */
+function listingPageCommand(text) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
+  const said = String(text || '').replace(/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\s*(for|on|at)?\s*[:\-]?\s*/i, '').trim();
+  let h = homeFor(said);
+  if (!said && h) return '🏡 ' + h.address + ': ' + homePageUrl(h.token) + '\n\nText me photos and I\'ll add them.';
+  if (!said) return 'Which address? Text "listing page" plus the address, and any details you know (beds, baths, price).';
+  let p = {};
+  try { p = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+    {role: 'system', content: 'Pull listing details out of a Realtor\'s text. JSON only: {"address": "street address with city if given, else empty", "beds": "", "baths": "", "sqft": "", "lot": "", "year": "", "garage": "", "price": "list price or range exactly as written, else empty", "features": ["short features he mentioned"]}. Leave anything he did not say empty. Never guess.'},
+    {role: 'user', content: said}], {maxTokens: 500, noPick: true})); } catch (e) {}
+  const addr = String(p.address || '').trim() || (h ? h.address : '') || said.split(',')[0];
+  if (!h) h = homeFor(addr);
+  const isNew = !h;
+  if (!h) h = {token: Utilities.getUuid().replace(/-/g, '').slice(0, 18), address: addr, facts: {}, photos: [], price: ''};
+  // Public records (Clark County): parcel, lot, year built, living area when the Assessor shows them.
+  if (!h.parcel) {
+    try {
+      const w = parcelForAddress(addr);
+      if (!w.error) {
+        h.parcel = w.apn; h.address = h.address || w.address;
+        const raw = parcelRecord(w.apn);
+        const r = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+          {role: 'system', content: 'From this Clark County Assessor parcel record, JSON only: {"city": "", "zip": "", "sqft": "living area square feet if shown", "lot": "lot size as shown (acres or sq ft)", "year": "year built", "beds": "", "baths": "", "garage": "", "pool": "yes if a pool is listed, else empty", "subdivision": ""}. Only values the record shows, else empty.'},
+          {role: 'user', content: raw}], {maxTokens: 400, noPick: true}));
+        Object.keys(r).forEach(k => { if (r[k] && !h.facts[k]) h.facts[k] = String(r[k]); });
+        if (w.subdivision && !h.facts.subdivision) h.facts.subdivision = w.subdivision;
+      }
+    } catch (e) { console.log('Listing records: ' + e.message); }
+  }
+  ['beds', 'baths', 'sqft', 'lot', 'year', 'garage'].forEach(k => { if (p[k]) h.facts[k] = String(p[k]); });
+  if ((p.features || []).length) h.facts.features = (h.facts.features || []).concat(p.features).filter((x, i, a) => a.indexOf(x) === i).slice(0, 15);
+  if (p.price) h.price = String(p.price);
+  // The writing: only what's known; Fair Housing safe.
+  try {
+    const w = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: 'You write listing copy for Julián Crider, a Las Vegas / Henderson luxury Realtor. Use ONLY the facts given; never invent rooms, finishes, views, upgrades, numbers or school names. ' +
+        'Fair Housing: describe the home, never the people who should live there (no "perfect for families", "ideal for", "singles", "retirees", "family home", no church or school quality claims); if schools come up say "buyer to verify school assignment". No price in the copy. No dashes. ' +
+        'JSON only: {"mls": "MLS description, concise and factual, about 100 words", "portal": "Zillow and portal story, warmer lifestyle tone, about 150 words", "instagram": "Instagram caption: a one line hook, 3 to 5 short lines, 2 or 3 emojis, then 8 to 10 local hashtags (Las Vegas, Henderson, the neighborhood; no family or people hashtags)"}'},
+      {role: 'user', content: 'Address: ' + h.address + '\nFacts: ' + JSON.stringify(h.facts)}], {maxTokens: 1400}));
+    h.mls = humanize(w.mls || h.mls || ''); h.portal = humanize(w.portal || h.portal || ''); h.instagram = String(w.instagram || h.instagram || '').replace(/\s*[—–]\s*/g, ', ');
+  } catch (e) { console.log('Listing copy: ' + e.message); }
+  homeSave(h); setActiveHome(h.token);
+  const f = h.facts, line = [f.beds && f.beds + ' bed', f.baths && f.baths + ' bath', f.sqft && f.sqft + ' sq ft', f.year && 'built ' + f.year].filter(Boolean).join(' · ');
+  return '🏡 ' + (isNew ? 'Listing page ready' : 'Listing page updated') + ': ' + h.address + (line ? '\n' + line : '') + (h.price ? '\nPrice: ' + h.price : '') +
+    '\n\n' + homePageUrl(h.token) + '\n\nText me the photos now and I\'ll enhance them for the page (add "original" to use them as they are). Missing details? Text "listing page ' + homeKey(h.address) + ', 4 bed, price 1.2M" and I\'ll update it.';
+}
+/** "use original photos" / "use enhanced photos" / "remove photo 3" on the active listing page. */
+function listingPhotoCommand(text) {
+  const h = homeFor(text);
+  if (!h) return 'Which listing page? Text "listing page" plus the address first.';
+  const rm = String(text).match(/(?:remove|delete)\s+photo\s+#?(\d+)/i);
+  if (rm) { const i = Number(rm[1]) - 1; if (!h.photos[i]) return 'There\'s no photo ' + rm[1] + ' (the page has ' + h.photos.length + ').'; h.photos.splice(i, 1); homeSave(h); return '🗑 Removed photo ' + rm[1] + ' from ' + h.address + '. ' + h.photos.length + ' left.\n' + homePageUrl(h.token); }
+  h.originals = /original/i.test(text); homeSave(h); setActiveHome(h.token);
+  return (h.originals ? '📷 The page now shows your original photos' : '✨ The page now shows the enhanced photos') + ' for ' + h.address + '.\n' + homePageUrl(h.token);
+}
+/** Photo attachments Julián texts while a listing page is active: queued, handled a few per minute. */
+function queueListingPhotos(atts, text) {
+  const h = homeFor(text); if (!h) return 0;
+  const props = PropertiesService.getScriptProperties(), q = jsonOr(props.getProperty('LISTING_PHOTO_Q'), []);
+  const orig = /\boriginal|as is|don'?t (edit|enhance)|no edit/i.test(text || '');
+  atts.forEach(a => { if (!q.some(x => x.guid === a.guid)) q.push({guid: a.guid, name: a.transferName || 'photo.jpg', token: h.token, orig: orig, at: Date.now(), tries: 0}); });
+  props.setProperty('LISTING_PHOTO_Q', JSON.stringify(q.slice(-60)));
+  setActiveHome(h.token);
+  return atts.length;
+}
+function processListingPhotos() {
+  const props = PropertiesService.getScriptProperties();
+  let q = jsonOr(props.getProperty('LISTING_PHOTO_Q'), []).filter(x => x.tries < 5 && Date.now() - x.at < 24 * 36e5);
+  if (!q.length) return;
+  if (Date.now() - Math.max.apply(null, q.map(x => x.at)) < 20 * 1000) return;  // let the whole batch arrive first
+  const busy = CacheService.getScriptCache(); if (busy.get('LP_BUSY')) return; busy.put('LP_BUSY', '1', 300);
+  try {
+    const stats = jsonOr(props.getProperty('LISTING_PHOTO_STATS'), {});
+    for (let n = 0; n < 3 && q.length; n++) {
+      const x = q[0], h = homeRows().filter(r => r.token === x.token)[0];
+      if (!h) { q.shift(); continue; }
+      try {
+        const res = UrlFetchApp.fetch(props.getProperty('BB_URL').replace(/\/+$/, '') + '/api/v1/attachment/' + encodeURIComponent(x.guid) + '/download?password=' + encodeURIComponent(props.getProperty('BB_PASSWORD')), {muteHttpExceptions: true});
+        if (res.getResponseCode() >= 300 || res.getBlob().getBytes().length < 2000) throw new Error('download ' + res.getResponseCode());
+        const folder = listingFolder(h.address), blob = res.getBlob().setName(x.name);
+        const o = folder.createFile(blob); o.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        let eId = '', why = '';
+        if (!x.orig) { const en = geminiEnhance(blob); if (en.blob) { const f = folder.createFile(en.blob.setName('Enhanced ' + x.name.replace(/\.\w+$/, '') + '.png')); f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); eId = f.getId(); } else why = en.error; }
+        h.photos.push({o: o.getId(), e: eId}); homeSave(h);
+        const s = stats[x.token] = stats[x.token] || {n: 0, enh: 0, why: ''}; s.n++; if (eId) s.enh++; if (why) s.why = why;
+        q.shift();
+      } catch (e) { x.tries++; console.log('Listing photo: ' + e.message); if (x.tries >= 5) q.shift(); else break; }
+    }
+    props.setProperty('LISTING_PHOTO_Q', JSON.stringify(q));
+    Object.keys(stats).forEach(t => {
+      if (q.some(x => x.token === t)) return;  // still working on this one
+      const s = stats[t], h = homeRows().filter(r => r.token === t)[0]; delete stats[t];
+      if (!h) return;
+      bossTextSafe('📸 Added ' + s.n + ' photo' + (s.n === 1 ? '' : 's') + ' to ' + h.address + (s.enh ? ' (' + s.enh + ' enhanced to the Phase One look)' : '') +
+        (s.why && s.enh < s.n ? '\n\n' + (s.n - s.enh) + ' kept as original: ' + s.why : '') + '\n\n' + homePageUrl(t) + '\n\nSay "use original photos" anytime to switch, or "remove photo 3".');
+    });
+    props.setProperty('LISTING_PHOTO_STATS', JSON.stringify(stats));
+  } finally { busy.remove('LP_BUSY'); }
+}
+function listingFolder(address) {
+  const root = (DriveApp.getFoldersByName('Listing Photos').hasNext() ? DriveApp.getFoldersByName('Listing Photos').next() : DriveApp.createFolder('Listing Photos'));
+  const it = root.getFoldersByName(address);
+  return it.hasNext() ? it.next() : root.createFolder(address);
+}
+/** Google Gemini image editing (the same Google image model family as Flow). Returns {blob} or {error}. */
+function geminiEnhance(blob) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GEMINI_API_KEY');
+  if (!key) return {error: 'no Gemini key saved'};
+  const bytes = blob.getBytes();
+  if (bytes.length > 15 * 1024 * 1024) return {error: 'photo too large for the enhancer'};
+  const model = props.getProperty('GEMINI_IMAGE_MODEL') || 'gemini-2.5-flash-image';
+  const mime = /heic|heif/i.test(blob.getName()) ? 'image/heic' : (blob.getContentType() || 'image/jpeg');
+  const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({contents: [{parts: [{text: ENHANCE_PROMPT}, {inline_data: {mime_type: mime, data: Utilities.base64Encode(bytes)}}]}],
+      generationConfig: {responseModalities: ['TEXT', 'IMAGE']}})});
+  const code = r.getResponseCode();
+  if (code === 429) return {error: 'Google\'s free daily image allowance is used up (it resets tomorrow)'};
+  if (code >= 300) return {error: 'Google said ' + code + ' (' + r.getContentText().slice(0, 120).replace(/\s+/g, ' ') + ')'};
+  const parts = ((((JSON.parse(r.getContentText()).candidates || [])[0] || {}).content || {}).parts) || [];
+  const img = parts.map(p => p.inlineData || p.inline_data).filter(Boolean)[0];
+  if (!img) return {error: 'Google didn\'t return a photo'};
+  return {blob: Utilities.newBlob(Utilities.base64Decode(img.data), img.mimeType || img.mime_type || 'image/png', 'enhanced.png')};
+}
+
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
 /** Daily (after scoring): for each Sellers card in Listing Prep / Active / Offers / escrow, drafts the next due message
  *  for Julián's OK (approvals queue + a text to him). Nothing reaches the client until he says yes. */
@@ -2746,6 +2916,16 @@ function bbWebhook(e) {
   // AUDIO (Julián, Nov 12): Shawna listens. Voice messages and audio files (a call recording shared from Notes) are turned
   // into text with Groq's free speech-to-text and handled like a text. From Julián (or his own business line): call
   // notes, or a spoken request if it's short. From anyone else: their message, answered as usual.
+  // LISTING PHOTOS (Nov 14): photos Julián texts while a listing page is active go on that page (enhanced unless "original").
+  if (ev.type === 'new-message' && !data.isFromMe) {
+    const imgs = (data.attachments || []).filter(a => /^image\//i.test(a.mimeType || '') || /\.(jpe?g|png|heic|heif|webp)$/i.test(a.transferName || ''));
+    const from = bbE164(String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim());
+    const boss0 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+    if (imgs.length && from && from === boss0) {
+      let n = 0; try { n = queueListingPhotos(imgs, String(data.text || '')); } catch (e) { console.log('Listing photos queue: ' + e.message); }
+      if (n && !String(data.text || '').replace(/\ufffc/g, '').replace(/\b(listing|photos?|pics?|original|enhanced?|as is|here|these)\b/gi, '').trim()) return json({status: 'ok'});
+    }
+  }
   if (ev.type === 'new-message') {
     const att = (data.attachments || []).filter(a => /^audio\//i.test(a.mimeType || '') || /\.(m4a|mp3|wav|caf|aac|amr|ogg|opus|mp4)$/i.test(a.transferName || ''))[0];
     const addr = bbE164(String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim());
@@ -4212,6 +4392,7 @@ function sendCallAudio() {
 function processAssistantQueue() {
   const props = PropertiesService.getScriptProperties();
   try { sendCallAudio(); } catch (e) { console.log('Call audio: ' + e.message); }
+  try { processListingPhotos(); } catch (e) { console.log('Listing photos: ' + e.message); }
   try {
     const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 24 * 36e5);  // a day, so alerts survive a long Mac outage
     if (out.length) {
@@ -4514,6 +4695,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - freevegas: he gives a free thing to do in Las Vegas for his Free in Vegas list ("add to free in vegas: Bellagio holiday display, through Jan 5"). "message" = the thing, where, when and any link, in his words.
 - clientpage: a client's private page on juliancrider.com: make or send someone's page, add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
+- listingpage: make or update a listing presentation page for an address ("listing page for 123 Desert Rose Ln", "make a listing link for the Summit house, 5 bed, price 3.2M"). "message" = his whole text.
 - property: look up a property in Clark County public records (owner, last sale, value, size, year built): "look up 123 Desert Rose Ln", "who owns 456 Summit Club Dr", "pull the records on Lisa's house". "message" = the street address or parcel number exactly as he wrote it; "who" = the client if he wants it saved to their file.
 - campaigns: anything about campaigns, drips or action plans: what campaign someone is on, whether they got the email or text, how many emails or texts they have left, when the next one goes ("what campaign is Lisa in", "did Dan get the email", "how many emails does Ika have left") → "who" = the person. Who is on a campaign or which campaigns are running ("who's in JC Hot", "what campaigns are running") → no "who", "message" = the campaign name (empty for all).
 - lookup: tell him about a contact from Follow Up Boss (stage, tags, recent notes).
@@ -4583,6 +4765,8 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏿🏾👍🏿🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
+  else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
+  else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete) photo #?\d+)/i.test(text)) a = {action: 'listingphotos', message: text};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -4873,6 +5057,8 @@ Examples (all mean the same as the action shown):
     if (a.action === 'pipeline') return say(pipelineText(a.message || text));
     if (a.action === 'holdauto') return say(holdAuto(a.message || text));
     if (a.action === 'memoscript') return say(memoScriptText());
+    if (a.action === 'listingpage') return say(listingPageCommand(a.message || text));
+    if (a.action === 'listingphotos') return say(listingPhotoCommand(a.message || text));
     if (a.action === 'thanks') return say(['You got it 🙏🏿', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
