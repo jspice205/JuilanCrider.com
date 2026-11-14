@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-memo';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-hands';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2930,7 +2930,11 @@ function assistantKnowledge() {
 
 /** Removes the dashes that make texts read like AI (keeps phone numbers and hyphenated words). */
 function humanize(t) {
-  return String(t || '').replace(/\s*[—–]\s*/g, ', ').replace(/\s+-\s+/g, ', ').replace(/,\s*,/g, ',').trim();
+  return darkHands(String(t || '').replace(/\s*[—–]\s*/g, ', ').replace(/\s+-\s+/g, ', ').replace(/,\s*,/g, ',').trim());
+}
+/** Hand emojis in the darkest skin tone (Julián, Nov 14): 👍 → 👍🏿, 🙏 → 🙏🏿; any other tone becomes 🏿 too. */
+function darkHands(t) {
+  return String(t || '').replace(/(👍|👎|👋|🙏|👏|🙌|✊|👊|🤛|🤜|💪|✌|🤞|👌|🤌|🤏|🤙|🫶|🤘|☝|👉|👈|👆|👇|✋|🤚|🖐|🫡|🤲|👐|🫰|🫵|🤟|✍)(\uFE0F)?(\uD83C[\uDFFB-\uDFFF])?/g, (m, h) => h + '\uD83C\uDFFF');
 }
 
 /** First text Shawna sends anyone (ASSISTANT_INTRO overrides it; {name} = her name). */
@@ -4026,7 +4030,7 @@ HOW TO TEXT (this matters most):
 - Sound like a real person texting a friend he respects. Relaxed, warm, specific to what THEY said. Contractions, natural rhythm, a little personality.
 - Catch up like a human first. If they share something personal or casual, respond to that first (a quick reaction, a light question about them) before anything about real estate. Don't rush to business.
 - 1 to 3 short sentences. One question at most, and not every text needs a question.
-- Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏾 🏡 👀 ☀️ 🔑 👋🏾 😂), never by habit at the end of every text and never in back-to-back texts.
+- Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏿 🙏🏿 👍🏿 🏡 👀 ☀️ 🔑 👋🏿 😂). Hand emojis always in the darkest skin tone (🏿), Julián's choice; 🙏🏿 is a good thank you, never by habit at the end of every text and never in back-to-back texts.
 - Longer replies: break them into 2 or 3 short paragraphs with a blank line between, the way a person texts. Short replies stay one line.
 - Read the WHOLE conversation first and answer what they actually said in context (who they are, what you already told them, what was planned). Never answer only the last line.
 - Chris Voss, used lightly and naturally: mirror a few of their words, label a feeling ("Sounds like…", "Seems like…"), or ask a calm "what" or "how" question. Use a no-oriented question ("Would it be crazy if…?", "Is it a bad idea to…?") only once in a while. Never stack techniques, never sound scripted.
