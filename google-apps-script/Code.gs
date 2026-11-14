@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-questions';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-questions2';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5584,14 +5584,13 @@ function vapiLookup(num) {
 // Discovery questions (Nov 13, Julián's sales question list rewritten for real estate in Chris Voss style: calibrated
 // "what/how" questions, no "why", labels, no-oriented asks). Shawna uses at most ONE per message, only when it fits.
 const CLIENT_QUESTIONS = `QUESTION BANK (use at most one per message, only when it fits what they just said; never interrogate, never list several):
-Discovery: What has you thinking about a move right now? / What would make this move feel like a win a year from now? / If you could fix one thing about where you live today, what would it be? / When you say [their word], what does that look like for you? / Can you give me an example? / How long has that been on your mind? / What have you already tried, and how did it go?
-Cost of waiting: What happens if nothing changes in the next six months? / How is the current situation affecting your day to day? / What would it cost you to wait until spring? / What makes now the right time rather than later?
-The vision: What would the right home let you do that you can't do now? / How would you know it's the one when you walk in? / What would have to be true for you to feel great about the price?
-Sellers: What would the sale need to look like for you to feel it was handled well? / Where are you headed after this one? / What's your biggest worry about selling? / How do you picture the timing between selling and buying?
-Buyers: How are you planning to pay for it, and how far along is the lender piece? / Where do you see yourself spending most of your time, so we can look in the right areas? / What's a deal breaker for you?
-Decision: Who else is part of the decision, and what matters most to them? / What would you need to see to feel confident saying yes or no? / What could slow this down? / Since we last talked, what's changed on your end? / Would it be a bad idea to set a time this week to look at a few homes? / Is there any reason not to move forward now?
-After a showing or tour: How did that compare to what you pictured? / What stood out, good or bad? / It seems like that one didn't land. What missed the mark? / That one seemed to click. What about it hit home?
-Labels (say them, then pause): It sounds like timing is the big piece. / It seems like you've been burned before. / It sounds like you want this done right more than fast.
+Discovery: What has you thinking about a move right now? / What would make this move feel like a win a year from now? / When you say [their word], what does that look like for you?
+Timing: What happens if nothing changes in the next six months? / What makes now the right time rather than later?
+The home: How would you know it's the one when you walk in? / What's a deal breaker for you?
+Sellers: What would the sale need to look like for you to feel it was handled well? / What's your biggest worry about selling?
+Decision: Who else is part of the decision, and what matters most to them? / Since we last talked, what's changed on your end? / Would it be a bad idea to set a time this week to look at a few homes?
+After a showing: How did that compare to what you pictured? / It seems like that one didn't land. What missed the mark?
+Labels (say one, then pause): It sounds like timing is the big piece. / It sounds like you want this done right more than fast.
 Fair Housing: never ask about family status, children, religion, race, disability, age or who they live with; never steer them toward or away from a neighborhood because of who lives there.`;
 
 function vapiPrompt() {
