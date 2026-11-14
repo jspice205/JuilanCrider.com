@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-recap';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-spacing';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2587,6 +2587,9 @@ function bbSendNow(phone, text) {
   const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
   if (!to) throw new Error('Not a US mobile number: ' + phone);
   text = darkHands(text);
+  // Texts to clients (not Julián's own phones) get human spacing: no wall of text (Julián, Nov 14).
+  try { const pr = PropertiesService.getScriptProperties(), boss = bbE164(pr.getProperty('ALERT_TEXT_TO') || pr.getProperty('TEST_TEXT_TO') || '');
+    if (to !== boss && !isOwnNumber(to)) text = textParagraphs(text); } catch (e) {}
   // Anything the script sends counts as Shawna's, so its echo is never logged as "Text from Julián" (Nov 14: 3 copies on Randall).
   try { PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + to, String(Date.now())); } catch (e) {}
   // Existing conversation: send into it. New number: on this Mac's macOS (10.14) Messages can't address an unknown
@@ -2935,6 +2938,23 @@ function assistantKnowledge() {
 /** Removes the dashes that make texts read like AI (keeps phone numbers and hyphenated words). */
 function humanize(t) {
   return darkHands(String(t || '').replace(/\s*[—–]\s*/g, ', ').replace(/\s+-\s+/g, ', ').replace(/,\s*,/g, ',').trim());
+}
+/** One long text block → 2 or 3 short paragraphs with a blank line between (a question at the end stands alone).
+ *  Leaves short texts, texts that already have line breaks, and anything under 3 sentences alone. */
+function textParagraphs(t) {
+  t = String(t || '').trim();
+  if (t.length < 170 || /\n/.test(t)) return t;
+  const sent = t.split(/(?<=[.!?…]["')\]]?)\s+(?=["'¿¡]?[A-ZÁÉÍÓÚÑ0-9]|\p{Extended_Pictographic})/u).filter(Boolean);
+  if (sent.length < 3) return t;
+  const paras = [];
+  let rest = sent.slice();
+  const tail = /\?\s*\S*$/.test(rest[rest.length - 1]) ? rest.pop() : null;  // a closing question on its own line
+  if (rest.length >= 4 || (rest.length >= 2 && rest.join(' ').length > 150)) {
+    const half = Math.ceil(rest.length / 2);
+    paras.push(rest.slice(0, half).join(' '), rest.slice(half).join(' '));
+  } else paras.push(rest.join(' '));
+  if (tail) paras.push(tail);
+  return paras.filter(Boolean).length > 1 ? paras.filter(Boolean).join('\n\n') : t;
 }
 /** Hand emojis in the darkest skin tone (Julián, Nov 14): 👍 → 👍🏿, 🙏 → 🙏🏿; any other tone becomes 🏿 too. */
 function darkHands(t) {
@@ -4035,7 +4055,7 @@ HOW TO TEXT (this matters most):
 - Catch up like a human first. If they share something personal or casual, respond to that first (a quick reaction, a light question about them) before anything about real estate. Don't rush to business.
 - 1 to 3 short sentences. One question at most, and not every text needs a question.
 - Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏿 🙏🏿 👍🏿 🏡 👀 ☀️ 🔑 👋🏿 😂). Hand emojis always in the darkest skin tone (🏿), Julián's choice; 🙏🏿 is a good thank you, never by habit at the end of every text and never in back-to-back texts.
-- Longer replies: break them into 2 or 3 short paragraphs with a blank line between, the way a person texts. Short replies stay one line.
+- Spacing (Julián, Nov 14): anything longer than about two sentences goes in 2 or 3 short paragraphs with a blank line between them (use \n\n), the way a person texts: the catch-up or answer, then the detail, then the question on its own. Never one big block. Short replies stay one line.
 - Read the WHOLE conversation first and answer what they actually said in context (who they are, what you already told them, what was planned). Never answer only the last line.
 - Chris Voss, used lightly and naturally: mirror a few of their words, label a feeling ("Sounds like…", "Seems like…"), or ask a calm "what" or "how" question. Use a no-oriented question ("Would it be crazy if…?", "Is it a bad idea to…?") only once in a while. Never stack techniques, never sound scripted.
 - No corporate phrases ("I'd be happy to assist", "Great question", "valued client", "touch base"). No dashes of any kind (no "—", "–" or " - "); use commas or periods.

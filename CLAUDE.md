@@ -112,7 +112,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   gemini-2.5-flash). "give me a minute" now names a rejected key (401) or a used-up daily allowance.
 - Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
   (assistantKnowledge); humanize() strips dashes from everything she writes and `darkHands` turns every hand emoji
-  into the darkest skin tone 🏿 (Julián, Nov 14; 🙏🏿 for thank you). Boss actions also: schedule (personal = his gmail
+  into the darkest skin tone 🏿 (Julián, Nov 14; 🙏🏿 for thank you). Spacing (Nov 14): bbSendNow runs `textParagraphs` on texts to
+  clients (not his own phones): 170+ chars, 3+ sentences, no line breaks → 2-3 paragraphs with blank lines, a closing
+  question on its own; assistantPrompt asks for \n\n paragraphs too. Boss actions also: schedule (personal = his gmail
   calendar or business = bcolv calendar via the Shawna Mailer (bcolvCall action event/events; Boeckle's Workspace
   blocks outside edit sharing, Nov 9); asks "personal or
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
