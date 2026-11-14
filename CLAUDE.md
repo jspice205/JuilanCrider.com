@@ -626,6 +626,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   instead of a text): `resolveWhen(text)` turns weekday / "the 16th" / "Nov 20" / tomorrow + "10a"/"2pm" into the date in code
   (overrides the router's "when" for text/task/schedule); "schedule a text…" with no calendar words = action text; a date-only
   reply right after a text approval moves that text instead of creating a calendar event.
+  Relative times (Nov 14: "remind me to call Lisa is about an 1hr" became Sun Nov 15): resolveWhen handles in/is/within
+  N min/hours/days/weeks ("an hour", "a couple", "half an hour"). Task with a time → FUB dueDateTime, and when he said
+  remind/ping, BOSS_REMINDERS → processAssistantQueue texts him "⏰ Reminder: …" at that time.
 
 - Market voice memo (Nov 14): monthly, in Julián's OWN voice (never Shawna's AI voice to clients). `monthlyMarketMemo` (hourly
   hook, first Tuesday 9am+, MEMO_RUN_<yyyymm>; MARKET_MEMO=off stops it) texts him a 45-second script (`memoScriptText`: only

@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-listingpage';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-remindme';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3594,6 +3594,14 @@ function resolveWhen(text) {
   const ymd = d => Utilities.formatDate(d, tz, 'yyyy-MM-dd');
   const today = Utilities.parseDate(ymd(now) + ' 12:00', tz, 'yyyy-MM-dd HH:mm');
   let day = null;
+  // Relative times (Nov 14: "remind me to call Lisa in about an hour" became tomorrow): in 20 min / an hour / 2 hours / 3 days.
+  const rel = t.match(/\b(?:in|is|within)\s+(?:about\s+|like\s+|around\s+|roughly\s+|another\s+)?(?:an?\s+(?=\d))?(an?|a couple(?: of)?|a few|half an?|\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|days?|weeks?)\b/);
+  if (rel) {
+    const n = /^an?$/.test(rel[1]) ? 1 : /couple/.test(rel[1]) ? 2 : /few/.test(rel[1]) ? 3 : /half/.test(rel[1]) ? 0.5 : Number(rel[1]);
+    const unit = /^h/.test(rel[2]) ? 36e5 : /^m/.test(rel[2]) ? 6e4 : /^w/.test(rel[2]) ? 7 * 864e5 : 864e5;
+    if (unit >= 864e5) { const d = new Date(today.getTime() + n * unit); return ymd(d) + 'T10:00'; }
+    return Utilities.formatDate(new Date(now.getTime() + n * unit), tz, "yyyy-MM-dd'T'HH:mm");
+  }
   const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
   const md = t.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/);
@@ -4392,6 +4400,10 @@ function sendCallAudio() {
 function processAssistantQueue() {
   const props = PropertiesService.getScriptProperties();
   try { sendCallAudio(); } catch (e) { console.log('Call audio: ' + e.message); }
+  try {  // reminders he asked for ("remind me to call Lisa in an hour")
+    const rs = JSON.parse(props.getProperty('BOSS_REMINDERS') || '[]'), due = rs.filter(r => r.at <= Date.now());
+    if (due.length) { props.setProperty('BOSS_REMINDERS', JSON.stringify(rs.filter(r => r.at > Date.now()))); due.forEach(r => bossTextSafe(r.msg)); }
+  } catch (e) { console.log('Reminders: ' + e.message); }
   try { processListingPhotos(); } catch (e) { console.log('Listing photos: ' + e.message); }
   try {
     const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 24 * 36e5);  // a day, so alerts survive a long Mac outage
@@ -4991,8 +5003,16 @@ Examples (all mean the same as the action shown):
       if (a.action === 'note') { fubFetch('notes', {personId: p.id, subject: 'Note from Julián', body: a.message}); return say(name + ': note saved on ' + p.name + '.'); }
       if (a.action === 'task') {  // a reminder on the day he said ("Friday", "next week"), else today
         const wm = String(a.when || '').match(/(\d{4}-\d{2}-\d{2})/), due = wm ? wm[1] : Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd');
-        fubFetch('tasks', {personId: p.id, type: /\btext\b/i.test(a.message || '') ? 'Text' : /\bcall\b/i.test(a.message || '') ? 'Call' : /\bemail\b/i.test(a.message || '') ? 'Email' : 'Follow Up', name: String(a.message || 'Follow up').slice(0, 250), dueDate: due});
-        return say(name + ': reminder added for ' + p.name + ' (' + (wm ? Utilities.formatDate(Utilities.parseDate(due, 'America/Los_Angeles', 'yyyy-MM-dd'), 'America/Los_Angeles', 'EEE MMM d') : 'today') + '). ✅');
+        // A time he gave ("in an hour", "at 3pm"): Shawna also texts him then, like a phone reminder (Nov 14).
+        const tmm = String(a.when || '').match(/T(\d{2}:\d{2})/), atMs = tmm && wm ? Utilities.parseDate(due + ' ' + tmm[1], 'America/Los_Angeles', 'yyyy-MM-dd HH:mm').getTime() : 0;
+        if (atMs > Date.now() && /remind|ping|alert|don'?t let me forget/i.test(text)) {
+          const rs = JSON.parse(props.getProperty('BOSS_REMINDERS') || '[]'); rs.push({at: atMs, msg: '⏰ Reminder: ' + String(a.message || 'follow up').replace(/^remind me to\s*/i, '') + (p.name && String(a.message || '').toLowerCase().indexOf(String(p.firstName || '').toLowerCase()) < 0 ? ' (' + p.name + ')' : '')});
+          props.setProperty('BOSS_REMINDERS', JSON.stringify(rs.slice(-30)));
+        }
+        fubFetch('tasks', {personId: p.id, type: /\btext\b/i.test(a.message || '') ? 'Text' : /\bcall\b/i.test(a.message || '') ? 'Call' : /\bemail\b/i.test(a.message || '') ? 'Email' : 'Follow Up', name: String(a.message || 'Follow up').slice(0, 250), dueDate: due, ...(atMs > Date.now() ? {dueDateTime: new Date(atMs).toISOString(), remindSecondsBefore: 0} : {})});
+        const whenSay = atMs > Date.now() ? Utilities.formatDate(new Date(atMs), 'America/Los_Angeles', due === Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd') ? "'today at' h:mm a" : "EEE MMM d 'at' h:mm a")
+          : (wm ? Utilities.formatDate(Utilities.parseDate(due, 'America/Los_Angeles', 'yyyy-MM-dd'), 'America/Los_Angeles', 'EEE MMM d') : 'today');
+        return say(name + ': reminder added for ' + p.name + ' (' + whenSay + ')' + (atMs > Date.now() && /remind|ping|alert|don'?t let me forget/i.test(text) ? '. I\'ll text you then' : '') + '. ✅');
       }
       const tags = p.tags || [];
       if (tags.indexOf('Text Opt-Out') >= 0) return say(name + ': ' + p.name + ' opted out of texts, so I can\'t text them. Here\'s what I can do for you: add a task to call instead.');
