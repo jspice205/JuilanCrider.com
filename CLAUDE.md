@@ -322,6 +322,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   No prompts (Nov 12, Julián: "this isn't 2020"): Shawna's texts to him carry no reply instructions ("Reply YES",
   "do 2"/"done 2", "Text X to…"); she asks like a person ("Want me to send it?"); yesHint = "(#n)" only when several
   approvals wait. YES regex also takes sure/sounds good/perfect/do that/"yes please"/"yes to 2".
+  Thanks (Nov 14: his "Thank You" after the Lisa text made a 2nd Lisa draft): a bare thanks/thank you/ty/appreciate it
+  → boss fast path `thanks` ("You got it 🙏🏿"), never a new action; router prompt says the same.
   Email replies in the update (Nov 12: Ika Frogel 2029 replied 7:47am to the Re-Intro, missed while the Mac was down):
   whatsNewText also lists FUB "Received" emails (sentByPerson) from people active since the last update, skipping
   auto-replies (<2 min after a Sent one; Victor Cohen 731's 9:06 reply was 6 s after the Legacy email = auto-reply).
