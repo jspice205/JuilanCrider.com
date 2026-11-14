@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-calltext';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-callaudio';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4153,8 +4153,45 @@ function bossTextSafe(msg) {
   }
 }
 
+/** Call recordings waiting to be texted to Julián (CALL_AUDIO, kept 12 hours). */
+function queueCallAudio(url, num, mins) {
+  const props = PropertiesService.getScriptProperties(), list = JSON.parse(props.getProperty('CALL_AUDIO') || '[]');
+  if (list.some(x => x.url === url)) return;
+  list.push({url: url, num: num || '', mins: mins || '', at: Date.now(), tries: 0});
+  props.setProperty('CALL_AUDIO', JSON.stringify(list.slice(-10)));
+}
+function sendCallAudio() {
+  const props = PropertiesService.getScriptProperties();
+  let list = JSON.parse(props.getProperty('CALL_AUDIO') || '[]').filter(x => Date.now() - x.at < 12 * 36e5 && x.tries < 20);
+  if (!list.length) { props.deleteProperty('CALL_AUDIO'); return; }
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  if (!boss) return;
+  const x = list[0];
+  if (Date.now() - x.at < 45 * 1000) return;  // let the summary text land first
+  try {
+    const res = UrlFetchApp.fetch(x.url, {muteHttpExceptions: true});
+    if (res.getResponseCode() >= 300) throw new Error('recording ' + res.getResponseCode());
+    let who = '';
+    if (x.num) { try { const p = (fubFetch('people?limit=1&fields=id,name&phone=' + x.num.slice(2), null, 'get').people || [])[0]; who = p ? p.name : ''; } catch (e) {} }
+    if (!who) who = (teamDirectory() || {})[x.num] || (x.num ? x.num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'a caller');
+    const ext = (String(x.url).split('?')[0].match(/\.(wav|mp3|m4a|ogg)$/i) || [, 'wav'])[1].toLowerCase();
+    const blob = res.getBlob();
+    if (blob.getBytes().length > 60 * 1024 * 1024) throw new Error('recording too big to text');
+    bbSend(boss, '🎧 Call recording: ' + who + (x.mins ? ' (' + x.mins + ')' : ''));
+    Utilities.sleep(1500);
+    bbPostAttachment(boss, 'iMessage', blob.setName('Call with ' + String(who).replace(/[\/:*?"<>|]/g, '') + '.' + ext));
+    list.shift();
+  } catch (e) {
+    x.tries++;
+    console.log('Call audio not sent yet: ' + e.message);
+    if (/too big|recording 4\d\d/.test(e.message)) { list.shift(); try { bossTextSafe('🎧 I couldn\'t text you that call recording (' + e.message + '). It\'s linked in the call note in Follow Up Boss.'); } catch (e2) {} }
+  }
+  props.setProperty('CALL_AUDIO', JSON.stringify(list));
+}
+
 function processAssistantQueue() {
   const props = PropertiesService.getScriptProperties();
+  try { sendCallAudio(); } catch (e) { console.log('Call audio: ' + e.message); }
   try {
     const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 24 * 36e5);  // a day, so alerts survive a long Mac outage
     if (out.length) {
@@ -5509,6 +5546,9 @@ function vapiEndOfCall(m, props) {
   const transcript = String(m.transcript || (m.artifact && m.artifact.transcript) || '').slice(0, 6000);
   const rec = m.recordingUrl || (m.artifact && m.artifact.recordingUrl) || '';
   const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
+  // Julián, Nov 14: like a voicemail, the call recording comes to him by text right after the summary (queued, so a
+  // sleeping Mac doesn't lose it; processAssistantQueue sends it within a minute or two).
+  if (rec && Number(m.durationSeconds || 99) >= 8) { try { queueCallAudio(rec, num, mins); } catch (e) { console.log('Call audio: ' + e.message); } }
   let callerName = '', recapInfo = null;
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
