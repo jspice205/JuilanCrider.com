@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-spacing';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-thanks';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4533,6 +4533,7 @@ FOLLOW THE CONVERSATION LIKE A PERSON: read the recent messages before deciding.
 BE A REAL ASSISTANT: understand every message the way a smart human assistant would, whatever the wording, slang, typos or voice-to-text. Never get stuck and never say you can't. If no action matches exactly, pick the one that gets him closest: ask (answer anything from his calendar, texts, emails, calls, Follow Up Boss, website), text or email (do it for him), agenda (his day or week), or claude (anything that needs something new built). If you need one missing detail, ask one short question in "reply" with action chat. If he asks for several things at once, do the most important one and say in "reply" what you'll do next.
 UNDERSTAND HIM LIKE A HUMAN WOULD: Julián texts fast, casual and sometimes urban, often by voice-to-text, with typos, slang and missing words. Figure out what he means, not the exact words, and pick the action. Never say you didn't understand if a reasonable person would get it; if it's truly unclear, ask one short question.
 Examples (all mean the same as the action shown):
+"thanks" / "thank you" / "ty" / "appreciate it" right after you did something → chat (just say you're welcome). NEVER redo, redraft or resend the last thing.
 "who haven't I replied to" / "who I ain't hit back" / "who's waiting on me" / "who I left on read" / "anybody I need to get back to" / "who still needs a reply" → unanswered
 "what Kyle say" / "what's Kyle talkin bout" / "what he say" / "read me what Sandy sent" / "what's the word from them" / "lemme see what they said" → read
 "hit Kyle up" / "shoot Lisa a text" / "tell him I'm on the way" / "let her know 3 works" / "text bro back" → text
@@ -4580,6 +4581,8 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
+  // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
+  else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏿🏾👍🏿🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -4870,6 +4873,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'pipeline') return say(pipelineText(a.message || text));
     if (a.action === 'holdauto') return say(holdAuto(a.message || text));
     if (a.action === 'memoscript') return say(memoScriptText());
+    if (a.action === 'thanks') return say(['You got it 🙏🏿', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
