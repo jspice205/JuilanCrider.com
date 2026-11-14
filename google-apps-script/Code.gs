@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-hands';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-bye';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5750,8 +5750,9 @@ SAFETY, COMPLIANCE AND BOUNDARIES
 - If it's about an offer, a contract, a negotiation, commission, a complaint or anything urgent, say Julián will call them back today.
 - Collect only what's needed. No dashes of any kind in what you say.
 
-RECAP TEXT (REQUIRED ON EVERY CALL, team members included, never skip it): before you say goodbye, always ask: "Before you go, would it be okay if I text you a quick recap of our call?" (add "with your appointment details" if one was booked). Ask it even on short calls, even if they only left a message for Julián or asked for someone else, and even if the call wandered. If they already asked to be texted, that's a yes: just say "I'll text you a quick recap." The recap goes by text to the number they're calling from: never ask for their email or number for the recap. Only a clear yes counts; if they hesitate or say no, that's completely fine.
-ENDING THE CALL: first ask the RECAP TEXT question if you haven't yet (it is required). Then briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with. Only end the call after they say goodbye or clearly want to hang up. Always close warmly with "Have a wonderful rest of your day, and we'll speak with you soon." Never end with just "goodbye."`;
+RECAP TEXT (REQUIRED ON EVERY CALL, team members included, never skip it): before the call wraps up, always ask: "Before you go, would it be okay if I text you a quick recap of our call?" (add "with your appointment details" if one was booked). Ask it even on short calls, even if they only left a message for Julián or asked for someone else, and even if the call wandered. If they already asked to be texted, that's a yes: just say "I'll text you a quick recap." The recap goes by text to the number they're calling from: never ask for their email or number for the recap. Only a clear yes counts; if they hesitate or say no, that's completely fine.
+ENDING THE CALL: first ask the RECAP TEXT question if you haven't yet (it is required). Then briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with.
+LET THEM END IT (Julián, Nov 14): the caller says goodbye first, never you. When they say "no, that's it", answer with one short, natural line that fits the call (for example "Sounds good, Randall. See you in a few." or "Perfect. Julián will text you this afternoon.") and then stop talking and wait. Do NOT say a goodbye speech, and never say goodbye twice. Once they say bye, thanks, "you too" or anything that closes the call, use the end call tool right away WITHOUT saying anything more (the system says "Take care!" for you). If they go quiet for a few seconds after your line, you may say "Take care, Randall!" once yourself and end the call.`;
 }
 
 /** Hourly (from autoUpdateFromGitHub): pushes Shawna's phone prompt, the caller lookup tool and a calmer turn-taking
@@ -5779,7 +5780,7 @@ function syncVapiAssistant(force) {
   const transcriber = {provider: 'deepgram', model: 'nova-3', language: 'multi'};
   const voice = a.voice && a.voice.provider === '11labs' && /^eleven_(turbo_v2|flash_v2|monolingual_v1)$/.test(String(a.voice.model || ''))
     ? Object.assign({}, a.voice, {model: String(a.voice.model).replace(/^eleven_monolingual_v1$/, 'eleven_multilingual_v2').replace(/_v2$/, '_v2_5')}) : null;
-  const body = {model: model, transcriber: transcriber, endCallMessage: 'Have a wonderful rest of your day, and we\'ll speak with you soon.',
+  const body = {model: model, transcriber: transcriber, endCallMessage: 'Take care!',
     startSpeakingPlan: Object.assign({}, a.startSpeakingPlan || {}, {waitSeconds: 0.8})};
   if (voice) body.voice = voice;
   const res = api('patch', body);

@@ -357,6 +357,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   differs (e.g. an old dashboard draft got published); the model/provider Julián picks in Vapi is kept (Nov 12: he moved
   the phone brain off Groq to a Vapi-billed model).
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
+  Vapi let-them-end-it (Nov 14, Randall Cole call: Shawna said the long goodbye, then endCallMessage repeated it): vapiPrompt
+  "LET THEM END IT" (one short natural line after "that's it", wait for their bye, then end call silently); endCallMessage "Take care!".
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
