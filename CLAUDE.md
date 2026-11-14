@@ -359,6 +359,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Vapi calls from his own phone (boss) now text him "🧪 Test call logged" + the recap a caller would get.
   Vapi let-them-end-it (Nov 14, Randall Cole call: Shawna said the long goodbye, then endCallMessage repeated it): vapiPrompt
   "LET THEM END IT" (one short natural line after "that's it", wait for their bye, then end call silently); endCallMessage "Take care!".
+  Call replies early (Nov 14, Randall called 8:02am, recap waited for 9am): processTextQueue sends call-recap/call-thanks/
+  call-followup from 8am (TCPA window 8am-9pm); everything else still 9am-9pm.
 - iMessage from an Apple ID email (no phone): webhook matches FUB by email and Shawna replies to that address (bbSend
   accepts emails). Toll-free senders (8xx) are never added as leads.
 - Open to everyone (Nov 9): any number texting the business line gets Shawna (no Text OK needed, they texted first).
