@@ -234,7 +234,7 @@ img{max-width:100%;display:block}
 :root[data-theme="dark"] .mark.on-light{display:none}
 :root[data-theme="dark"] .mark.on-dark{display:block}
 .wordmark{font-weight:700;font-size:17px;letter-spacing:-.01em;white-space:nowrap}
-.iconbtn{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;color:var(--ink)}
+.iconbtn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--ink)}
 .iconbtn:hover{background:var(--surface)}
 .pill{background:var(--ink);color:var(--bg);font-weight:600;font-size:15px;padding:8px 16px;border-radius:999px}
 .pill.ghost{background:var(--surface);color:var(--ink)}
@@ -242,7 +242,7 @@ img{max-width:100%;display:block}
 /* Layered buttons (Nov 14): soft top highlight, bottom edge, small drop shadow; presses down on tap. Brand black/white. */
 .pill,.mini{background:linear-gradient(#2c2c2f,#000);box-shadow:inset 0 1px 0 rgba(255,255,255,.2),inset 0 -2px 0 rgba(0,0,0,.4),0 1px 2px rgba(0,0,0,.3),0 8px 20px -8px rgba(0,0,0,.45);transition:translate .08s ease,box-shadow .08s ease}
 .pill.ghost{background:linear-gradient(#fff,var(--surface));box-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 rgba(0,0,0,.06),0 0 0 1px var(--hair),0 1px 2px rgba(0,0,0,.06)}
-.pill:active,.mini:active{translate:0 1px;box-shadow:inset 0 2px 4px rgba(0,0,0,.45)}
+.pill:active,.mini:active{translate:0 1px;scale:.985;box-shadow:inset 0 2px 4px rgba(0,0,0,.45)}
 .pill.ghost:active{box-shadow:inset 0 2px 4px rgba(0,0,0,.1),0 0 0 1px var(--hair)}
 :root[data-theme="dark"] .pill,:root[data-theme="dark"] .mini{background:linear-gradient(#fff,#d9d9de);box-shadow:inset 0 1px 0 #fff,inset 0 -2px 0 rgba(0,0,0,.14),0 1px 2px rgba(0,0,0,.5),0 8px 20px -8px rgba(0,0,0,.8)}
 :root[data-theme="dark"] .pill.ghost{background:linear-gradient(#2e2e33,var(--surface));box-shadow:inset 0 1px 0 rgba(255,255,255,.08),inset 0 -1px 0 rgba(0,0,0,.4),0 0 0 1px var(--hair)}
@@ -410,7 +410,26 @@ img{max-width:100%;display:block}
 .sheet.full:not(.on){display:none}
 .sheet.full > *{max-width:540px;margin-left:auto;margin-right:auto}
 .sheet.full .grab{display:none}
-.sheet.hp.full{padding-top:0}.sheet.hp .shead{position:fixed;top:max(10px,env(safe-area-inset-top,0px));right:max(10px,calc(50% - 260px));left:auto;width:auto;max-width:none;margin:0;padding:0;background:none !important;z-index:60}.sheet.hp .shead h2{display:none}.sheet.hp #sheetClose{background:rgba(0,0,0,.5);color:#fff;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.sheet.hp.full{padding-top:0;padding-bottom:0}.sheet.hp .shead{display:none}
+.hp-top{position:fixed;top:max(12px,env(safe-area-inset-top,0px));left:0;right:0;z-index:60;display:flex;justify-content:space-between;align-items:center;padding:0 12px;pointer-events:none}
+.hp-glass{pointer-events:auto;display:flex;align-items:center;gap:8px;height:44px;padding:0 14px 0 8px;border-radius:999px;background:rgba(10,10,12,.42);-webkit-backdrop-filter:blur(14px) saturate(160%);backdrop-filter:blur(14px) saturate(160%);color:#fff;border:1px solid rgba(255,255,255,.14);font-weight:600;font-size:15px;letter-spacing:-.01em}
+.hp-glass img{width:28px;height:28px}
+.hp-x{pointer-events:auto;width:44px;height:44px;padding:0;justify-content:center}
+.hp-hero{position:relative;width:100vw;margin-left:calc(50% - 50vw);height:min(74vh,620px);background:#111;overflow:hidden}
+.hp-hero img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
+.hp-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.35) 0,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 48%,rgba(0,0,0,.78) 100%);pointer-events:none}
+.hp-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:0 20px 24px;color:#fff;max-width:540px;margin:0 auto}
+.hp-cap .k{font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.85;font-weight:600}
+.hp-cap h1{font-size:30px;line-height:1.08;letter-spacing:-.03em;font-weight:800;margin:6px 0 6px;color:#fff}
+.hp-cap .line{font-size:15px;opacity:.92;font-variant-numeric:tabular-nums}
+.hp-cap .price{font-size:22px;font-weight:800;margin-top:8px;font-variant-numeric:tabular-nums}
+.hp-bar{position:fixed;left:0;right:0;bottom:0;z-index:55;padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px));background:color-mix(in srgb,var(--bg) 78%,transparent);-webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);border-top:1px solid var(--hair)}
+.hp-bar > div{max-width:540px;margin:0 auto;display:flex;gap:8px}
+.hp-bar .pill{flex:1;min-height:48px}
+.sheet.hp .reader{padding-bottom:96px;font-variant-numeric:tabular-nums}
+.rv{opacity:0;transform:translateY(16px);transition:opacity .55s cubic-bezier(.2,.8,.2,1),transform .55s cubic-bezier(.2,.8,.2,1)}
+.rv.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
 .sheet.full.fcenter.on{display:flex;flex-direction:column}
 .sheet.full.fcenter > *{width:100%;box-sizing:border-box;align-self:center}
 .sheet.full.fcenter .sbody{text-align:center}
@@ -2330,7 +2349,7 @@ function clientPage(id){
 function homePage(id){
   const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   sheet.classList.add('full','hp'); scrim.classList.add('full');
-  openRaw('', `<p class="fine" style="padding-top:60px">Loading the listing…</p>`);
+  openRaw('', `<p class="fine" style="padding:80px 16px 0;text-align:center">Loading the listing…</p><div class="hp-top"><span></span><button type="button" class="hp-glass hp-x" onclick="closeSheet()" aria-label="Close">✕</button></div>`);
   fetch(SHEET_URL + '?' + new URLSearchParams({action:'listing', id})).then(r => r.json()).then(d => {
     if (d.status !== 'ok') { $('sheetBody').innerHTML = doneHTML('Listing not found','This link may have changed. Text Julián at 702-498-2571 for a fresh one.'); return; }
     const f = d.facts || {}, ph = d.photos || [], orig = d.originals || ph, sn = f.snapshot || {};
@@ -2345,11 +2364,13 @@ function homePage(id){
       <button type="button" class="mini" data-copy="${key}">Copy</button></div>` : '';
     const where = [d.address, f.city && !String(d.address).toLowerCase().includes(String(f.city).toLowerCase()) ? f.city : '', 'NV'].filter(Boolean).join(', ');
     const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(where);
-    $('sheetBody').innerHTML = `<article class="reader">
-      ${ph[0] ? `<img src="${e(ph[0])}" onerror="if(this.src!=='${e(orig[0])}')this.src='${e(orig[0])}'" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0" style="width:100%;margin:0 0 16px;border-radius:16px;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in">` : ''}
-      <div class="kick">Listing preview · prepared by Julián J. Crider</div>
-      <h1>${e(d.address)}</h1>
-      ${f.subdivision || f.city ? `<p style="margin-top:-6px">${e([f.subdivision, f.city, f.zip].filter(Boolean).join(' · '))}</p>` : ''}
+    const street = String(d.address || '').split(',')[0], place = String(d.address || '').split(',').slice(1).join(',').trim() || [f.city, f.zip].filter(Boolean).join(' ');
+    const heroLine = [f.beds && f.beds + ' bd', f.baths && f.baths + ' ba', f.sqft && f.sqft + ' sq ft'].filter(Boolean).join('  ·  ');
+    $('sheetBody').innerHTML = `<div class="hp-top"><div class="hp-glass"><img src="img/p/photo-324da7.png" alt="">Julián J. Crider</div><button type="button" class="hp-glass hp-x" id="hpX" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <div class="hp-hero">${ph[0] ? `<img src="${e(ph[0])}" onerror="if(this.src!=='${e(orig[0])}')this.src='${e(orig[0])}'" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0">` : ''}
+        <div class="hp-cap"><div class="k">Listing preview</div><h1>${e(street)}</h1><div class="line">${e(place)}</div>${heroLine ? `<div class="line" style="margin-top:4px">${e(heroLine)}</div>` : ''}${d.price ? `<div class="price">${e(money(d.price))}</div>` : ''}</div></div>
+      <article class="reader" style="padding-top:20px">
+      <div class="kick">Prepared by Julián J. Crider${f.subdivision ? ' · ' + e(f.subdivision) : ''}</div>
       ${facts.length ? `<div style="display:grid;grid-template-columns:repeat(${facts.length <= 4 ? facts.length : 3},1fr);gap:8px;margin:0 0 14px">${facts.map(([k,l]) => `<div style="${card};margin:0;padding:12px 6px;text-align:center"><div style="font-size:20px;font-weight:700">${e(f[k])}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${l}</div></div>`).join('')}</div>` : ''}
       ${d.price ? `<div style="${card}"><div class="fine" style="margin:0">Suggested list price</div><div style="font-size:28px;font-weight:800;letter-spacing:-.02em;margin-top:2px">${e(money(d.price))}</div>${ppsf ? `<div class="fine" style="margin:2px 0 0">About ${ppsf} per sq ft</div>` : ''}<div class="fine" style="margin:4px 0 0">From Julián’s review of nearby sales, pending and active homes. The final price is always your call.</div></div>` : ''}
       ${snap.length || sn.note ? `<h2 style="margin-top:6px">Market snapshot</h2><div style="${card}">${snap.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${snap.map(([k,l,fm]) => `<div><div style="font-size:19px;font-weight:700">${e(fm ? fm(sn[k]) : sn[k])}</div><div class="fine" style="margin:0">${l}</div></div>`).join('')}</div>` : ''}${sn.note ? `<p style="font-size:15px;margin:${snap.length ? '12px' : '0'} 0 0">${e(sn.note)}</p>` : ''}<div class="fine" style="margin:10px 0 0">From Julián’s review of recent sales near you.</div></div>` : ''}
@@ -2370,9 +2391,14 @@ function homePage(id){
       <p>Drafts from the details we have so far. I’ll polish them with you before anything goes live.</p>
       ${copyCard('mls','MLS description','Concise and factual', d.mls)}
       ${copyCard('ig','Instagram caption','Hook and hashtags', d.instagram)}
-      <button class="pill block" id="hpBook" style="margin-top:8px">Book a call with Julián</button>
       <a class="pill ghost block" style="margin-top:8px" href="?sell" target="_blank" rel="noopener">How I sell your home ›</a>
-      <p class="fine" style="margin-top:14px">Details from Clark County public records${d.parcel ? ' (parcel ' + e(String(d.parcel).replace(/(\d{3})(\d{2})(\d{3})(\d{3})/, '$1-$2-$3-$4')) + ')' : ''} and the homeowner; buyer to verify. ${d.enhanced ? 'Photos edited for light and color only. ' : ''}Julián J. Crider, Realtor, NV license S.0177760, Boeckle &amp; Co. · 702-498-2571</p></article>`;
+      <p class="fine" style="margin-top:14px">Details from Clark County public records${d.parcel ? ' (parcel ' + e(String(d.parcel).replace(/(\d{3})(\d{2})(\d{3})(\d{3})/, '$1-$2-$3-$4')) + ')' : ''} and the homeowner; buyer to verify. ${d.enhanced ? 'Photos edited for light and color only. ' : ''}Julián J. Crider, Realtor, NV license S.0177760, Boeckle &amp; Co. · 702-498-2571</p></article>
+      <div class="hp-bar"><div><a class="pill ghost" href="tel:+17024982571" style="text-align:center;text-decoration:none;line-height:48px;padding:0">Call</a><button class="pill" id="hpBook" style="flex:2">Book a call with Julián</button></div></div>`;
+    $('hpX').onclick = closeSheet;
+    // Sections ease in as they scroll into view (slow in, slow out); instant with reduced motion.
+    const rv = [...document.querySelectorAll('#sheetBody .reader > *')]; rv.forEach(el => el.classList.add('rv'));
+    if ('IntersectionObserver' in window) { const io = new IntersectionObserver(es => es.forEach(x => { if (x.isIntersecting) { x.target.classList.add('in'); io.unobserve(x.target); } }), {root: sheet, rootMargin: '0px 0px -8% 0px'}); rv.forEach(el => io.observe(el)); }
+    else rv.forEach(el => el.classList.add('in'));
     $('hpBook').onclick = () => { sheet.classList.remove('full'); scrim.classList.remove('full'); openSheet('book', {type: 'Selling or home value'}); };
     $('hpShare').onclick = () => { const u = location.href; if (navigator.share) navigator.share({title: d.address, url: u}).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => { $('hpShare').textContent = 'Link copied ✓'; }); };
     document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
