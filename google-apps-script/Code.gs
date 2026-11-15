@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-remindme';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-humane';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2981,7 +2981,7 @@ function bbWebhook(e) {
         if (!done) { try { notifyJulian('Shawna here', 'I couldn\'t jump into that chat just now' + (why ? ' (' + why + ')' : '') + '. Text me what you need and I\'ll handle it.'); } catch (e) {} }
         return json({status: 'ok'});
       }
-      if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
+      if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 180) * 6e4));
       if (!sentByShawna) { props.setProperty('AI_LASTME_' + to, String(Date.now())); textLogAnswered(to); }
       const boss1 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
       if (!sentByShawna && !group && to !== boss1 && /^\+1\d{10}$/.test(to)) {
@@ -3141,6 +3141,18 @@ function darkHands(t) {
   return String(t || '').replace(/(👍|👎|👋|🙏|👏|🙌|✊|👊|🤛|🤜|💪|✌|🤞|👌|🤌|🤏|🤙|🫶|🤘|☝|👉|👈|👆|👇|✋|🤚|🖐|🫡|🤲|👐|🫰|🫵|🤟|✍)(\uFE0F)?(\uD83C[\uDFFB-\uDFFF])?/g, (m, h) => h + '\uD83C\uDFFF');
 }
 
+/** Sounds less like a bot (Nov 14, Lisa got "Got it, Lisa." three texts in a row): no "Got it"/"I hear you"-style opener
+ *  twice in a row, and their first name only when it wasn't used in the last few texts we sent. */
+function varyOpener(reply, thread, first) {
+  let r = String(reply || '').trim(); if (!r) return r;
+  const ours = String(thread || '').split('\n').filter(l => /\bJulián: /.test(l)).slice(-4).map(l => l.replace(/^.*?Julián: /, ''));
+  const op = /^(got it|gotcha|i hear you|sounds good|perfect|absolutely|totally|understood|for sure|great|awesome)\b[,!.]?\s*/i, m = r.match(op);
+  if (m && ours.some(o => op.test(o) && o.toLowerCase().indexOf(m[1].toLowerCase()) === 0)) r = r.replace(op, '');
+  if (first && ours.some(o => new RegExp('\\b' + first + '\\b', 'i').test(o))) r = r.replace(new RegExp('^' + first + '[,!.]?\\s+', 'i'), '').replace(new RegExp(',\\s*' + first + '\\b([,.!?])', 'gi'), '$1');
+  r = r.replace(/^[,.!\s]+/, '');
+  return r ? r.charAt(0).toUpperCase() + r.slice(1) : String(reply || '').trim();
+}
+
 /** First text Shawna sends anyone (ASSISTANT_INTRO overrides it; {name} = her name). */
 function assistantIntro() {
   const t = PropertiesService.getScriptProperties().getProperty('ASSISTANT_INTRO') ||
@@ -3279,6 +3291,8 @@ function assistantReply(person, from, text) {
   const props = PropertiesService.getScriptProperties();
   const key = props.getProperty('GROQ_API_KEY'), mode = (props.getProperty('ASSISTANT_MODE') || 'draft').toLowerCase();
   if (!key || mode === 'off') return false;
+  // A tapback ("Liked “…”", "Loved “…”") is not a message: never answer it (Nov 14, Lisa's ❤️ got a full reply).
+  if (/^\s*(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned|reacted [^ ]+ to|removed an? \w+ from)\s+[“"']/i.test(String(text || ''))) return true;
   const name = assistantName();
   const p = fubFetch('people/' + person.id + '?fields=id,firstName,lastName,tags,stage,price', null, 'get');
   const tags = p.tags || [];
@@ -3294,7 +3308,7 @@ function assistantReply(person, from, text) {
   learnFromReply(p, out, 'a text');
   if (out.important || out.escalate) stat('neededYou');
   const sens0 = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('No Shawna') >= 0;
-  const reply = humanize(out.reply);
+  const reply = varyOpener(humanize(out.reply), thread, realFirst(p));
   const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0 || tags.indexOf('No Shawna') >= 0;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
@@ -3306,7 +3320,7 @@ function assistantReply(person, from, text) {
   // Replies to someone who texted first may go until 10pm (ASSISTANT_END_HOUR); texts Julián starts stay 9am-9pm (TCPA).
   const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
   // The client closed the conversation ("thanks!", "ok", "sounds good", 👍): they get the last word, no reply (Nov 13).
-  const closer = /^\s*(?:(?:ok(?:ay)?|great|perfect|awesome|got it)[,!.\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!🙏👍😊🙂❤️]*$/i.test(text);
+  const closer = /^\s*(?:(?:ok(?:ay)?|yes|yeah|yep|yup|great|perfect|awesome|got it|sure)[,!.…\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again|julian|julián))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!…🙏👍😊🙂❤️]*$/i.test(text);
   // Alert wording (Nov 13): either she's answering (he can jump in) or it's his (she did NOT reply). Never both.
   const willAnswer = ok && !closer && hour >= 8 && hour < endHour && (mode === 'auto' || mode === 'backup' || invited);
   if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
@@ -4243,6 +4257,7 @@ HOW TO TEXT (this matters most):
 - Catch up like a human first. If they share something personal or casual, respond to that first (a quick reaction, a light question about them) before anything about real estate. Don't rush to business.
 - 1 to 3 short sentences. One question at most, and not every text needs a question.
 - Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏿 🙏🏿 👍🏿 🏡 👀 ☀️ 🔑 👋🏿 😂). Hand emojis always in the darkest skin tone (🏿), Julián's choice; 🙏🏿 is a good thank you, never by habit at the end of every text and never in back-to-back texts.
+- Sound like a person, not a bot (Julián, Nov 14): use their first name once in a while, not in every text; never start two texts in a row the same way (no "Got it, Lisa." every time); a ❤️/👍 reaction or a plain "thanks" needs no answer.
 - Spacing (Julián, Nov 14): anything longer than about two sentences goes in 2 or 3 short paragraphs with a blank line between them (use \n\n), the way a person texts: the catch-up or answer, then the detail, then the question on its own. Never one big block. Short replies stay one line.
 - Read the WHOLE conversation first and answer what they actually said in context (who they are, what you already told them, what was planned). Never answer only the last line.
 - Chris Voss, used lightly and naturally: mirror a few of their words, label a feeling ("Sounds like…", "Seems like…"), or ask a calm "what" or "how" question. Use a no-oriented question ("Would it be crazy if…?", "Is it a bad idea to…?") only once in a while. Never stack techniques, never sound scripted.
@@ -4665,7 +4680,8 @@ function bossCommand(text, tries) {
         r = bcolvCall({action: 'reply', threadId: pend.threadId, text: pend.message + '\n\nJulián', html: html, draft: false});
       } else r = sendFromBcolv(pend.email, pend.subject, pend.message);
       if (!r.ok) return say('the email did NOT go out: ' + (r.error || 'unknown error') + '.');
-      fubFetch('notes', {personId: pend.personId, subject: 'Email sent', body: 'To ' + pend.email + ' from ' + (r.from || 'bcolv') + ': "' + pend.subject + '"\n\n' + pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+      const logId = pend.personId || pend.aboutId;  // someone outside Follow Up Boss: log it on the client it was about, if any
+      if (logId) { try { fubFetch('notes', {personId: logId, subject: 'Email sent', body: 'To ' + pend.email + ' from ' + (r.from || 'bcolv') + ': "' + pend.subject + '"\n\n' + pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'}); } catch (e) {} }
       return say('emailed ' + pend.who + ' from ' + (r.from || 'your bcolv email') + '. ✅');
     }
     if (pend.sendAt && pend.sendAt > Date.now()) {  // scheduled for later: it waits in the Text Queue tab (editable there)
@@ -4947,6 +4963,33 @@ Examples (all mean the same as the action shown):
           const body0 = humanize(a.message);
           addPending({kind: 'email', personId: pend0.personId, who: pend0.who, email: pend0.email, subject: pend0.subject, message: body0, threadId: pend0.threadId || '', at: Date.now()});
           return say('email ' + pend0.who + '?\n' + viaEmail(pend0.email, pend0.threadId) + '\n\nSubject: ' + pend0.subject + '\n\n' + body0);
+        }
+      }
+      // Anyone by address (Nov 14): a team member by name (Joey) or an email he typed goes straight there, no Follow Up Boss
+      // contact needed. "X's contact info" in his request adds X's real phone/email from Follow Up Boss to the email.
+      {
+        const typed = (String(text).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) || [])[0] || '';
+        const team = teamEmailFor(a.who) || teamEmailFor(greetName(a.message));
+        const direct = team || typed;
+        let known = null;
+        if (direct) { try { known = (fubFetch('people?limit=1&fields=id,name,firstName&email=' + encodeURIComponent(direct), null, 'get').people || [])[0] || null; } catch (e) {} }
+        if (direct && !known) {
+          let body = humanize(a.message || '');
+          const cm = String(text).match(/(?:send|give|share|forward)\s+(?:\w+\s+)?([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)?)(?:['’]s)?\s+contact/i) || String(text).match(/([A-Z][a-zA-Z'’-]+\s+[A-Z][a-zA-Z'’-]+)(?:['’]s)?\s+contact\s+(?:info|information|details|card)/i);
+          if (cm) {
+            const cp = findOne(cm[1]);
+            if (cp && cp.many) return askWhich(cp.many);
+            if (cp && cp.id) {
+              const full = fubFetch('people/' + cp.id + '?fields=id,name,phones,emails', null, 'get');
+              const ph = (full.phones || []).map(x => prettyPhone(x.value)).filter(Boolean)[0] || '', em = (full.emails || []).map(x => x.value).filter(validEmail)[0] || '';
+              if ((ph && body.indexOf(ph) < 0) || (em && body.indexOf(em) < 0)) body = body.replace(/\s*$/, '') + '\n\n' + full.name + (ph ? '\nPhone: ' + ph : '') + (em ? '\nEmail: ' + em : '');
+              a.aboutId = cp.id;
+            }
+          }
+          if (!body.trim()) return say('what should the email to ' + (a.who || direct) + ' say?');
+          const who = a.who && !/@/.test(a.who) ? a.who : (greetName(body) || direct), subject = humanize(a.subject || 'Quick note from Julián');
+          addPending({kind: 'email', personId: '', aboutId: a.aboutId || '', who: who, email: direct, subject: subject, message: body, threadId: '', at: Date.now()});
+          return say('email ' + who + '?\n' + viaEmail(direct) + '\n\nSubject: ' + subject + '\n\n' + body);
         }
       }
       let {p} = resolvePerson();
@@ -5747,6 +5790,15 @@ function vapiWebhook(e) {
 /** Phone numbers of everyone on the Follow Up Boss account (Joey, Tana…), cached 6 h. Calls from them are team calls. */
 // Team members who aren't Follow Up Boss users (Julián, Nov 12): Kayleigh on the team, Lily = Joey's assistant.
 const TEAM_EXTRA = '7029854247 Kayleigh, 9253957855 Lily';
+// Team emails (Nov 14, Julián: "I should be able to tell Shawna to email someone who isn't in my database").
+// More can be added in the Settings tab as TEAM_EMAILS "joey joeyd@bcolv.com, tana tana@bcolv.com".
+const TEAM_EMAILS = 'joey joeyd@bcolv.com';
+function teamEmailFor(name) {
+  const n = String(name || '').toLowerCase().trim().split(/\s+/)[0]; if (!n) return '';
+  const list = (TEAM_EMAILS + ',' + (PropertiesService.getScriptProperties().getProperty('TEAM_EMAILS') || '')).split(',');
+  for (const x of list) { const m = x.trim().match(/^([a-z]+)\s+(\S+@\S+)$/i); if (m && m[1].toLowerCase() === n) return m[2]; }
+  return '';
+}
 function teamNumbers() { return Object.keys(teamDirectory()); }
 /** {phone: name} for the team: Follow Up Boss users (not Julián) + TEAM_NUMBERS ("7025551234 Joey, 7025559876 Tana" or bare numbers). */
 function teamDirectory() {
