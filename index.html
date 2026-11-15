@@ -2519,7 +2519,7 @@ function homePage(id){
       <footer class="h2-foot"><div class="h2-logo big"><img class="on-light" src="img/p/photo-22cb48.png" alt=""><img class="on-dark" src="img/p/photo-324da7.png" alt=""></div><b>Julián J. Crider</b><span>Boeckle &amp; Co. · <a href="tel:+17024982571">702-498-2571</a></span>
         <span><a href="https://www.instagram.com/juliancriderestates/" target="_blank" rel="noopener">@juliancriderestates</a> · Nevada License S.0177760</span>
         <span>Boeckle &amp; Co., 4775 W Teco Ave #220, Las Vegas NV 89118 · Broker Landon Boeckle, B.1001882</span>
-        <span>${d.enhanced ? 'Photos edited for light and color only. ' : ''}Equal Housing Opportunity.</span></footer></div>`;
+        <span><span id="hpEdit">${d.enhanced ? 'Photos edited for light and color only. ' : ''}</span>Equal Housing Opportunity.</span></footer></div>`;
     bindX();
     $('hpShow').onclick = () => { closeSheet(); showingFlow(d.address); };
     const fitNav = () => { $('hpNav').style.top = document.querySelector('.hp2 .h2-head').offsetHeight + 'px'; }; fitNav(); addEventListener('resize', fitNav);
@@ -2533,6 +2533,18 @@ function homePage(id){
       $('mDownL').textContent = dn + '% (' + money(Math.round(p * dn / 100)) + ')'; $('mRateL').textContent = rt.toFixed(2) + '%';
       const pay = $('mPay'), nv = money(Math.round(payment(p * (1 - dn / 100), rt, t))); if (pay.textContent !== nv) { pay.textContent = nv; pay.classList.remove('bump'); void pay.offsetWidth; pay.classList.add('bump'); } };
     ['mPrice','mDown','mRate','mTerm'].forEach(k => $(k).oninput = calc); calc();
+    // Free "Pro look" (Nov 15; Gemini's free plan won't edit photos): each photo without an AI-enhanced copy is graded in
+    // the browser: per-channel levels (gentle white balance), soft S-curve, vibrance, a touch of sharpening. Never changes
+    // what's in the photo; the original shows first and is swapped when ready.
+    if (!d.useOriginals && ph.length) {
+      const each = d.enhancedEach || [], todo = ph.map((u, i) => i).filter(i => !each[i]);
+      let next = 0, done = 0;
+      const work = () => { const i = todo[next++]; if (i == null) return;
+        fetch(SHEET_URL + '?' + new URLSearchParams({action:'photo', id, i})).then(r => r.json()).then(x => x.status === 'ok' ? proLook('data:' + x.type + ';base64,' + x.data) : null)
+          .then(url => { if (url) { ph[i] = url; document.querySelectorAll(`.hp2 img[data-zoom="${i}"]`).forEach(im => { im.onerror = null; im.src = url; }); if (!done++) $('hpEdit').textContent = 'Photos edited for light and color only. '; } })
+          .catch(() => {}).then(work); };
+      work(); work();
+    }
     const rv = [...document.querySelectorAll('.hp2 .h2-sec, .hp2 .h2-stats')]; rv.forEach(el => el.classList.add('rv'));
     if ('IntersectionObserver' in window) { const io2 = new IntersectionObserver(es => es.forEach(x => { if (x.isIntersecting) { x.target.classList.add('in'); io2.unobserve(x.target); } }), {root: sc, rootMargin: '0px 0px -8% 0px'}); rv.forEach(el => io2.observe(el)); }
     else rv.forEach(el => el.classList.add('in'));
@@ -2564,6 +2576,36 @@ function homePage(id){
       box.addEventListener('click', () => { if (!('ontouchstart' in window)) box.remove(); });
     });
   }).catch(() => { $('sheetBody').innerHTML = doneHTML('Can’t load right now','Please try again in a minute, or text Julián at 702-498-2571.'); });
+}
+/** The free "Pro look" grade: returns a JPEG data URL (or null). Gentle by design; the Nov 14 proxy look was too strong. */
+function proLook(src){
+  return new Promise(res => { const im = new Image(); im.onerror = () => res(null); im.onload = () => {
+    try {
+      const sc = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight)), w = Math.round(im.naturalWidth * sc), h = Math.round(im.naturalHeight * sc);
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, w, h);
+      const img = cx.getImageData(0, 0, w, h), p = img.data, n = w * h;
+      const hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+      for (let k = 0; k < p.length; k += 4) { hist[0][p[k]]++; hist[1][p[k + 1]]++; hist[2][p[k + 2]]++; }
+      const pct = (hh, q) => { let c = 0; for (let v = 0; v < 256; v++) { c += hh[v]; if (c >= q * n) return v; } return 255; };
+      const lut = hist.map(hh => { let lo = pct(hh, .004), hi = pct(hh, .996); lo = Math.min(lo, 40); hi = Math.max(hi, 205); if (hi - lo < 120) { lo = 0; hi = 255; }
+        const t = new Uint8ClampedArray(256);
+        for (let v = 0; v < 256; v++) { let x = (v - lo) / (hi - lo); x = Math.max(0, Math.min(1, x));
+          x = x + 0.10 * Math.sin(Math.PI * x) * (x < .5 ? .35 : -.15);   // lift shadows a little, keep highlights
+          x = .5 + (x - .5) * 1.06;                                         // soft contrast
+          t[v] = Math.round(255 * (0.15 * v / 255 + 0.85 * x)); }          // keep 15% of the original
+        return t; });
+      for (let k = 0; k < p.length; k += 4) {
+        let r = lut[0][p[k]], g = lut[1][p[k + 1]], b = lut[2][p[k + 2]];
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), avg = (r + g + b) / 3, amt = 0.16 * (1 - (mx - mn) / 255);
+        p[k] = r + (r - avg) * amt; p[k + 1] = g + (g - avg) * amt; p[k + 2] = b + (b - avg) * amt;
+      }
+      // Light sharpening (unsharp, 3x3), skipped on the border.
+      const src2 = new Uint8ClampedArray(p), W = w * 4, A = 0.35;
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const k = y * W + x * 4;
+        for (let c = 0; c < 3; c++) { const o = k + c, blur = (src2[o - 4] + src2[o + 4] + src2[o - W] + src2[o + W] + src2[o]) / 5; p[o] = src2[o] + A * (src2[o] - blur); } }
+      cx.putImageData(img, 0, 0); res(cv.toDataURL('image/jpeg', .92));
+    } catch (e) { res(null); } };
+    im.src = src; });
 }
 // Seller presentation (Nov 13, juliancrider.com/?sell): the listing presentation as a page Julián sends before every
 // listing appointment. No made-up stats or promises; it explains how he prices, markets and communicates.
