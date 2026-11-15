@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-prolook';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-dedupe';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1856,6 +1856,9 @@ function homeFor(text) {
   const rows = homeRows(), t = String(text || '').toLowerCase();
   const hit = rows.filter(h => { const k = homeKey(h.address); return k.length > 3 && t.indexOf(k) >= 0; }).pop();
   if (hit) return hit;
+  // Nov 15 ("…listing page Kinlock"): the street name alone is enough when only one page has it.
+  const byStreet = rows.filter(h => { const w = String(h.address).toLowerCase().split(/[\s,]+/)[1] || ''; return w.length >= 4 && !/^(north|south|east|west)$/.test(w) && new RegExp('\\b' + w + '\\b').test(t); });
+  if (byStreet.length === 1) return byStreet[0];
   const act = jsonOr(PropertiesService.getScriptProperties().getProperty('LISTING_ACTIVE'), null);
   return act && Date.now() - act.at < 6 * 36e5 ? rows.filter(h => h.token === act.token)[0] || null : null;
 }
@@ -1977,7 +1980,8 @@ function addressFromListingUrl(url) {
 function listingPhotoCommand(text) {
   const h = homeFor(text);
   if (!h) return 'Which listing page? Text "listing page" plus the address first.';
-  const rm = String(text).match(/(?:remove|delete)\s+photo\s+#?(\d+)/i);
+  if (/\b(duplicate|dupe|dup|same|repeat|twice|double)/i.test(text)) return dedupeListingPhotos(h);
+  const rm = String(text).match(/(?:remove|delete|take (?:down|out|off)|get rid of|drop)\s+(?:the\s+)?(?:photo|pic|picture|image)\s*#?(\d+)/i);
   if (rm) { const i = Number(rm[1]) - 1; if (!h.photos[i]) return 'There\'s no photo ' + rm[1] + ' (the page has ' + h.photos.length + ').'; h.photos.splice(i, 1); homeSave(h); return '🗑 Removed photo ' + rm[1] + ' from ' + h.address + '. ' + h.photos.length + ' left.\n' + homePageUrl(h.token); }
   if (/\b(enhance|re-?enhance|redo|retry)\b/i.test(text) && !/original/i.test(text)) {
     const props = PropertiesService.getScriptProperties(), q = jsonOr(props.getProperty('LISTING_PHOTO_Q'), []);
@@ -1989,6 +1993,34 @@ function listingPhotoCommand(text) {
   }
   h.originals = /original/i.test(text); homeSave(h); setActiveHome(h.token);
   return (h.originals ? '📷 The page now shows your original photos' : '✨ The page now shows the enhanced photos') + ' for ' + h.address + '.\n' + homePageUrl(h.token);
+}
+/** "take down the duplicate photos" (Nov 15: Shawna asked him for file names): finds them herself. Exact copies by
+ *  fingerprint, then near-copies (same shot sent twice, a slightly different take of the same view) by Gemini looking at
+ *  small thumbnails (image reading is on the free plan). Keeps the first of each group. */
+function dedupeListingPhotos(h) {
+  if (h.photos.length < 2) return 'There\'s only ' + h.photos.length + ' photo on ' + h.address + ', nothing to compare.';
+  const res = UrlFetchApp.fetchAll(h.photos.map(p => ({url: 'https://drive.google.com/thumbnail?id=' + p.o + '&sz=w320', muteHttpExceptions: true})));
+  const bytes = res.map(r => r.getResponseCode() < 300 ? r.getBlob().getBytes() : null);
+  const drop = {}, seen = {};
+  bytes.forEach((b, i) => { if (!b) return; const k = Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, b)); if (seen[k] != null) drop[i] = true; else seen[k] = i; });
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('GEMINI_API_KEY');
+  const left = bytes.map((b, i) => i).filter(i => bytes[i] && !drop[i]);
+  if (key && left.length > 1) {
+    try {
+      const parts = [{text: 'These are listing photos of one house, numbered. Find DUPLICATES: the same photo twice, or two photos of the same room from almost the same spot and angle so a buyer would see them as repeats. Different rooms, or the same room from a clearly different angle, are NOT duplicates. JSON only: {"groups": [[photo numbers that are duplicates of each other], ...]} (empty list if none).'}];
+      left.forEach(i => { parts.push({text: 'Photo ' + (i + 1)}); parts.push({inline_data: {mime_type: 'image/jpeg', data: Utilities.base64Encode(bytes[i])}}); });
+      const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + (props.getProperty('GEMINI_MODEL') || 'gemini-2.5-flash') + ':generateContent?key=' + encodeURIComponent(key), {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        payload: JSON.stringify({contents: [{parts: parts}], generationConfig: {responseMimeType: 'application/json', temperature: 0}})});
+      const txt = (((((JSON.parse(r.getContentText()).candidates || [])[0] || {}).content || {}).parts || [])[0] || {}).text || '{}';
+      (JSON.parse(txt).groups || []).forEach(g => { const nums = (g || []).map(Number).filter(n => n >= 1 && n <= h.photos.length && left.indexOf(n - 1) >= 0).sort((a, b) => a - b);
+        nums.slice(1).forEach(n => { drop[n - 1] = true; }); });
+    } catch (e) { console.log('Dedupe look: ' + e.message); }
+  }
+  const gone = Object.keys(drop).map(Number).sort((a, b) => a - b);
+  if (!gone.length) return '👀 I compared all ' + h.photos.length + ' photos on ' + h.address + ' and none look like repeats to me. Which number should come off? They\'re numbered in page order (tap a photo to see its number).';
+  h.photos = h.photos.filter((p, i) => !drop[i]); homeSave(h); setActiveHome(h.token);
+  return '🗑 Took down ' + gone.length + ' duplicate photo' + (gone.length === 1 ? '' : 's') + ' (' + gone.map(i => '#' + (i + 1)).join(', ') + ') from ' + h.address + '. ' + h.photos.length + ' left.\n' + homePageUrl(h.token);
 }
 /** Photo attachments Julián texts while a listing page is active: queued, handled a few per minute. */
 function queueListingPhotos(atts, text) {
@@ -4944,7 +4976,7 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏿🏾👍🏿🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
-  else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete) photo #?\d+|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
+  else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete|take (down|out|off)|get rid of|drop) (the )?(photo|pic|picture|image) ?#?\d+|.*\b(duplicate|dupe)s?\b.*\b(photo|pic|picture|image|listing)|.*\b(photo|pic|picture|image)s?\b.*\b(duplicate|dupe|look the same|are the same|repeat)|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};

@@ -707,6 +707,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   shadow lift, soft contrast, vibrance, light unsharp; keeps 15% of the original; never changes the scene). Pixels come from
   GET ?action=photo&id=<token>&i=<n> → `listingPhotoData` (Drive thumbnail w1800 as base64, only that page's photos).
   Originals show first and swap when graded; "use original photos" (useOriginals) turns it off; real AI copies win (enhancedEach).
+  Duplicates (Nov 15: "take down duplicate photo in listing page Kinlock" → Shawna asked him for file names): fast path for
+  duplicate/dupe/"look the same" + photo → `dedupeListingPhotos` (MD5 of w320 thumbnails, then Gemini 2.5 Flash vision on the
+  free plan groups near-repeats; keeps the first of each group). "take down/take out/get rid of photo 3" = remove. homeFor also
+  matches the street name alone ("Kinlock") when one page has it. Watermarked MLS photos: never remove watermarks (copyright).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
