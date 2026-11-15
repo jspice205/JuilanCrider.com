@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-dedupe';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-openai-photos';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1989,7 +1989,7 @@ function listingPhotoCommand(text) {
     if (!todo.length) return '✨ Every photo on ' + h.address + ' is already enhanced.\n' + homePageUrl(h.token);
     todo.forEach((p, i) => q.push({driveId: p.o, name: 'photo ' + (h.photos.indexOf(p) + 1), token: h.token, at: Date.now() - 60000, tries: 0}));
     props.setProperty('LISTING_PHOTO_Q', JSON.stringify(q)); setActiveHome(h.token);
-    return '✨ On it: enhancing ' + todo.length + ' photo' + (todo.length === 1 ? '' : 's') + ' for ' + h.address + ' with Google\'s free plan. I\'ll text you when they\'re done.';
+    return '✨ On it: enhancing ' + todo.length + ' photo' + (todo.length === 1 ? '' : 's') + ' for ' + h.address + ' with ' + (PropertiesService.getScriptProperties().getProperty('OPENAI_API_KEY') ? 'ChatGPT' : 'Google') + '. I\'ll text you when they\'re done.';
   }
   h.originals = /original/i.test(text); homeSave(h); setActiveHome(h.token);
   return (h.originals ? '📷 The page now shows your original photos' : '✨ The page now shows the enhanced photos') + ' for ' + h.address + '.\n' + homePageUrl(h.token);
@@ -2047,7 +2047,7 @@ function processListingPhotos() {
         if (x.driveId) {  // "enhance the photos": a photo already on the page, enhanced now
           const ph = h.photos.filter(p => p.o === x.driveId)[0];
           if (ph && !ph.e) {
-            const en = geminiEnhance(DriveApp.getFileById(x.driveId).getBlob()), s = stats[x.token] = stats[x.token] || {n: 0, enh: 0, why: '', redo: true};
+            const en = enhancePhoto(DriveApp.getFileById(x.driveId).getBlob()), s = stats[x.token] = stats[x.token] || {n: 0, enh: 0, why: '', redo: true};
             s.n++;
             if (en.blob) { const f = listingFolder(h.address).createFile(en.blob.setName('Enhanced ' + x.name.replace(/\.\w+$/, '') + '.png')); f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); ph.e = f.getId(); h.originals = false; homeSave(h); s.enh++; }
             else s.why = en.error;
@@ -2059,7 +2059,7 @@ function processListingPhotos() {
         const folder = listingFolder(h.address), blob = res.getBlob().setName(x.name);
         const o = folder.createFile(blob); o.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
         let eId = '', why = '';
-        if (!x.orig) { const en = geminiEnhance(blob); if (en.blob) { const f = folder.createFile(en.blob.setName('Enhanced ' + x.name.replace(/\.\w+$/, '') + '.png')); f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); eId = f.getId(); } else why = en.error; }
+        if (!x.orig) { const en = enhancePhoto(blob); if (en.blob) { const f = folder.createFile(en.blob.setName('Enhanced ' + x.name.replace(/\.\w+$/, '') + '.png')); f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); eId = f.getId(); } else why = en.error; }
         h.photos.push({o: o.getId(), e: eId}); homeSave(h);
         const s = stats[x.token] = stats[x.token] || {n: 0, enh: 0, why: ''}; s.n++; if (eId) s.enh++; if (why) s.why = why;
         q.shift();
@@ -2082,6 +2082,29 @@ function listingFolder(address) {
   return it.hasNext() ? it.next() : root.createFolder(address);
 }
 /** Google Gemini image editing (the same Google image model family as Flow). Returns {blob} or {error}. */
+/** Nov 15: ChatGPT's image model (OpenAI gpt-image-1, needs OPENAI_API_KEY with API credit) when saved, else Gemini.
+ *  Without either, the page's free in-browser Pro look grades the original. */
+function enhancePhoto(blob) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('OPENAI_API_KEY')) { const o = openaiEnhance(blob); if (o.blob || !props.getProperty('GEMINI_API_KEY')) return o; }
+  return geminiEnhance(blob);
+}
+function openaiEnhance(blob) {
+  const props = PropertiesService.getScriptProperties(), key = props.getProperty('OPENAI_API_KEY');
+  if (blob.getBytes().length > 45 * 1024 * 1024) return {error: 'photo too large for ChatGPT'};
+  if (/heic|heif/i.test(blob.getName() + blob.getContentType())) { try { blob = blob.getAs('image/jpeg'); } catch (e) { return {error: 'ChatGPT can\'t read iPhone HEIC photos; send it as "Most Compatible" (JPEG)'}; } }
+  const r = UrlFetchApp.fetch('https://api.openai.com/v1/images/edits', {method: 'post', muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + key},
+    payload: {model: props.getProperty('OPENAI_IMAGE_MODEL') || 'gpt-image-1', prompt: ENHANCE_PROMPT, image: blob.setName('photo.' + (/png/i.test(blob.getContentType()) ? 'png' : 'jpg')),
+      size: 'auto', quality: props.getProperty('OPENAI_IMAGE_QUALITY') || 'high', input_fidelity: 'high', n: '1'}});
+  const code = r.getResponseCode(), body = r.getContentText();
+  if (code === 401) return {error: 'ChatGPT rejected the API key (check OPENAI_API_KEY)'};
+  if (code === 429 || /billing|quota|insufficient/i.test(body)) return {error: 'the ChatGPT account is out of API credit (platform.openai.com → Billing)'};
+  if (code === 403 && /verif/i.test(body)) return {error: 'OpenAI needs your organization verified before it allows image editing (platform.openai.com → Settings → Organization → Verify)'};
+  if (code >= 300) { console.log('OpenAI image: ' + code + ' ' + body.slice(0, 300)); return {error: 'ChatGPT said ' + code + ' (' + body.slice(0, 120).replace(/\s+/g, ' ') + ')'}; }
+  const d = ((JSON.parse(body).data) || [])[0] || {};
+  if (!d.b64_json) return {error: 'ChatGPT didn\'t return a photo'};
+  return {blob: Utilities.newBlob(Utilities.base64Decode(d.b64_json), 'image/png', 'enhanced.png')};
+}
 function geminiEnhance(blob) {
   const props = PropertiesService.getScriptProperties(), key = props.getProperty('GEMINI_API_KEY');
   if (!key) return {error: 'no Gemini key saved'};

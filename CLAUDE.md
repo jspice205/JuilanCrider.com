@@ -711,6 +711,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   duplicate/dupe/"look the same" + photo → `dedupeListingPhotos` (MD5 of w320 thumbnails, then Gemini 2.5 Flash vision on the
   free plan groups near-repeats; keeps the first of each group). "take down/take out/get rid of photo 3" = remove. homeFor also
   matches the street name alone ("Kinlock") when one page has it. Watermarked MLS photos: never remove watermarks (copyright).
+  ChatGPT photos (Nov 15, his ask): `enhancePhoto` → `openaiEnhance` (POST api.openai.com/v1/images/edits, OPENAI_API_KEY via
+  Settings tab, OPENAI_IMAGE_MODEL default gpt-image-1, OPENAI_IMAGE_QUALITY default high, input_fidelity high, ENHANCE_PROMPT)
+  first, Gemini after. Needs API credit (not a ChatGPT Plus subscription) and OpenAI organization verification.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
