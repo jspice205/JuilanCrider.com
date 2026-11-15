@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-humane';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-mute30';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -2981,7 +2981,7 @@ function bbWebhook(e) {
         if (!done) { try { notifyJulian('Shawna here', 'I couldn\'t jump into that chat just now' + (why ? ' (' + why + ')' : '') + '. Text me what you need and I\'ll handle it.'); } catch (e) {} }
         return json({status: 'ok'});
       }
-      if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 180) * 6e4));
+      if (!sentByShawna) props.setProperty('AI_MUTE_' + to, String(Date.now() + Number(props.getProperty('ASSISTANT_MUTE_MIN') || 30) * 6e4));
       if (!sentByShawna) { props.setProperty('AI_LASTME_' + to, String(Date.now())); textLogAnswered(to); }
       const boss1 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
       if (!sentByShawna && !group && to !== boss1 && /^\+1\d{10}$/.test(to)) {

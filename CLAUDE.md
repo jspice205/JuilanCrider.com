@@ -117,7 +117,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   question on its own; assistantPrompt asks for \n\n paragraphs too. Nov 14 (Lisa thread, three "Got it, Lisa." texts): assistantReply
   ignores tapbacks ("Liked “…”", "Loved “…”"); closer also matches "Yes…. Thank you so much"; `varyOpener` drops a repeated
   opener (Got it / I hear you / Sounds good…) and their first name when one of our last 4 texts used it; ASSISTANT_MUTE_MIN
-  default 180 (was 30: Shawna re-entered Lisa's thread 68 min after Julián texted her). Email anyone (Nov 14, "Joey's not in
+  stays 30 (tried 180 on Nov 14; Julián prefers 30). Email anyone (Nov 14, "Joey's not in
   FUB, Shawna emailed toward Jennifer Murphy"): email action → a team member by name (TEAM_EMAILS: joey joeyd@bcolv.com +
   TEAM_EMAILS setting) or an email address he typed goes straight there (approval as usual, no FUB contact needed); "send
   Joey Lisa Dragos' contact info" appends Lisa's real phone/email from FUB; the sent note is logged on Lisa (aboutId). Boss actions also: schedule (personal = his gmail
