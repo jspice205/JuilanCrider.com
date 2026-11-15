@@ -659,6 +659,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   parcel number in the footer. A bare Zillow/Redfin/Realtor.com/Homes.com home link texted to Shawna (or "listing page <link>")
   → listing page: `addressFromListingUrl` reads the address from the URL, pageMeta adds beds/baths/size when the site allows
   (never its price), facts.link keeps the link. Listing-site photos are NOT copied (MLS photo copyright); his own photos only.
+  Nov 14 (Kinlock test): Gemini made 0 enhanced photos (free plan doesn't cover image editing; billing on in AI Studio would fix it).
+  Backup look: listingPageData serves un-enhanced photos through wsrv.nl (free image proxy, bri/con/sat/sharp, no account);
+  the page falls back to the plain Drive photo on error (`originals`). Parcel lookup: Kinlock Ct wasn't in the Address layer →
+  `parcelByGeocode` (county GeocodeServer Clark_County_Composite_All_Pro → Assessor/Layers/MapServer/1 parcels within 160 ft →
+  match "Location Address <num> <street>" on each Assessor page, fetchAll). `parcelFacts(raw)` reads sq ft (all floors +
+  casita + finished basement + additions), beds, baths (full + half), year, lot, garage, pool, style, city by regex
+  (parcelRecord now keeps 7000 chars; at 3500 the building section was cut off). Page: no header bar (.sheet.hp, floating ✕),
+  price with commas + $/sq ft, "Market snapshot" from his text (facts.snapshot: estimate/low/high/comps/ppsf/dom/active/
+  pending/sold/note; only what he says).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

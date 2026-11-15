@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-listinglink';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-listing2';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1865,8 +1865,12 @@ function listingPageData(token) {
   const h = homeRows().filter(x => x.token === token)[0];
   if (!h) return {status: 'error'};
   const img = id => 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
+  // Backup look (Nov 14, Gemini's free plan won't edit photos): an image service (wsrv.nl, free, no account) brightens,
+  // adds contrast and color and sharpens on the fly. Never changes what's in the photo. The page falls back to the original.
+  const lift = id => 'https://wsrv.nl/?url=' + encodeURIComponent('drive.google.com/thumbnail?id=' + id + '&sz=w2000') + '&w=2000&bri=6&con=14&sat=14&sharp=1.2&q=90&output=jpg';
   return {status: 'ok', address: h.address, parcel: h.parcel || '', facts: h.facts, price: h.price, mls: h.mls, portal: h.portal, instagram: h.instagram,
-    photos: h.photos.map(p => img(h.originals || !p.e ? p.o : p.e)), enhanced: !h.originals && h.photos.some(p => p.e)};
+    photos: h.photos.map(p => h.originals ? img(p.o) : p.e ? img(p.e) : lift(p.o)), originals: h.photos.map(p => img(p.o)),
+    enhanced: !h.originals && h.photos.length > 0};
 }
 /** "listing page 123 Desert Rose Ln, 4 bed 3 bath, pool, price 1.2-1.3M" → create or update the page. */
 function listingPageCommand(text) {
@@ -1887,7 +1891,7 @@ function listingPageCommand(text) {
   if (!said) return 'Which address? Text "listing page" plus the address, and any details you know (beds, baths, price).';
   let p = {};
   try { p = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
-    {role: 'system', content: 'Pull listing details out of a Realtor\'s text. JSON only: {"address": "street address with city if given, else empty", "beds": "", "baths": "", "sqft": "", "lot": "", "year": "", "garage": "", "price": "list price or range exactly as written, else empty", "features": ["short features he mentioned"]}. Leave anything he did not say empty. Never guess.'},
+    {role: 'system', content: 'Pull listing details out of a Realtor\'s text. JSON only: {"address": "street address with city if given, else empty", "beds": "", "baths": "", "sqft": "", "lot": "", "year": "", "garage": "", "price": "list price or range exactly as written, else empty", "features": ["short features he mentioned"], "snapshot": {"estimate": "", "low": "", "high": "", "comps": "", "ppsf": "median price per sq ft", "dom": "average days on market", "active": "", "pending": "", "sold": "", "note": "one short line"}}. The snapshot is only what he says about the market (comps, $/sq ft, days on market, active/pending/sold counts, estimated range). Leave anything he did not say empty. Never guess.'},
     {role: 'user', content: said + (siteFacts ? '\n\nFrom the listing website (use it for beds, baths, sqft, lot and year only; NEVER take a price from it): ' + siteFacts : '')}], {maxTokens: 500, noPick: true})); } catch (e) {}
   if (siteFacts && p.price && said.indexOf(String(p.price).replace(/[^\d.]/g, '').slice(0, 3)) < 0) p.price = '';  // price only from his own words
   const addr = String(p.address || '').trim() || (h ? h.address : '') || said.split(',')[0];
@@ -1900,7 +1904,9 @@ function listingPageCommand(text) {
       const w = parcelForAddress(addr);
       if (!w.error) {
         h.parcel = w.apn; h.address = h.address || w.address;
-        const raw = parcelRecord(w.apn);
+        const raw = parcelRecord(w.apn), pf = parcelFacts(raw);
+        Object.keys(pf).forEach(k => { if (pf[k] && !h.facts[k]) h.facts[k] = pf[k]; });
+        if (pf.pool === 'yes') h.facts.features = (h.facts.features || []).concat(['Pool']).filter((x, i, a) => a.indexOf(x) === i);
         const r = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
           {role: 'system', content: 'From this Clark County Assessor parcel record, JSON only: {"city": "", "zip": "", "sqft": "living area square feet if shown", "lot": "lot size as shown (acres or sq ft)", "year": "year built", "beds": "", "baths": "", "garage": "", "pool": "yes if a pool is listed, else empty", "subdivision": ""}. Only values the record shows, else empty.'},
           {role: 'user', content: raw}], {maxTokens: 400, noPick: true}));
@@ -1913,6 +1919,7 @@ function listingPageCommand(text) {
   if ((p.features || []).length) h.facts.features = (h.facts.features || []).concat(p.features).filter((x, i, a) => a.indexOf(x) === i).slice(0, 15);
   if (p.price) h.price = String(p.price);
   if (link) h.facts.link = link;
+  if (p.snapshot) { const sn = {}; Object.keys(p.snapshot).forEach(k => { if (String(p.snapshot[k] || '').trim()) sn[k] = String(p.snapshot[k]).trim(); }); if (Object.keys(sn).length) h.facts.snapshot = Object.assign(h.facts.snapshot || {}, sn); }
   // The writing: only what's known; Fair Housing safe.
   try {
     const w = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
@@ -3867,15 +3874,52 @@ function parcelForAddress(text) {
   if (!f.length) f = q("Number='" + m[1] + "' AND Name LIKE '" + name + "%'");
   if (m[2] && f.length > 1) f = f.filter(x => String(x.attributes.Direction || '').toUpperCase() === m[2].toUpperCase()).concat(f).slice(0, f.length);
   f = f.filter(x => x.attributes.Parcel);
+  if (!f.length) { const g = parcelByGeocode(m[1], m[3], text); if (g) return g; }  // Nov 14: Kinlock Ct wasn't in the address layer
   if (!f.length) return {error: 'I couldn\'t find "' + t + '" in Clark County\'s address records. Check the spelling, or send the parcel number.'};
   const a = f[0].attributes;
   return {apn: String(a.Parcel).replace(/\D/g, ''), address: [a.Number, a.Direction, a.Name, a.Type].filter(Boolean).join(' '), subdivision: a.SubdName || '', more: f.length - 1};
+}
+/** Second way to find a parcel (Nov 14): the county geocoder puts the address on its street; the parcels within ~150 ft
+ *  are checked against the Assessor's own "Location Address" until the house number + street name match. */
+function parcelByGeocode(num, street, full) {
+  try {
+    const g = JSON.parse(UrlFetchApp.fetch('https://maps.clarkcountynv.gov/arcgis/rest/services/Locators/Clark_County_Composite_All_Pro/GeocodeServer/findAddressCandidates?SingleLine=' +
+      encodeURIComponent(String(full || (num + ' ' + street)).replace(/,?\s*(nv|nevada)\b/i, '')) + '&outFields=X,Y,Score&maxLocations=1&f=json', {muteHttpExceptions: true}).getContentText());
+    const c = (g.candidates || [])[0]; if (!c || c.score < 75) return null;
+    const near = JSON.parse(UrlFetchApp.fetch('https://maps.clarkcountynv.gov/arcgis/rest/services/Assessor/Layers/MapServer/1/query?geometry=' + c.location.x + ',' + c.location.y +
+      '&geometryType=esriGeometryPoint&inSR=3421&distance=160&units=esriSRUnit_Foot&spatialRel=esriSpatialRelIntersects&outFields=APN&returnGeometry=false&f=json', {muteHttpExceptions: true}).getContentText());
+    const apns = (near.features || []).map(x => String(x.attributes.APN || '')).filter(x => /^\d{11}$/.test(x)).slice(0, 24);
+    const want = new RegExp('Location Address\\s+' + num + '\\s+(?:[NSEW]\\s+)?' + String(street).split(/\s+/)[0].replace(/[^A-Za-z]/g, ''), 'i');
+    const pages = UrlFetchApp.fetchAll(apns.map(a => ({url: 'https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ParcelDetail.aspx?hdnParcel=' + a + '&hdnInstance=pcl', muteHttpExceptions: true})));
+    for (let i = 0; i < pages.length; i++) {
+      const t = pages[i].getContentText().replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+      if (want.test(t)) return {apn: apns[i], address: ((t.match(/Location Address\s+(.+?)\s+City\/Unincorporated/) || [])[1] || (num + ' ' + street)).trim(), subdivision: '', more: 0};
+    }
+  } catch (e) { console.log('Parcel geocode: ' + e.message); }
+  return null;
+}
+/** Facts read straight from the Assessor record (no AI): living sq ft (all floors), beds, baths, pool, year, lot, garage. */
+function parcelFacts(raw) {
+  const t = String(raw || '').replace(/\s+/g, ' '), num = re => { const m = t.match(re); return m && !/^\d+[a-z]/i.test(t.slice(m.index + m[0].length - m[1].length, m.index + m[0].length + 2)) ? Number(String(m[1]).replace(/,/g, '')) || 0 : 0; };
+  const sq = num(/1st Floor Sq\. Ft\.\s+([\d,]+)/i) + num(/2nd Floor Sq\. Ft\.\s+([\d,]+)/i) + num(/3rd Floor Sq\. Ft\.\s+([\d,]+)/i) +
+    num(/Casita Sq\. Ft\.\s+([\d,]+)/i) + num(/FINISHED BASEMENT SQ\. FT\.\s+([\d,]+)/i) + num(/Addn\/Conv\s+([\d,]+)/i);
+  const f = {};
+  if (sq) f.sqft = sq.toLocaleString('en-US');
+  const bd = t.match(/Bedrooms\s+(\d+)/i); if (bd) f.beds = bd[1];
+  const ba = t.match(/Bathrooms\s+(\d+)\s*FULL(?:\s*\/\s*(\d+)\s*HALF)?/i); if (ba) f.baths = String(Number(ba[1]) + (ba[2] ? 0.5 * Number(ba[2]) : 0));
+  const yr = t.match(/Original Const\. Year\s+(\d{4})/i); if (yr) f.year = yr[1];
+  const lot = t.match(/Estimated Size\s+([\d.]+)\s*Acres/i); if (lot) f.lot = lot[1] + ' ac';
+  const gar = num(/Total Garage Sq\. Ft\.\s+([\d,]+)/i); if (gar) f.garage = gar >= 600 ? '3 car' : gar >= 380 ? '2 car' : '1 car';
+  if (/\bPool\s+YES/i.test(t)) f.pool = 'yes';
+  const st = t.match(/Style (One Story|Single Story|Two Story|Three Story|Split Level|Multi Story)/i); if (st) f.style = st[1];
+  const city = t.match(/City\/Unincorporated Town ((?:[A-Z]+ )+?)(?=[A-Z][a-z])/); if (city) f.city = city[1].trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  return f;
 }
 /** Assessor record for an 11-digit parcel number, as readable text (owner, values, size, sale…). */
 function parcelRecord(apn) {
   const r = UrlFetchApp.fetch('https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ParcelDetail.aspx?hdnParcel=' + apn + '&hdnInstance=pcl', {muteHttpExceptions: true});
   return r.getContentText().replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&amp;/g, ' ')
-    .replace(/\s+/g, ' ').replace(/^.*?(General Information)/, '$1').replace(/Assessor Map Viewing Guidelines.*$/, '').slice(0, 3500);
+    .replace(/\s+/g, ' ').replace(/^.*?(General Information)/, '$1').replace(/Assessor Map Viewing Guidelines.*$/, '').slice(0, 7000);
 }
 /** The text Shawna sends for "look up <address>" (or a parcel number). */
 function propertyLookupText(query) {
