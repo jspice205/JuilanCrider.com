@@ -686,6 +686,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   listingPageData backfills sq ft + facts.record on first view for pages made before the full county read (facts.recordTried).
   His design reference https://305princecharmingv4.vercel.app is unreachable from Claude's container (DNS), even after
   allowing the host; ask him for screenshots.
+  Nov 15 redesign from his screenshots of that page: homePage = .hp2 (navy #14214a/#1d3170/#101a3d, red #c0392b, cream
+  #f6f4ef; Cormorant Garamond headings + Montserrat tracked labels, loaded on open). Sticky header (red "JC" square = back to
+  site, name, "BOECKLE & CO. · S.0177760", 702-498-2571, red SCHEDULE SHOWING → showingFlow(address)) + sticky nav PHOTOS /
+  DETAILS / MORTGAGE / SELL YOUR HOME (scroll + active underline). Hero, stat strip, gallery, About, Home details rows
+  (Interior / Exterior & lot / Standout features / Public record), "Run your numbers" (price, down + rate sliders, live
+  30-yr rate, P&I) + pre-qualify card, navy "Thinking of selling in <subdivision>?" (snapshot tiles only from his numbers;
+  no made-up stats like the sample's 98.5%/400+ buyers), Free CMA form → Website Leads "Home value request", marketing copy,
+  "Ask about this home" → "Listing page inquiry", navy footer. Reference used the wrong license (S.0200132) and his personal
+  cell; the page uses S.0177760 and 702-498-2571.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
