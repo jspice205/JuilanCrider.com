@@ -453,7 +453,7 @@ img{max-width:100%;display:block}
 .h2-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.78) 100%);pointer-events:none}
 .h2-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:0 20px 24px;color:#fff;max-width:760px;margin:0 auto}
 .h2-cap h1{font-size:clamp(32px,9vw,52px);margin:6px 0 4px;color:#fff}
-.h2-place{font-size:15px;opacity:.92}.h2-price{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-top:8px}
+.h2-place{font-size:15px;opacity:.92}.h2-bbs{font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;white-space:pre}.h2-price{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-top:8px}
 .h2-kick{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}.h2-kick.red{color:var(--red)}
 .h2-cap .h2-kick{color:rgba(255,255,255,.85)}
 .h2-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:16px;max-width:760px;margin:0 auto}
@@ -2477,7 +2477,7 @@ function homePage(id){
     $('sheetBody').innerHTML = `<div class="hp2">${head}
       <nav class="h2-nav" id="hpNav"><a href="#" data-go="hpPhotos">Photos</a><a href="#" data-go="hpDetails">Details</a><a href="#" data-go="hpMort">Mortgage</a><a href="#" data-go="hpSell">Sell your home</a></nav>
       <section class="h2-hero">${ph[0] ? `<img src="${e(ph[0])}" onerror="if(this.src!=='${e(orig[0])}')this.src='${e(orig[0])}'" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0">` : ''}
-        <div class="h2-cap">${kick('Listing preview' + (rec.subdivision || f.subdivision ? ' · ' + e(area) : ''))}<h1>${e(street)}</h1><div class="h2-place">${e(place)}</div>${d.price ? `<div class="h2-price">${e(money(d.price))}</div>` : ''}</div></section>
+        <div class="h2-cap">${kick('Listing preview' + (rec.subdivision || f.subdivision ? ' · ' + e(area) : ''))}<h1>${e(street)}</h1><div class="h2-place">${e(place)}</div>${f.beds || f.baths || f.sqft ? `<div class="h2-place h2-bbs">${[f.beds && e(f.beds) + ' bd', f.baths && e(f.baths) + ' ba', f.sqft && e(f.sqft) + ' sq ft'].filter(Boolean).join('  ·  ')}</div>` : ''}${d.price ? `<div class="h2-price">${e(money(d.price))}</div>` : ''}</div></section>
       ${stats.length ? `<div class="h2-stats">${stats.map(([k, l]) => `<div><b>${e(f[k])}</b><span>${l}</span></div>`).join('')}</div>` : ''}
       <section class="h2-sec" id="hpPhotos">${kick('The gallery', true)}<h2>Photos</h2>
         ${ph.length ? `<div class="h2-grid">${ph.map((u, i) => `<img src="${e(u)}" onerror="if(this.src!=='${e(orig[i])}')this.src='${e(orig[i])}'" alt="Photo ${i + 1}" loading="lazy" referrerpolicy="no-referrer" data-zoom="${i}">`).join('')}</div>` : '<p class="h2-p">Photos are coming soon.</p>'}
