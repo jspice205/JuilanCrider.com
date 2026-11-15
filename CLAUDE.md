@@ -702,6 +702,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   photo press squash, payment bump, lightbox fade; all off with prefers-reduced-motion.
   Hero shows "4 bd · 2.5 ba · 2,099 sq ft" under the address (his ask: sq ft next to baths). listingPageData retries the county
   read every 6 h while sqft or record is missing (facts.recordTried = timestamp).
+  Free "Pro look" (Nov 15, Julián: Gemini free won't work, wants free): no free open-source model can do it without a paid GPU,
+  so photos without an AI copy are graded in the visitor's browser by `proLook` (per-channel levels = gentle white balance,
+  shadow lift, soft contrast, vibrance, light unsharp; keeps 15% of the original; never changes the scene). Pixels come from
+  GET ?action=photo&id=<token>&i=<n> → `listingPhotoData` (Drive thumbnail w1800 as base64, only that page's photos).
+  Originals show first and swap when graded; "use original photos" (useOriginals) turns it off; real AI copies win (enhancedEach).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

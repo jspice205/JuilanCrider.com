@@ -158,13 +158,14 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-sqft-hero';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-prolook';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   if (e && e.parameter && e.parameter.action === 'client') return json(clientPageData(String(e.parameter.id || '')));
   if (e && e.parameter && e.parameter.action === 'listing') return json(listingPageData(String(e.parameter.id || '')));
+  if (e && e.parameter && e.parameter.action === 'photo') return json(listingPhotoData(String(e.parameter.id || ''), Number(e.parameter.i)));
   if (e && e.parameter && e.parameter.action === 'free') return json({status: 'ok', items: freeItems(30)});
   if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
@@ -1881,7 +1882,18 @@ function listingPageData(token) {
   // enhanced copies (needs billing on in AI Studio). Owner names from county records are never sent to the page.
   return {status: 'ok', address: h.address, parcel: h.parcel || '', facts: h.facts, price: h.price, mls: h.mls, portal: h.portal, instagram: h.instagram,
     photos: h.photos.map(p => img(!h.originals && p.e ? p.e : p.o)), originals: h.photos.map(p => img(p.o)),
-    enhanced: !h.originals && h.photos.some(p => p.e)};
+    enhanced: !h.originals && h.photos.some(p => p.e), useOriginals: !!h.originals, enhancedEach: h.photos.map(p => !!p.e)};
+}
+/** One listing photo as base64 (Nov 15, free "Pro look"): the page grades it in the visitor's browser, which needs the
+ *  pixels; Drive images can't be read cross-site, so the script hands them over. Only photos that belong to that page. */
+function listingPhotoData(token, i) {
+  if (!/^[a-f0-9]{12,}$/.test(token) || !(i >= 0)) return {status: 'error'};
+  const h = homeRows().filter(x => x.token === token)[0], p = h && h.photos[i];
+  if (!p) return {status: 'error'};
+  const r = UrlFetchApp.fetch('https://drive.google.com/thumbnail?id=' + p.o + '&sz=w1800', {muteHttpExceptions: true});
+  if (r.getResponseCode() >= 300) return {status: 'error'};
+  const b = r.getBlob();
+  return {status: 'ok', type: b.getContentType() || 'image/jpeg', data: Utilities.base64Encode(b.getBytes())};
 }
 /** "listing page 123 Desert Rose Ln, 4 bed 3 bath, pool, price 1.2-1.3M" → create or update the page. */
 function listingPageCommand(text) {
