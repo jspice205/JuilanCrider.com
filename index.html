@@ -410,6 +410,7 @@ img{max-width:100%;display:block}
 .sheet.full:not(.on){display:none}
 .sheet.full > *{max-width:540px;margin-left:auto;margin-right:auto}
 .sheet.full .grab{display:none}
+.sheet.hp.full{padding-top:0}.sheet.hp .shead{position:fixed;top:max(10px,env(safe-area-inset-top,0px));right:max(10px,calc(50% - 260px));left:auto;width:auto;max-width:none;margin:0;padding:0;background:none !important;z-index:60}.sheet.hp .shead h2{display:none}.sheet.hp #sheetClose{background:rgba(0,0,0,.5);color:#fff;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 .sheet.full.fcenter.on{display:flex;flex-direction:column}
 .sheet.full.fcenter > *{width:100%;box-sizing:border-box;align-self:center}
 .sheet.full.fcenter .sbody{text-align:center}
@@ -2165,7 +2166,7 @@ function openRaw(title, html){
   $('sheetTitle').textContent = title; $('sheetBody').innerHTML = html; sheet.scrollTop = 0;
   sheet.classList.add('on'); scrim.classList.add('on'); buildChips(sheet); bindOpeners(sheet); $('sheetClose').focus();
 }
-function closeSheet(){ sheet.classList.remove('on','full','fcenter'); scrim.classList.remove('on','full'); if (lastFocus) lastFocus.focus(); }
+function closeSheet(){ sheet.classList.remove('on','full','fcenter','hp'); scrim.classList.remove('on','full'); if (lastFocus) lastFocus.focus(); }
 scrim.onclick = closeSheet; $('sheetClose').onclick = closeSheet;
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeSheet(); });
 const contactFields = `<div class="duo"><div class="field"><label for="fFirst">First name</label><input id="fFirst" autocomplete="given-name"></div>
@@ -2328,12 +2329,15 @@ function clientPage(id){
 // via the Apps Script (?action=listing). Same look as the rest of the site.
 function homePage(id){
   const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  sheet.classList.add('full'); scrim.classList.add('full');
-  openRaw('', `<p class="fine">Loading the listing…</p>`);
+  sheet.classList.add('full','hp'); scrim.classList.add('full');
+  openRaw('', `<p class="fine" style="padding-top:60px">Loading the listing…</p>`);
   fetch(SHEET_URL + '?' + new URLSearchParams({action:'listing', id})).then(r => r.json()).then(d => {
     if (d.status !== 'ok') { $('sheetBody').innerHTML = doneHTML('Listing not found','This link may have changed. Text Julián at 702-498-2571 for a fresh one.'); return; }
-    const f = d.facts || {}, ph = d.photos || [];
+    const f = d.facts || {}, ph = d.photos || [], orig = d.originals || ph, sn = f.snapshot || {};
     const facts = [['beds','Beds'],['baths','Baths'],['sqft','Sq ft'],['lot','Lot'],['year','Built'],['garage','Garage']].filter(([k]) => f[k]);
+    const money = v => { const t = String(v || '').trim(); if (!t) return ''; return t.replace(/\$?\b(\d{4,})\b/g, (m, n) => '$' + Number(n).toLocaleString('en-US')).replace(/^(?!\$)(\d)/, '$$$1'); };
+    const ppsf = (() => { const pr = Number(String(d.price || '').replace(/[^\d.]/g, '')), sq = Number(String(f.sqft || '').replace(/[^\d]/g, '')); return pr > 50000 && sq > 300 && !/[-–]|to/i.test(d.price) ? '$' + Math.round(pr / sq).toLocaleString('en-US') : ''; })();
+    const snap = [['estimate','Estimated value', money], ['low','Low', money], ['high','High', money], ['comps','Comparable sales'], ['ppsf','Median $ / sq ft', money], ['dom','Avg days on market'], ['active','Active nearby'], ['pending','Pending nearby'], ['sold','Sold nearby']].filter(([k]) => sn[k]);
     const card = 'background:var(--surface);border-radius:16px;padding:16px;margin:0 0 12px';
     const step = (n, h, p) => `<div style="display:flex;gap:12px;margin:0 0 14px"><div style="flex:0 0 28px;height:28px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${n}</div><div><b style="display:block;font-size:16px">${h}</b><span style="color:var(--ink2);font-size:15px">${p}</span></div></div>`;
     const copyCard = (key, title, sub, text) => text ? `<div style="${card}"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b style="font-size:17px">${title}</b><span class="fine" style="margin:0">${sub}</span></div>
@@ -2342,16 +2346,17 @@ function homePage(id){
     const where = [d.address, f.city && !String(d.address).toLowerCase().includes(String(f.city).toLowerCase()) ? f.city : '', 'NV'].filter(Boolean).join(', ');
     const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(where);
     $('sheetBody').innerHTML = `<article class="reader">
-      ${ph[0] ? `<img src="${e(ph[0])}" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0" style="width:100%;margin:0 0 16px;border-radius:16px;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in">` : ''}
+      ${ph[0] ? `<img src="${e(ph[0])}" onerror="if(this.src!=='${e(orig[0])}')this.src='${e(orig[0])}'" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0" style="width:100%;margin:0 0 16px;border-radius:16px;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in">` : ''}
       <div class="kick">Listing preview · prepared by Julián J. Crider</div>
       <h1>${e(d.address)}</h1>
       ${f.subdivision || f.city ? `<p style="margin-top:-6px">${e([f.subdivision, f.city, f.zip].filter(Boolean).join(' · '))}</p>` : ''}
       ${facts.length ? `<div style="display:grid;grid-template-columns:repeat(${facts.length <= 4 ? facts.length : 3},1fr);gap:8px;margin:0 0 14px">${facts.map(([k,l]) => `<div style="${card};margin:0;padding:12px 6px;text-align:center"><div style="font-size:20px;font-weight:700">${e(f[k])}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${l}</div></div>`).join('')}</div>` : ''}
-      ${d.price ? `<div style="${card}"><div class="fine" style="margin:0">Suggested list price</div><div style="font-size:28px;font-weight:800;letter-spacing:-.02em;margin-top:2px">${e(/^\$/.test(d.price) ? d.price : '$' + d.price)}</div><div class="fine" style="margin:4px 0 0">From Julián’s review of nearby sales, pending and active homes. The final price is always your call.</div></div>` : ''}
-      ${(f.features || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">${f.features.map(x => `<span style="font-size:14px;padding:7px 12px;border-radius:999px;background:var(--surface)">${e(x)}</span>`).join('')}</div>` : ''}
+      ${d.price ? `<div style="${card}"><div class="fine" style="margin:0">Suggested list price</div><div style="font-size:28px;font-weight:800;letter-spacing:-.02em;margin-top:2px">${e(money(d.price))}</div>${ppsf ? `<div class="fine" style="margin:2px 0 0">About ${ppsf} per sq ft</div>` : ''}<div class="fine" style="margin:4px 0 0">From Julián’s review of nearby sales, pending and active homes. The final price is always your call.</div></div>` : ''}
+      ${snap.length || sn.note ? `<h2 style="margin-top:6px">Market snapshot</h2><div style="${card}">${snap.length ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">${snap.map(([k,l,fm]) => `<div><div style="font-size:19px;font-weight:700">${e(fm ? fm(sn[k]) : sn[k])}</div><div class="fine" style="margin:0">${l}</div></div>`).join('')}</div>` : ''}${sn.note ? `<p style="font-size:15px;margin:${snap.length ? '12px' : '0'} 0 0">${e(sn.note)}</p>` : ''}<div class="fine" style="margin:10px 0 0">From Julián’s review of recent sales near you.</div></div>` : ''}
+      ${(f.features || []).concat(f.style ? [f.style] : []).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">${(f.features || []).concat(f.style ? [f.style] : []).map(x => `<span style="font-size:14px;padding:7px 12px;border-radius:999px;background:var(--surface)">${e(x)}</span>`).join('')}</div>` : ''}
       <div style="display:flex;gap:8px;margin:0 0 6px"><a class="pill ghost" style="flex:1;text-align:center;text-decoration:none" href="${maps}" target="_blank" rel="noopener">📍 Map</a>${f.link ? `<a class="pill ghost" style="flex:1;text-align:center;text-decoration:none" href="${e(f.link)}" target="_blank" rel="noopener">Listing ›</a>` : ''}<button class="pill ghost" style="flex:1" id="hpShare">Share</button></div>
       ${ph.length > 1 ? `<h2>Photos <span class="fine" style="font-weight:400">${ph.length}${d.enhanced ? ' · edited for light and color' : ''}</span></h2>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 6px">${ph.slice(1).map((u, i) => `<img src="${e(u)}" alt="Photo ${i + 2}" loading="lazy" referrerpolicy="no-referrer" data-zoom="${i + 1}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;cursor:zoom-in;display:block">`).join('')}</div>` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 6px">${ph.slice(1).map((u, i) => `<img src="${e(u)}" onerror="if(this.src!=='${e(orig[i + 1])}')this.src='${e(orig[i + 1])}'" alt="Photo ${i + 2}" loading="lazy" referrerpolicy="no-referrer" data-zoom="${i + 1}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;cursor:zoom-in;display:block">`).join('')}</div>` : ''}
       ${d.portal ? `<h2>About this home</h2><p style="white-space:pre-line">${e(d.portal)}</p>` : ''}
       <h2>The plan, start to finish</h2>
       ${step(1,'Paperwork','Listing agreement and the Nevada Duties Owed form, signed online in minutes.')}
