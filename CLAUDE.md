@@ -717,6 +717,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Clear photos (Nov 15: "Take out all photos" went to the router and re-ran the listing page twice): boss fast path any
   remove/take out/clear … photo(s) (not text/email/send) → listingPhotoCommand; no number or "all" → h.photos = [] (Drive copies
   kept). Kinlock baths show 3 because he typed "3 bath" (facts.typed wins over the county's 2 full + 1 half).
+  Honesty guard (Nov 15: before that fix deployed, the router answered "All photos … have been removed" as chat and nothing
+  ran): a chat reply that claims a completed action (removed/sent/added/updated/scheduled…) is replaced by "I can't do that
+  one myself… passed it to Claude" + a Claude request. Listing photo intake skips PNGs (iPhone screenshots) unless his text
+  says listing/photos/original.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-photos-clear';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-honest';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3069,6 +3069,11 @@ function bbWebhook(e) {
     const imgs = (data.attachments || []).filter(a => /^image\//i.test(a.mimeType || '') || /\.(jpe?g|png|heic|heif|webp)$/i.test(a.transferName || ''));
     const from = bbE164(String((data.handle && data.handle.address) || ((data.chats || [])[0] || {}).chatIdentifier || '').trim());
     const boss0 = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+    // Screenshots (iPhone saves them as PNG) aren't listing photos unless his text says so (Nov 15: two screenshots he sent
+    // Claude-bound landed on Kinlock).
+    const said0 = String(data.text || '');
+    const imgs2 = /\b(listing|photos?|pics?|original|enhanced?)\b/i.test(said0) ? imgs : imgs.filter(a => !/\.png$/i.test(a.transferName || '') && !/png/i.test(a.mimeType || ''));
+    imgs.length = 0; imgs2.forEach(x => imgs.push(x));
     if (imgs.length && from && from === boss0) {
       let n = 0; try { n = queueListingPhotos(imgs, String(data.text || '')); } catch (e) { console.log('Listing photos queue: ' + e.message); }
       if (n && !String(data.text || '').replace(/\ufffc/g, '').replace(/\b(listing|photos?|pics?|original|enhanced?|as is|here|these)\b/gi, '').trim()) return json({status: 'ok'});
@@ -5678,6 +5683,14 @@ Examples (all mean the same as the action shown):
       // Also a FUB note on Julián's own test contact, where Claude's hourly check picks it up (and texts him back there).
       fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: a.message || text});
       return say(name + ': got it ✅ "' + (a.message || text).slice(0, 120) + '". Claude checks every hour and will text you when it\'s done.');
+    }
+    // Honesty guard (Nov 15: "take out all photos" got a chat reply "All photos … have been removed" and nothing ran):
+    // a chat reply may never claim she did something. Those requests go to Claude instead, and she says so.
+    if (/\b(take|remove|delete|send|add|update|change|move|cancel|schedule|put|make|fix|clear|upload|book|email|text|erase|drop)\b/i.test(text) && !/\?\s*$/.test(a.reply || '') && /\b(i'?ve|i have|i|have been|has been|are now|is now|all set)\b[^.?!]{0,60}\b(removed|deleted|taken (?:down|out|off)|cleared|sent|added|updated|uploaded|scheduled|changed|moved|emailed|texted|booked|cancel+ed|fixed)\b/i.test(a.reply || '')) {
+      const sh = getSS().getSheetByName(REQUESTS_TAB.name) || ensureTab(getSS(), REQUESTS_TAB);
+      sh.appendRow([Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d h:mm a'), cell(text), 'new']);
+      fubFetch('notes', {personId: Number(props.getProperty('REQUESTS_PERSON_ID') || 2221), subject: 'Claude request', body: text});
+      return say(name + ': I can\'t do that one myself, so nothing changed yet. I passed it to Claude ✅ (checks every hour) and you\'ll get a text when it\'s done.');
     }
     return say(name + ': ' + (a.reply || 'Got it.'));
   };
