@@ -668,6 +668,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (parcelRecord now keeps 7000 chars; at 3500 the building section was cut off). Page: no header bar (.sheet.hp, floating ✕),
   price with commas + $/sq ft, "Market snapshot" from his text (facts.snapshot: estimate/low/high/comps/ppsf/dom/active/
   pending/sold/note; only what he says).
+  Premium pass (Nov 14, his screenshot still showed the X bar = old cached page): .sheet.hp hides .shead entirely; floating
+  glass controls (.hp-top: white logo img/p/photo-324da7.png + "Julián J. Crider" pill, ✕ pill); full-bleed .hp-hero
+  (74vh photo, gradient, address/place/bd·ba·sqft/price over it); sticky frosted .hp-bar (Call + Book a call); sections fade
+  up on scroll (.rv/.in via IntersectionObserver on the sheet, off with prefers-reduced-motion). Site-wide from his UX
+  list: .iconbtn 44px hit areas (Fitts), .pill/.mini press = translate 1px + scale .985 (squash, snappy).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
