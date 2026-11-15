@@ -678,6 +678,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   beat listing-site/AI values (only details Julián typed, facts.typed, win); parcelFacts also returns facts.record
   (subdivision, last sale + month/year, taxable value + fiscal year, land use, construction, roof, fireplaces, spa, garage sq
   ft, APN; never the owner) → "Public record" section on ?home=. Listing copy gets copyFacts (no sale/tax/parcel numbers).
+  Nov 15 (Julián: Google enhancement, FREE plan only, no billing): geminiEnhance tries GEMINI_IMAGE_OK, GEMINI_IMAGE_MODEL,
+  gemini-2.5-flash-image, gemini-2.0-flash-preview-image-generation, gemini-2.0-flash-exp-image-generation, gemini-2.0-flash-exp
+  (429 "limit: 0"/404 = not on the free plan → next; the working one is saved as GEMINI_IMAGE_OK) and texts the real reason.
+  "enhance the photos [for <address>]" re-queues photos without an enhanced copy (queue items {driveId}) → "✨ Enhanced X of Y".
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
