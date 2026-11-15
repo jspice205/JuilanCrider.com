@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-listing2';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-listing3';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1867,10 +1867,11 @@ function listingPageData(token) {
   const img = id => 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
   // Backup look (Nov 14, Gemini's free plan won't edit photos): an image service (wsrv.nl, free, no account) brightens,
   // adds contrast and color and sharpens on the fly. Never changes what's in the photo. The page falls back to the original.
-  const lift = id => 'https://wsrv.nl/?url=' + encodeURIComponent('drive.google.com/thumbnail?id=' + id + '&sz=w2000') + '&w=2000&bri=6&con=14&sat=14&sharp=1.2&q=90&output=jpg';
+  // Nov 15: the wsrv.nl backup look made his photos neon and blown out → removed. Originals show until Gemini makes real
+  // enhanced copies (needs billing on in AI Studio). Owner names from county records are never sent to the page.
   return {status: 'ok', address: h.address, parcel: h.parcel || '', facts: h.facts, price: h.price, mls: h.mls, portal: h.portal, instagram: h.instagram,
-    photos: h.photos.map(p => h.originals ? img(p.o) : p.e ? img(p.e) : lift(p.o)), originals: h.photos.map(p => img(p.o)),
-    enhanced: !h.originals && h.photos.length > 0};
+    photos: h.photos.map(p => img(!h.originals && p.e ? p.e : p.o)), originals: h.photos.map(p => img(p.o)),
+    enhanced: !h.originals && h.photos.some(p => p.e)};
 }
 /** "listing page 123 Desert Rose Ln, 4 bed 3 bath, pool, price 1.2-1.3M" → create or update the page. */
 function listingPageCommand(text) {
@@ -1898,14 +1899,20 @@ function listingPageCommand(text) {
   if (!h) h = homeFor(addr);
   const isNew = !h;
   if (!h) h = {token: Utilities.getUuid().replace(/-/g, '').slice(0, 18), address: addr, facts: {}, photos: [], price: ''};
-  // Public records (Clark County): parcel, lot, year built, living area when the Assessor shows them.
-  if (!h.parcel) {
+  // Public records (Clark County), every time (Nov 15): sq ft, beds, baths, year, lot, garage, pool, style + the record
+  // (subdivision, last sale, taxable value, land use, construction, roof, fireplace). The county beats the listing site /
+  // AI guesses; only details Julián typed himself (facts.typed) win over it.
+  const typed = (h.facts.typed || []).slice();
+  const own = ' ' + said.replace(String(p.address || '@@'), ' ').replace(addr, ' ') + ' ';  // his words, address left out
+  ['beds', 'baths', 'sqft', 'lot', 'year', 'garage'].forEach(k => { const v = String(p[k] || '').replace(/[^\d.,]/g, '');
+    if (v && new RegExp('(^|[^\\d.,])' + v.replace(/[.]/g, '\\.') + '(?![\\d])').test(own) && typed.indexOf(k) < 0) typed.push(k); });
+  {
     try {
-      const w = parcelForAddress(addr);
+      const w = h.parcel ? {apn: h.parcel} : parcelForAddress(addr);
       if (!w.error) {
         h.parcel = w.apn; h.address = h.address || w.address;
         const raw = parcelRecord(w.apn), pf = parcelFacts(raw);
-        Object.keys(pf).forEach(k => { if (pf[k] && !h.facts[k]) h.facts[k] = pf[k]; });
+        Object.keys(pf).forEach(k => { if (pf[k] && (k === 'record' || typed.indexOf(k) < 0)) h.facts[k] = pf[k]; });
         if (pf.pool === 'yes') h.facts.features = (h.facts.features || []).concat(['Pool']).filter((x, i, a) => a.indexOf(x) === i);
         const r = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
           {role: 'system', content: 'From this Clark County Assessor parcel record, JSON only: {"city": "", "zip": "", "sqft": "living area square feet if shown", "lot": "lot size as shown (acres or sq ft)", "year": "year built", "beds": "", "baths": "", "garage": "", "pool": "yes if a pool is listed, else empty", "subdivision": ""}. Only values the record shows, else empty.'},
@@ -1915,7 +1922,8 @@ function listingPageCommand(text) {
       }
     } catch (e) { console.log('Listing records: ' + e.message); }
   }
-  ['beds', 'baths', 'sqft', 'lot', 'year', 'garage'].forEach(k => { if (p[k]) h.facts[k] = String(p[k]); });
+  ['beds', 'baths', 'sqft', 'lot', 'year', 'garage'].forEach(k => { if (p[k] && (typed.indexOf(k) >= 0 || !h.facts[k])) h.facts[k] = String(p[k]); });
+  h.facts.typed = typed;
   if ((p.features || []).length) h.facts.features = (h.facts.features || []).concat(p.features).filter((x, i, a) => a.indexOf(x) === i).slice(0, 15);
   if (p.price) h.price = String(p.price);
   if (link) h.facts.link = link;
@@ -1926,7 +1934,7 @@ function listingPageCommand(text) {
       {role: 'system', content: 'You write listing copy for Julián Crider, a Las Vegas / Henderson luxury Realtor. Use ONLY the facts given; never invent rooms, finishes, views, upgrades, numbers or school names. ' +
         'Fair Housing: describe the home, never the people who should live there (no "perfect for families", "ideal for", "singles", "retirees", "family home", no church or school quality claims); if schools come up say "buyer to verify school assignment". No price in the copy. No dashes. ' +
         'JSON only: {"mls": "MLS description, concise and factual, about 100 words", "portal": "Zillow and portal story, warmer lifestyle tone, about 150 words", "instagram": "Instagram caption: a one line hook, 3 to 5 short lines, 2 or 3 emojis, then 8 to 10 local hashtags (Las Vegas, Henderson, the neighborhood; no family or people hashtags)"}'},
-      {role: 'user', content: 'Address: ' + h.address + '\nFacts: ' + JSON.stringify(h.facts)}], {maxTokens: 1400}));
+      {role: 'user', content: 'Address: ' + h.address + '\nFacts: ' + JSON.stringify(copyFacts(h.facts))}], {maxTokens: 1400}));
     h.mls = humanize(w.mls || h.mls || ''); h.portal = humanize(w.portal || h.portal || ''); h.instagram = String(w.instagram || h.instagram || '').replace(/\s*[—–]\s*/g, ', ');
   } catch (e) { console.log('Listing copy: ' + e.message); }
   homeSave(h); setActiveHome(h.token);
@@ -3913,7 +3921,32 @@ function parcelFacts(raw) {
   if (/\bPool\s+YES/i.test(t)) f.pool = 'yes';
   const st = t.match(/Style (One Story|Single Story|Two Story|Three Story|Split Level|Multi Story)/i); if (st) f.style = st[1];
   const city = t.match(/City\/Unincorporated Town ((?:[A-Z]+ )+?)(?=[A-Z][a-z])/); if (city) f.city = city[1].trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // The public record (Nov 15). Never the owner's name or mailing address.
+  const cap = x => String(x || '').trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase()), r = {};
+  const sub = t.match(/Assessor Description\s+(.+?)\s+PLAT BOOK/i); if (sub) r.subdivision = cap(sub[1]).replace(/#(\w+)/, c => c.toUpperCase());
+  const sale = t.match(/Sale Type\s+([\d,]+)\s+(\d{1,2})\/(\d{4})/i);
+  if (sale && Number(sale[1].replace(/,/g, '')) > 1000) { r.lastSale = '$' + Number(sale[1].replace(/,/g, '')).toLocaleString('en-US'); r.lastSaleDate = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(sale[2])] + ' ' + sale[3]; }
+  const rec = t.match(/Recorded Date\s+([A-Z][a-z]{2} \d{1,2} \d{4})/); if (rec) r.recorded = rec[1];
+  const fy = t.match(/Real Property Assessed Value\s+Fiscal Year\s+(\d{4}-\d{2})\s+(\d{4}-\d{2})/i), tv = t.match(/Total Taxable Value\s+([\d,]+)\s+([\d,]+)/i);
+  if (tv) { r.taxable = '$' + tv[2]; if (fy) r.taxYear = fy[2]; }
+  const lu = t.match(/Land Use\s+[\d.]+\s*-\s*(.+?)\s+Dwelling Units/i); if (lu) r.landUse = lu[1].trim();
+  const con = t.match(/Type of Construction\s+(.+?)\s+FINISHED BASEMENT/i); if (con) r.construction = con[1].trim();
+  const roof = t.match(/Roof Type\s+(.+?)\s+BASEMENT GARAGE/i); if (roof) r.roof = roof[1].trim();
+  const fp = t.match(/Fireplace\s+(\d+)/i); if (fp && fp[1] !== '0') r.fireplace = fp[1];
+  if (/\bSpa\s+YES/i.test(t)) r.spa = 'yes';
+  if (gar) r.garageSqft = gar.toLocaleString('en-US');
+  const pn = t.match(/Parcel No\.\s+(\d{3}-\d{2}-\d{3}-\d{3})/); if (pn) r.apn = pn[1];
+  if (Object.keys(r).length) f.record = r;
+  if (r.subdivision) f.subdivision = r.subdivision;
+  if (r.spa) f.spa = 'yes';
   return f;
+}
+/** Facts for the listing copy: the home itself, never sale history, tax values or the parcel. */
+function copyFacts(f) {
+  const c = JSON.parse(JSON.stringify(f || {})), r = c.record || {};
+  delete c.record; delete c.typed; delete c.link; delete c.snapshot;
+  ['construction', 'roof', 'fireplace'].forEach(k => { if (r[k]) c[k] = r[k]; });
+  return c;
 }
 /** Assessor record for an 11-digit parcel number, as readable text (owner, values, size, sale…). */
 function parcelRecord(apn) {
