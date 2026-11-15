@@ -114,7 +114,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (assistantKnowledge); humanize() strips dashes from everything she writes and `darkHands` turns every hand emoji
   into the darkest skin tone 🏿 (Julián, Nov 14; 🙏🏿 for thank you). Spacing (Nov 14): bbSendNow runs `textParagraphs` on texts to
   clients (not his own phones): 170+ chars, 3+ sentences, no line breaks → 2-3 paragraphs with blank lines, a closing
-  question on its own; assistantPrompt asks for \n\n paragraphs too. Boss actions also: schedule (personal = his gmail
+  question on its own; assistantPrompt asks for \n\n paragraphs too. Nov 14 (Lisa thread, three "Got it, Lisa." texts): assistantReply
+  ignores tapbacks ("Liked “…”", "Loved “…”"); closer also matches "Yes…. Thank you so much"; `varyOpener` drops a repeated
+  opener (Got it / I hear you / Sounds good…) and their first name when one of our last 4 texts used it; ASSISTANT_MUTE_MIN
+  default 180 (was 30: Shawna re-entered Lisa's thread 68 min after Julián texted her). Email anyone (Nov 14, "Joey's not in
+  FUB, Shawna emailed toward Jennifer Murphy"): email action → a team member by name (TEAM_EMAILS: joey joeyd@bcolv.com +
+  TEAM_EMAILS setting) or an email address he typed goes straight there (approval as usual, no FUB contact needed); "send
+  Joey Lisa Dragos' contact info" appends Lisa's real phone/email from FUB; the sent note is logged on Lisa (aboutId). Boss actions also: schedule (personal = his gmail
   calendar or business = bcolv calendar via the Shawna Mailer (bcolvCall action event/events; Boeckle's Workspace
   blocks outside edit sharing, Nov 9); asks "personal or
   business?" if he didn't say; + FUB note, adds new people); calendar shows both, lookup (FUB summary), hot (Tier A list), voicememo (shawnaVoice:
