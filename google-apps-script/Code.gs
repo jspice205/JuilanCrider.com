@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-openai-photos';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-photos-clear';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1981,6 +1981,12 @@ function listingPhotoCommand(text) {
   const h = homeFor(text);
   if (!h) return 'Which listing page? Text "listing page" plus the address first.';
   if (/\b(duplicate|dupe|dup|same|repeat|twice|double)/i.test(text)) return dedupeListingPhotos(h);
+  // "take out all photos" / "remove all the original photos" (Nov 15: these went to the router and re-ran the page instead).
+  if (/\b(remove|delete|take (?:down|out|off)|get rid of|clear|drop|erase)\b/i.test(text) && (/\ball\b|\bevery\b/i.test(text) || !/\d/.test(text))) {
+    const n = h.photos.length; if (!n) return 'There are no photos on ' + h.address + ' right now.\n' + homePageUrl(h.token);
+    h.photos = []; h.originals = false; homeSave(h); setActiveHome(h.token);
+    return '🗑 Took all ' + n + ' photos off ' + h.address + '. (They\'re still saved in your Drive folder "Listing Photos".) Text me new photos anytime and they\'ll go on the page.\n' + homePageUrl(h.token);
+  }
   const rm = String(text).match(/(?:remove|delete|take (?:down|out|off)|get rid of|drop)\s+(?:the\s+)?(?:photo|pic|picture|image)\s*#?(\d+)/i);
   if (rm) { const i = Number(rm[1]) - 1; if (!h.photos[i]) return 'There\'s no photo ' + rm[1] + ' (the page has ' + h.photos.length + ').'; h.photos.splice(i, 1); homeSave(h); return '🗑 Removed photo ' + rm[1] + ' from ' + h.address + '. ' + h.photos.length + ' left.\n' + homePageUrl(h.token); }
   if (/\b(enhance|re-?enhance|redo|retry)\b/i.test(text) && !/original/i.test(text)) {
@@ -4999,6 +5005,7 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏿🏾👍🏿🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
+  else if (/\b(remove|delete|take (down|out|off)|get rid of|clear|drop|erase)\b.{0,40}\b(photos?|pics?|pictures?|images?)\b/i.test(text) && !/\b(text|email|send)\b/i.test(text)) a = {action: 'listingphotos', message: text};  // Nov 15
   else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete|take (down|out|off)|get rid of|drop) (the )?(photo|pic|picture|image) ?#?\d+|.*\b(duplicate|dupe)s?\b.*\b(photo|pic|picture|image|listing)|.*\b(photo|pic|picture|image)s?\b.*\b(duplicate|dupe|look the same|are the same|repeat)|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};

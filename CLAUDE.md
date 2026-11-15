@@ -714,9 +714,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   ChatGPT photos (Nov 15, his ask): `enhancePhoto` → `openaiEnhance` (POST api.openai.com/v1/images/edits, OPENAI_API_KEY via
   Settings tab, OPENAI_IMAGE_MODEL default gpt-image-1, OPENAI_IMAGE_QUALITY default high, input_fidelity high, ENHANCE_PROMPT)
   first, Gemini after. Needs API credit (not a ChatGPT Plus subscription) and OpenAI organization verification.
+  Clear photos (Nov 15: "Take out all photos" went to the router and re-ran the listing page twice): boss fast path any
+  remove/take out/clear … photo(s) (not text/email/send) → listingPhotoCommand; no number or "all" → h.photos = [] (Drive copies
+  kept). Kinlock baths show 3 because he typed "3 bath" (facts.typed wins over the county's 2 full + 1 half).
 
 ## Later, when Julián starts paying for tools (Nov 13)
-ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
+ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
 He's not renaming the Buyers stages for now.
 
