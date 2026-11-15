@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-listing3';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-enhance-free';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1957,6 +1957,14 @@ function listingPhotoCommand(text) {
   if (!h) return 'Which listing page? Text "listing page" plus the address first.';
   const rm = String(text).match(/(?:remove|delete)\s+photo\s+#?(\d+)/i);
   if (rm) { const i = Number(rm[1]) - 1; if (!h.photos[i]) return 'There\'s no photo ' + rm[1] + ' (the page has ' + h.photos.length + ').'; h.photos.splice(i, 1); homeSave(h); return '🗑 Removed photo ' + rm[1] + ' from ' + h.address + '. ' + h.photos.length + ' left.\n' + homePageUrl(h.token); }
+  if (/\b(enhance|re-?enhance|redo|retry)\b/i.test(text) && !/original/i.test(text)) {
+    const props = PropertiesService.getScriptProperties(), q = jsonOr(props.getProperty('LISTING_PHOTO_Q'), []);
+    const todo = h.photos.filter(p => !p.e && !q.some(x => x.driveId === p.o));
+    if (!todo.length) return '✨ Every photo on ' + h.address + ' is already enhanced.\n' + homePageUrl(h.token);
+    todo.forEach((p, i) => q.push({driveId: p.o, name: 'photo ' + (h.photos.indexOf(p) + 1), token: h.token, at: Date.now() - 60000, tries: 0}));
+    props.setProperty('LISTING_PHOTO_Q', JSON.stringify(q)); setActiveHome(h.token);
+    return '✨ On it: enhancing ' + todo.length + ' photo' + (todo.length === 1 ? '' : 's') + ' for ' + h.address + ' with Google\'s free plan. I\'ll text you when they\'re done.';
+  }
   h.originals = /original/i.test(text); homeSave(h); setActiveHome(h.token);
   return (h.originals ? '📷 The page now shows your original photos' : '✨ The page now shows the enhanced photos') + ' for ' + h.address + '.\n' + homePageUrl(h.token);
 }
@@ -1982,6 +1990,16 @@ function processListingPhotos() {
       const x = q[0], h = homeRows().filter(r => r.token === x.token)[0];
       if (!h) { q.shift(); continue; }
       try {
+        if (x.driveId) {  // "enhance the photos": a photo already on the page, enhanced now
+          const ph = h.photos.filter(p => p.o === x.driveId)[0];
+          if (ph && !ph.e) {
+            const en = geminiEnhance(DriveApp.getFileById(x.driveId).getBlob()), s = stats[x.token] = stats[x.token] || {n: 0, enh: 0, why: '', redo: true};
+            s.n++;
+            if (en.blob) { const f = listingFolder(h.address).createFile(en.blob.setName('Enhanced ' + x.name.replace(/\.\w+$/, '') + '.png')); f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); ph.e = f.getId(); h.originals = false; homeSave(h); s.enh++; }
+            else s.why = en.error;
+          }
+          q.shift(); continue;
+        }
         const res = UrlFetchApp.fetch(props.getProperty('BB_URL').replace(/\/+$/, '') + '/api/v1/attachment/' + encodeURIComponent(x.guid) + '/download?password=' + encodeURIComponent(props.getProperty('BB_PASSWORD')), {muteHttpExceptions: true});
         if (res.getResponseCode() >= 300 || res.getBlob().getBytes().length < 2000) throw new Error('download ' + res.getResponseCode());
         const folder = listingFolder(h.address), blob = res.getBlob().setName(x.name);
@@ -1998,7 +2016,7 @@ function processListingPhotos() {
       if (q.some(x => x.token === t)) return;  // still working on this one
       const s = stats[t], h = homeRows().filter(r => r.token === t)[0]; delete stats[t];
       if (!h) return;
-      bossTextSafe('📸 Added ' + s.n + ' photo' + (s.n === 1 ? '' : 's') + ' to ' + h.address + (s.enh ? ' (' + s.enh + ' enhanced to the Phase One look)' : '') +
+      bossTextSafe((s.redo ? '✨ Enhanced ' + s.enh + ' of ' + s.n + ' photo' + (s.n === 1 ? '' : 's') + ' for ' + h.address : '📸 Added ' + s.n + ' photo' + (s.n === 1 ? '' : 's') + ' to ' + h.address + (s.enh ? ' (' + s.enh + ' enhanced to the Phase One look)' : '')) +
         (s.why && s.enh < s.n ? '\n\n' + (s.n - s.enh) + ' kept as original: ' + s.why : '') + '\n\n' + homePageUrl(t) + '\n\nSay "use original photos" anytime to switch, or "remove photo 3".');
     });
     props.setProperty('LISTING_PHOTO_STATS', JSON.stringify(stats));
@@ -2015,19 +2033,29 @@ function geminiEnhance(blob) {
   if (!key) return {error: 'no Gemini key saved'};
   const bytes = blob.getBytes();
   if (bytes.length > 15 * 1024 * 1024) return {error: 'photo too large for the enhancer'};
-  const model = props.getProperty('GEMINI_IMAGE_MODEL') || 'gemini-2.5-flash-image';
   const mime = /heic|heif/i.test(blob.getName()) ? 'image/heic' : (blob.getContentType() || 'image/jpeg');
-  const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({contents: [{parts: [{text: ENHANCE_PROMPT}, {inline_data: {mime_type: mime, data: Utilities.base64Encode(bytes)}}]}],
-      generationConfig: {responseModalities: ['TEXT', 'IMAGE']}})});
-  const code = r.getResponseCode();
-  if (code === 429) return {error: 'Google\'s free daily image allowance is used up (it resets tomorrow)'};
-  if (code >= 300) return {error: 'Google said ' + code + ' (' + r.getContentText().slice(0, 120).replace(/\s+/g, ' ') + ')'};
-  const parts = ((((JSON.parse(r.getContentText()).candidates || [])[0] || {}).content || {}).parts) || [];
-  const img = parts.map(p => p.inlineData || p.inline_data).filter(Boolean)[0];
-  if (!img) return {error: 'Google didn\'t return a photo'};
-  return {blob: Utilities.newBlob(Utilities.base64Decode(img.data), img.mimeType || img.mime_type || 'image/png', 'enhanced.png')};
+  // Free plan only (Julián, Nov 15): try the image models Google's free API allowance covers, newest first; a model the
+  // free plan doesn't include answers 429 "limit: 0" or 404, so move on. The one that works is remembered.
+  const models = [props.getProperty('GEMINI_IMAGE_OK'), props.getProperty('GEMINI_IMAGE_MODEL'), 'gemini-2.5-flash-image',
+    'gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp-image-generation', 'gemini-2.0-flash-exp']
+    .filter((m, i, a) => m && a.indexOf(m) === i);
+  let last = '', usedUp = false;
+  for (let i = 0; i < models.length; i++) {
+    const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + models[i] + ':generateContent?key=' + encodeURIComponent(key), {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      payload: JSON.stringify({contents: [{parts: [{text: ENHANCE_PROMPT}, {inline_data: {mime_type: mime, data: Utilities.base64Encode(bytes)}}]}],
+        generationConfig: {responseModalities: ['TEXT', 'IMAGE']}})});
+    const code = r.getResponseCode(), body = r.getContentText();
+    if (code === 429 && !/limit: ?0\b/.test(body)) usedUp = true;
+    if (code >= 300) { last = models[i] + ' ' + code + ' ' + body.slice(0, 160).replace(/\s+/g, ' '); console.log('Gemini image: ' + last); continue; }
+    const parts = ((((JSON.parse(body).candidates || [])[0] || {}).content || {}).parts) || [];
+    const img = parts.map(p => p.inlineData || p.inline_data).filter(Boolean)[0];
+    if (!img) { last = models[i] + ' returned no photo'; continue; }
+    props.setProperty('GEMINI_IMAGE_OK', models[i]);
+    return {blob: Utilities.newBlob(Utilities.base64Decode(img.data), img.mimeType || img.mime_type || 'image/png', 'enhanced.png')};
+  }
+  if (usedUp) return {error: 'Google\'s free daily photo allowance is used up; say "enhance the photos" tomorrow and I\'ll try again'};
+  return {error: 'Google\'s free plan didn\'t edit it (' + last.slice(0, 140) + ')'};
 }
 
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
@@ -4893,7 +4921,7 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏿🏾👍🏿🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
-  else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete) photo #?\d+)/i.test(text)) a = {action: 'listingphotos', message: text};
+  else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete) photo #?\d+|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
