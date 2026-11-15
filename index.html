@@ -427,89 +427,104 @@ img{max-width:100%;display:block}
 .hp-bar > div{max-width:540px;margin:0 auto;display:flex;gap:8px}
 .hp-bar .pill{flex:1;min-height:48px}
 .sheet.hp .reader{padding-bottom:96px;font-variant-numeric:tabular-nums}
-/* Listing page (Nov 15): navy / red / cream, serif headings, tracked labels. Fixed brand colors in light and dark. */
-.hp2{--nv:#14214a;--nv2:#1d3170;--nv3:#101a3d;--rd:#c0392b;--cr:#f6f4ef;--ln:#e4e0d6;--tx:#1b2340;--mu:#6b6f7d;margin:0 calc(50% - 50vw);background:var(--cr);color:var(--tx);font-family:Montserrat,system-ui,sans-serif;min-height:100vh}
-.hp2 h1,.hp2 h2{font-family:"Cormorant Garamond",Georgia,serif;font-weight:500;letter-spacing:0;line-height:1.1}
-.hp2 h2{font-size:clamp(32px,8vw,44px);margin:6px 0 18px;color:var(--nv2)}
-.hp2 h3{font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;font-size:26px;margin:26px 0 8px;color:var(--nv2)}
-.h2-head{position:sticky;top:0;z-index:30;background:var(--nv);color:#fff;display:flex;align-items:center;gap:12px;padding:12px 14px;padding-top:max(12px,env(safe-area-inset-top,0px))}
-.h2-logo{flex:0 0 44px;width:44px;height:44px;border-radius:6px;background:var(--rd);color:#fff;border:0;font:500 22px "Cormorant Garamond",Georgia,serif;display:grid;place-items:center;cursor:pointer}
-.h2-logo.big{width:56px;height:56px;font-size:28px;margin:0 auto 12px}
-.h2-who{flex:1;min-width:0;line-height:1.35}.h2-who b{display:block;font-size:13px;letter-spacing:.24em;white-space:nowrap}
-.h2-who span{display:block;font-size:10px;letter-spacing:.18em;color:#9aa3c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.h2-tel{color:#dfe4f3;text-decoration:none;font-size:14px;white-space:nowrap}
-.h2-cta{background:var(--rd);color:#fff;border:0;min-height:44px;padding:0 14px;font:700 11px Montserrat,sans-serif;letter-spacing:.2em;cursor:pointer;white-space:nowrap}
+/* Listing page (Nov 15): his reference layout in the site's own brand: black/white tokens, SF/Inter, red accent, pill
+   buttons, the JC mark; follows light/dark like the rest of the site. */
+.hp2{--rd:var(--red);margin:0 calc(50% - 50vw);background:var(--bg);color:var(--ink);font-family:var(--font);min-height:100vh}
+.hp2 h1,.hp2 h2{font-weight:800;letter-spacing:-.03em;line-height:1.08}
+.hp2 h2{font-size:clamp(28px,7.5vw,38px);margin:6px 0 16px}
+.hp2 h3{font-weight:700;font-size:20px;letter-spacing:-.02em;margin:26px 0 8px}
+.h2-head{position:sticky;top:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);display:flex;align-items:center;gap:10px;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top,0px))}
+.h2-logo{flex:0 0 44px;width:44px;height:44px;border:0;background:none;display:grid;place-items:center;cursor:pointer;padding:0}
+.h2-logo img{width:34px;height:auto}.h2-logo .on-dark{display:none}
+:root[data-theme="dark"] .h2-logo .on-light{display:none}:root[data-theme="dark"] .h2-logo .on-dark{display:block}
+.h2-logo.big{margin:0 auto 10px}.h2-logo.big img{width:44px}
+.h2-who{flex:1;min-width:0;line-height:1.25}.h2-who b{display:block;font-size:17px;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.h2-who span{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2-tel{color:var(--ink2);text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
+.h2-cta{background:var(--red);color:#fff;border:0;min-height:44px;padding:0 16px;border-radius:999px;font:600 14px var(--font);cursor:pointer;white-space:nowrap;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 1px 2px rgba(0,0,0,.2),0 8px 18px -8px rgba(209,52,56,.7)}
 .h2-cta:active,.h2-btn:active{transform:translateY(1px) scale(.985)}
-@media (max-width:520px){.h2-tel{display:none}.h2-cta{padding:0 10px;letter-spacing:.14em;font-size:10px}.h2-who span{display:none}}
-.h2-nav{position:sticky;top:68px;z-index:29;background:var(--nv2);display:flex;justify-content:space-between;overflow-x:auto;padding:0 10px;scrollbar-width:none}
+@media (max-width:520px){.h2-tel{display:none}.h2-who span{display:none}.h2-cta{padding:0 14px;font-size:13px}}
+.h2-nav{position:sticky;top:64px;z-index:29;background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);display:flex;gap:6px;overflow-x:auto;padding:6px 12px 10px;border-bottom:1px solid var(--hair);scrollbar-width:none}
 .h2-nav::-webkit-scrollbar{display:none}
-.h2-nav a{flex:0 0 auto;color:#8f9ac0;text-decoration:none;font-size:11px;font-weight:600;letter-spacing:.22em;padding:16px 8px;border-bottom:2px solid transparent;white-space:nowrap}
-.h2-nav a.on{color:#fff;border-bottom-color:var(--rd)}
-@media (max-width:420px){.h2-nav{justify-content:space-between;padding:0 6px}.h2-nav a{letter-spacing:.12em;padding:16px 5px;font-size:10.5px}}
-.h2-hero{position:relative;height:min(68vh,640px);background:var(--nv3);overflow:hidden}
+.h2-nav a{flex:0 0 auto;color:var(--ink2);text-decoration:none;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;background:var(--surface);white-space:nowrap;min-height:36px;transition:background-color .15s ease-out,color .15s ease-out}
+.h2-nav a.on{background:var(--ink);color:var(--bg)}
+.h2-hero{position:relative;height:min(64vh,620px);background:#111;overflow:hidden}
 .h2-hero img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
-.h2-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(16,26,61,0) 40%,rgba(16,26,61,.85) 100%);pointer-events:none}
-.h2-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:0 22px 26px;color:#fff;max-width:760px;margin:0 auto}
-.h2-cap h1{font-size:clamp(38px,10vw,60px);margin:6px 0 4px;color:#fff}
-.h2-place{font-size:15px;opacity:.9}.h2-price{font:500 30px "Cormorant Garamond",Georgia,serif;margin-top:8px}
-.h2-kick{font-size:11px;font-weight:600;letter-spacing:.3em;text-transform:uppercase;color:#aab3d3}.h2-kick.red{color:var(--rd)}
-.h2-cap .h2-kick{color:#dfe4f3}
-.h2-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--ln);border-bottom:1px solid var(--ln)}
-.h2-stats div{background:#fff;padding:18px 8px;text-align:center}
-.h2-stats b{display:block;font:500 30px "Cormorant Garamond",Georgia,serif;color:var(--nv2);font-variant-numeric:lining-nums}
-.h2-stats span{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--mu)}
-.h2-sec{padding:52px 22px;max-width:760px;margin:0 auto}
-.h2-sec.cream,.h2-sec.navy,.h2-sec.blue{max-width:none;padding-left:max(22px,calc(50% - 358px));padding-right:max(22px,calc(50% - 358px))}
-.h2-sec.navy{background:var(--nv3);color:#dfe4f3}.h2-sec.blue{background:var(--nv2);color:#dfe4f3}
-.h2-sec.navy h2,.h2-sec.blue h2{color:#fff}
-.h2-sec:not(.cream):not(.navy):not(.blue){background:#fff;max-width:none;padding-left:max(22px,calc(50% - 358px));padding-right:max(22px,calc(50% - 358px))}
-.h2-p{font-size:16px;line-height:1.8;color:inherit;opacity:.9;margin:0 0 18px;font-weight:400}
+.h2-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,.78) 100%);pointer-events:none}
+.h2-cap{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:0 20px 24px;color:#fff;max-width:760px;margin:0 auto}
+.h2-cap h1{font-size:clamp(32px,9vw,52px);margin:6px 0 4px;color:#fff}
+.h2-place{font-size:15px;opacity:.92}.h2-price{font-size:26px;font-weight:800;letter-spacing:-.02em;margin-top:8px}
+.h2-kick{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}.h2-kick.red{color:var(--red)}
+.h2-cap .h2-kick{color:rgba(255,255,255,.85)}
+.h2-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:16px;max-width:760px;margin:0 auto}
+.h2-stats div{background:var(--surface);border-radius:16px;padding:14px 6px;text-align:center}
+.h2-stats b{display:block;font-size:22px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.h2-stats span{font-size:12px;color:var(--muted)}
+.h2-sec{padding:40px 20px;max-width:760px;margin:0 auto}
+.h2-sec.cream,.h2-sec.navy,.h2-sec.blue{max-width:none;padding-left:max(20px,calc(50% - 360px));padding-right:max(20px,calc(50% - 360px))}
+.h2-sec.cream{background:var(--surface)}.h2-sec.blue{background:var(--bg)}
+.h2-sec.navy{background:#000;color:#f5f5f7}.h2-sec.navy h2{color:#fff}
+:root[data-theme="dark"] .h2-sec.navy{background:var(--raise)}
+.h2-p{font-size:16px;line-height:1.6;color:inherit;opacity:.85;margin:0 0 16px}
 .h2-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.h2-grid img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in;background:var(--cr)}
+.h2-grid img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in;background:var(--surface);border-radius:12px}
 .h2-grid img:first-child{grid-column:1/-1;aspect-ratio:16/10}
-.h2-btns{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
-.h2-btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border:1px solid var(--nv2);background:transparent;color:var(--nv2);font:600 11px Montserrat,sans-serif;letter-spacing:.24em;text-decoration:none;cursor:pointer}
+.h2-btns{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.h2-btn{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 18px;border:0;border-radius:999px;font:600 15px var(--font);text-decoration:none;cursor:pointer;
+  background:linear-gradient(var(--raise),var(--surface));color:var(--ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 0 1px var(--hair),0 1px 2px rgba(0,0,0,.06)}
 .h2-btns .h2-btn{flex:1}
-.h2-btn.red{background:var(--rd);border-color:var(--rd);color:#fff}.h2-btn.navy{background:var(--nv2);color:#fff}
-.h2-btn.block{display:flex;width:100%;min-height:56px;margin-top:22px}
-.h2-group{font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--mu);margin:30px 0 4px;padding-bottom:12px;border-bottom:1px solid var(--ln)}
-.h2-row{display:flex;justify-content:space-between;gap:14px;padding:16px 0;border-bottom:1px solid var(--ln);font-size:15px}
-.h2-row span{color:#3b4258}.h2-row b{font-weight:600;text-align:right}
+.h2-btn.navy{background:linear-gradient(#2a2a2d,#000);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 1px 2px rgba(0,0,0,.3),0 8px 20px -8px rgba(0,0,0,.6)}
+:root[data-theme="dark"] .h2-btn.navy{background:linear-gradient(#fff,#d9d9de);color:#000}
+.h2-btn.red{background:var(--red);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 1px 2px rgba(0,0,0,.2),0 8px 18px -8px rgba(209,52,56,.7)}
+.h2-btn.block{display:flex;width:100%;min-height:54px;margin-top:20px}
+.h2-group{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:26px 0 2px;padding-bottom:10px;border-bottom:1px solid var(--hair)}
+.h2-row{display:flex;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid var(--hair);font-size:15px}
+.h2-row span{color:var(--ink2)}.h2-row b{font-weight:600;text-align:right}
 .h2-feats{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;column-gap:20px}
-.h2-feats li{padding:14px 0 14px 18px;border-bottom:1px solid var(--ln);position:relative;font-size:15px}
-.h2-feats li:before{content:"";position:absolute;left:0;top:22px;width:6px;height:6px;border-radius:50%;background:var(--rd)}
-.h2-fine{font-size:12px;color:var(--mu);margin-top:16px;line-height:1.6}.h2-fine.c{text-align:center;opacity:.85}
-.h2-sec.blue .h2-fine,.h2-sec.navy .h2-fine{color:#9aa3c0}
-.h2-lab{display:block;font-size:11px;font-weight:600;letter-spacing:.26em;text-transform:uppercase;color:var(--mu);margin:22px 0 10px}
-.h2-sec.blue .h2-lab{color:#aab3d3}
-.h2-in{width:100%;box-sizing:border-box;min-height:56px;padding:14px 16px;font:400 16px Montserrat,sans-serif;color:var(--tx);background:var(--cr);border:1px solid var(--ln);border-radius:0;-webkit-appearance:none;appearance:none}
-.h2-sec.blue .h2-in,.h2-sec.blue select{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.18);color:#fff}
-.h2-sec.blue .h2-in::placeholder{color:#8f9ac0}
-.hp2 select{width:100%;min-height:56px;padding:0 16px;font:400 16px Montserrat,sans-serif;color:var(--tx);background:var(--cr);border:1px solid var(--ln);border-radius:0}
+.h2-feats li{padding:13px 0 13px 18px;border-bottom:1px solid var(--hair);position:relative;font-size:15px}
+.h2-feats li:before{content:"";position:absolute;left:0;top:21px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.h2-fine{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.5}.h2-fine.c{text-align:center}
+.h2-sec.navy .h2-fine{color:#a1a1a6}
+.h2-lab{display:block;font-size:13px;font-weight:600;color:var(--ink2);margin:18px 0 8px}
+.h2-in,.hp2 select{width:100%;box-sizing:border-box;min-height:52px;padding:13px 14px;font:400 16px var(--font);color:var(--ink);background:var(--surface);border:1px solid var(--hair);border-radius:12px;-webkit-appearance:none;appearance:none}
+.h2-sec.cream .h2-in,.h2-sec.cream select{background:var(--bg)}
+.hp2 select{padding:0 14px}
 .hp2 textarea.h2-in{min-height:110px}
-.h2-duo{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.h2-range{width:100%;accent-color:var(--rd);margin:4px 0}
-.h2-pay{margin:26px 0 0;padding:22px;background:var(--cr);text-align:center}
-.h2-pay span{display:block;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--mu)}
-.h2-pay b{display:block;font:500 46px "Cormorant Garamond",Georgia,serif;color:var(--nv2);margin:6px 0 2px}
-.h2-pay small{font-size:12px;color:var(--mu)}
-.h2-note{margin-top:22px;padding:22px 24px;background:var(--cr);border-left:4px solid var(--rd)}
-.h2-note b{color:var(--nv2);font-size:18px}.h2-note p{color:#3b4258;line-height:1.7;margin:8px 0 16px}
-.h2-tiles{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 22px}
-.h2-tiles div{background:rgba(255,255,255,.05);padding:22px 20px}
-.h2-tiles b{display:block;font:500 34px "Cormorant Garamond",Georgia,serif;color:#fff}
-.h2-tiles span{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:#8f9ac0}
+.h2-duo{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.h2-range{width:100%;accent-color:var(--red);margin:4px 0}
+.h2-pay{margin:22px 0 0;padding:20px;background:var(--surface);border-radius:16px;text-align:center}
+.h2-pay span{display:block;font-size:13px;color:var(--muted)}
+.h2-pay b{display:block;font-size:40px;font-weight:800;letter-spacing:-.03em;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+.h2-pay small{font-size:12px;color:var(--muted)}
+.h2-note{margin-top:16px;padding:18px 20px;background:var(--surface);border-radius:16px;border-left:4px solid var(--red)}
+.h2-note b{font-size:17px}.h2-note p{color:var(--ink2);line-height:1.55;margin:6px 0 14px}
+.h2-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 20px}
+.h2-tiles div{background:rgba(255,255,255,.08);border-radius:16px;padding:18px}
+.h2-tiles b{display:block;font-size:28px;font-weight:800;letter-spacing:-.02em;color:#fff}
+.h2-tiles span{font-size:12px;color:#a1a1a6}
 .h2-arrows{list-style:none;padding:0;margin:0}
-.h2-arrows li{padding:10px 0 10px 32px;position:relative;font-size:16px;line-height:1.5}
-.h2-arrows li:before{content:"→";position:absolute;left:0;color:var(--rd)}
-.h2-card{background:#fff;padding:28px 22px;border:1px solid var(--ln);margin:0 0 16px}
-.h2-card p{line-height:1.7;color:#3b4258}
-.h2-err{color:#ff8a7a;font-size:14px;margin:14px 0 0}
-.h2-done{padding:30px 0;text-align:center}.h2-done b{font:500 34px "Cormorant Garamond",Georgia,serif;color:inherit}.h2-done p{opacity:.85}
-.h2-foot{background:var(--nv3);border-top:4px solid var(--rd);color:#8f9ac0;text-align:center;padding:40px 22px calc(40px + env(safe-area-inset-bottom,0px));font-size:13px;line-height:1.9}
-.h2-foot b{display:block;color:#fff;letter-spacing:.3em;font-size:14px;margin-bottom:4px}.h2-foot span{display:block}
-.h2-foot a{color:#aab3d3;text-decoration:none}
+.h2-arrows li{padding:9px 0 9px 30px;position:relative;font-size:16px;line-height:1.45}
+.h2-arrows li:before{content:"→";position:absolute;left:0;color:var(--red);font-weight:700}
+.h2-card{background:var(--bg);padding:24px 20px;border-radius:20px;box-shadow:0 0 0 1px var(--hair);margin:0 0 16px}
+.h2-card p{line-height:1.55;color:var(--ink2)}
+.h2-err{color:var(--red);font-size:14px;margin:12px 0 0}
+.h2-done{padding:28px 0;text-align:center}.h2-done b{font-size:28px;font-weight:800;letter-spacing:-.02em}.h2-done p{color:var(--ink2)}
+.h2-foot{background:var(--bg);border-top:1px solid var(--hair);color:var(--muted);text-align:center;padding:36px 20px calc(36px + env(safe-area-inset-bottom,0px));font-size:13px;line-height:1.8}
+.h2-foot b{display:block;color:var(--ink);font-size:17px;margin-bottom:2px}.h2-foot span{display:block}
+.h2-foot a{color:var(--ink2);text-decoration:none}
 .sheet.hp .sheetBody,.sheet.hp #sheetBody{padding:0}
+/* UX touches (his "20 principles" list): slow in/out reveal once per section (frequency of use: never re-animates),
+   snappy 150ms feedback, squash on press, a skeleton within 100ms (Doherty), bump on the payment (exaggerated feedback). */
+.hp2 .rv{opacity:0;transform:translateY(16px);transition:opacity .45s cubic-bezier(.2,.8,.2,1),transform .45s cubic-bezier(.2,.8,.2,1)}
+.hp2 .rv.in{opacity:1;transform:none}
+.h2-grid img{transition:transform .2s cubic-bezier(.2,.8,.2,1)}.h2-grid img:active{transform:scale(.97)}
+.h2-pay b.bump{animation:h2bump .22s cubic-bezier(.2,.8,.2,1)}
+@keyframes h2bump{40%{transform:scale(1.05)}}
+.h2-skel{height:min(64vh,620px);background:linear-gradient(100deg,var(--surface) 30%,var(--raise) 50%,var(--surface) 70%);background-size:300% 100%;animation:h2sk 1.2s linear infinite}
+.h2-skel.line{height:22px;margin:18px 20px 0;border-radius:8px;max-width:60%}
+@keyframes h2sk{to{background-position:-150% 0}}
+.h2-lb{animation:h2fade .18s ease-out}@keyframes h2fade{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.hp2 .rv{opacity:1;transform:none;transition:none}.h2-skel{animation:none}.h2-pay b.bump,.h2-lb{animation:none}}
 .rv{opacity:0;transform:translateY(16px);transition:opacity .55s cubic-bezier(.2,.8,.2,1),transform .55s cubic-bezier(.2,.8,.2,1)}
 .rv.in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
@@ -2433,12 +2448,11 @@ function homePage(id){
   // Nov 15 redesign (Julián's reference: navy + red + cream, serif headings, wide-tracked labels, sticky header with
   // Schedule showing and a section nav). Only real facts: county records, what Julián typed, never made-up stats.
   const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  if (!document.getElementById('hpfont')) { const l = document.createElement('link'); l.id = 'hpfont'; l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Montserrat:wght@400;500;600;700&display=swap'; document.head.appendChild(l); }
   sheet.classList.add('full','hp'); scrim.classList.add('full');
-  const head = `<header class="h2-head"><button type="button" class="h2-logo" id="hpX" aria-label="Back to juliancrider.com">JC</button>
-      <div class="h2-who"><b>JULIÁN CRIDER</b><span>BOECKLE &amp; CO. · S.0177760</span></div>
-      <a class="h2-tel" href="tel:+17024982571">702-498-2571</a><button type="button" class="h2-cta" id="hpShow">SCHEDULE SHOWING</button></header>`;
-  openRaw('', `<div class="hp2">${head}<p style="padding:60px 20px;text-align:center;color:#6b6f7d">Loading the listing…</p></div>`);
+  const head = `<header class="h2-head"><button type="button" class="h2-logo" id="hpX" aria-label="Back to juliancrider.com"><img class="on-light" src="img/p/photo-22cb48.png" alt=""><img class="on-dark" src="img/p/photo-324da7.png" alt=""></button>
+      <div class="h2-who"><b>Julián Crider</b><span>Boeckle &amp; Co. · S.0177760</span></div>
+      <a class="h2-tel" href="tel:+17024982571">702-498-2571</a><button type="button" class="h2-cta" id="hpShow">Schedule a showing</button></header>`;
+  openRaw('', `<div class="hp2">${head}<div class="h2-skel" aria-label="Loading the listing"></div><div class="h2-skel line"></div><div class="h2-skel line" style="max-width:40%"></div></div>`);
   const bindX = () => { $('hpX').onclick = closeSheet; };
   bindX(); $('hpShow').onclick = () => { closeSheet(); showingFlow(''); };
   fetch(SHEET_URL + '?' + new URLSearchParams({action:'listing', id})).then(r => r.json()).then(d => {
@@ -2459,16 +2473,16 @@ function homePage(id){
     const kick = (t, red) => `<div class="h2-kick${red ? ' red' : ''}">${t}</div>`;
     const sel = (id, opts) => `<select id="${id}">${opts.map(o => `<option>${e(o)}</option>`).join('')}</select>`;
     const consent = 'By sending this, you agree Julián Crider may call or text you about this and similar homes. Msg &amp; data rates may apply. Reply STOP to opt out.';
-    const copyCard = (key, title, text) => text ? `<div class="h2-card"><div class="h2-group" style="margin-top:0">${title}</div><p data-copytext="${key}" style="white-space:pre-line">${e(text)}</p><button type="button" class="h2-btn ghost" data-copy="${key}">COPY</button></div>` : '';
+    const copyCard = (key, title, text) => text ? `<div class="h2-card"><div class="h2-group" style="margin-top:0">${title}</div><p data-copytext="${key}" style="white-space:pre-line">${e(text)}</p><button type="button" class="h2-btn ghost" data-copy="${key}">Copy</button></div>` : '';
     $('sheetBody').innerHTML = `<div class="hp2">${head}
-      <nav class="h2-nav" id="hpNav"><a href="#" data-go="hpPhotos">PHOTOS</a><a href="#" data-go="hpDetails">DETAILS</a><a href="#" data-go="hpMort">MORTGAGE</a><a href="#" data-go="hpSell">SELL YOUR HOME</a></nav>
+      <nav class="h2-nav" id="hpNav"><a href="#" data-go="hpPhotos">Photos</a><a href="#" data-go="hpDetails">Details</a><a href="#" data-go="hpMort">Mortgage</a><a href="#" data-go="hpSell">Sell your home</a></nav>
       <section class="h2-hero">${ph[0] ? `<img src="${e(ph[0])}" onerror="if(this.src!=='${e(orig[0])}')this.src='${e(orig[0])}'" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0">` : ''}
         <div class="h2-cap">${kick('Listing preview' + (rec.subdivision || f.subdivision ? ' · ' + e(area) : ''))}<h1>${e(street)}</h1><div class="h2-place">${e(place)}</div>${d.price ? `<div class="h2-price">${e(money(d.price))}</div>` : ''}</div></section>
       ${stats.length ? `<div class="h2-stats">${stats.map(([k, l]) => `<div><b>${e(f[k])}</b><span>${l}</span></div>`).join('')}</div>` : ''}
       <section class="h2-sec" id="hpPhotos">${kick('The gallery', true)}<h2>Photos</h2>
         ${ph.length ? `<div class="h2-grid">${ph.map((u, i) => `<img src="${e(u)}" onerror="if(this.src!=='${e(orig[i])}')this.src='${e(orig[i])}'" alt="Photo ${i + 1}" loading="lazy" referrerpolicy="no-referrer" data-zoom="${i}">`).join('')}</div>` : '<p class="h2-p">Photos are coming soon.</p>'}
         ${d.portal ? `<h3>About this home</h3><p class="h2-p" style="white-space:pre-line">${e(d.portal)}</p>` : ''}
-        <div class="h2-btns"><a class="h2-btn ghost" href="${maps}" target="_blank" rel="noopener">MAP</a>${f.link ? `<a class="h2-btn ghost" href="${e(f.link)}" target="_blank" rel="noopener">LISTING</a>` : ''}<button type="button" class="h2-btn ghost" id="hpShare">SHARE</button></div></section>
+        <div class="h2-btns"><a class="h2-btn ghost" href="${maps}" target="_blank" rel="noopener">📍 Map</a>${f.link ? `<a class="h2-btn ghost" href="${e(f.link)}" target="_blank" rel="noopener">Listing ›</a>` : ''}<button type="button" class="h2-btn ghost" id="hpShare">Share</button></div></section>
       <section class="h2-sec cream" id="hpDetails">${kick('The details', true)}<h2>Home details</h2>
         ${rows('Interior', [['Bedrooms', f.beds], ['Bathrooms', f.baths && bathTxt(f.baths)], ['Living area', f.sqft && f.sqft + ' sq ft'], ['Fireplaces', rec.fireplace], ['Style', f.style]])}
         ${rows('Exterior & lot', [['Lot', f.lot], ['Garage', f.garage && (f.garage + (rec.garageSqft ? ' · ' + rec.garageSqft + ' sq ft' : ''))], ['Pool', yes(f.pool)], ['Spa', yes(f.spa)], ['Construction', rec.construction], ['Roof', rec.roof], ['Year built', f.year]])}
@@ -2482,7 +2496,7 @@ function homePage(id){
         <label class="h2-lab" for="mRate">Interest rate · <span id="mRateL"></span></label><input id="mRate" type="range" min="4" max="12" step="0.01" value="6.5" class="h2-range">
         <label class="h2-lab" for="mTerm">Loan term</label><select id="mTerm" class="h2-in"><option value="30">30-Year Fixed</option><option value="20">20-Year Fixed</option><option value="15">15-Year Fixed</option></select>
         <div class="h2-pay"><span>Estimated principal &amp; interest</span><b id="mPay">$0</b><small>per month, before taxes, insurance and HOA</small></div>
-        <div class="h2-note"><b>Want to get pre-qualified?</b><p>Julián works with trusted lenders, including jumbo and luxury financing. Tell him a little about you and he’ll make an intro.</p><button type="button" class="h2-btn navy" id="hpLender">GET CONNECTED →</button></div></section>
+        <div class="h2-note"><b>Want to get pre-qualified?</b><p>Julián works with trusted lenders, including jumbo and luxury financing. Tell him a little about you and he’ll make an intro.</p><button type="button" class="h2-btn navy" id="hpLender">Get connected</button></div></section>
       <section class="h2-sec navy" id="hpSell">${kick('For sellers')}<h2>Thinking of selling in ${e(area)}?</h2>
         <p class="h2-p">See what homes like yours are selling for. Julián will prepare a free comparative market analysis for you, no obligation.</p>
         ${snap.length ? `<div class="h2-tiles">${snap.map(([k, l, fm]) => `<div><b>${e(fm ? fm(sn[k]) : sn[k])}</b><span>${l}</span></div>`).join('')}</div>${sn.note ? `<p class="h2-p">${e(sn.note)}</p>` : ''}` : ''}
@@ -2493,16 +2507,16 @@ function homePage(id){
         <label class="h2-lab" for="cName">Full name</label><input id="cName" class="h2-in" autocomplete="name" placeholder="Your name">
         <div class="h2-duo"><div><label class="h2-lab" for="cPhone">Phone *</label><input id="cPhone" class="h2-in" type="tel" autocomplete="tel" placeholder="702-000-0000"></div><div><label class="h2-lab" for="cTl">Timeline</label>${sel('cTl', ['ASAP','1–3 months','3–6 months','Just curious'])}</div></div>
         <p class="h2-err" id="cErr" hidden>Please add your address, name and phone.</p>
-        <button type="button" class="h2-btn red block" id="cGo">REQUEST MY FREE CMA →</button><p class="h2-fine c">${consent}</p></section>
-      ${d.mls || d.instagram ? `<section class="h2-sec cream">${kick('For the homeowner', true)}<h2>Ready-made marketing</h2><p class="h2-p">Drafts from the details so far. Julián polishes them with you before anything goes live.</p>${copyCard('mls','MLS description', d.mls)}${copyCard('ig','Instagram caption', d.instagram)}<a class="h2-btn ghost" href="?sell" target="_blank" rel="noopener">HOW JULIÁN SELLS YOUR HOME →</a></section>` : ''}
+        <button type="button" class="h2-btn red block" id="cGo">Request my free CMA</button><p class="h2-fine c">${consent}</p></section>
+      ${d.mls || d.instagram ? `<section class="h2-sec cream">${kick('For the homeowner', true)}<h2>Ready-made marketing</h2><p class="h2-p">Drafts from the details so far. Julián polishes them with you before anything goes live.</p>${copyCard('mls','MLS description', d.mls)}${copyCard('ig','Instagram caption', d.instagram)}<a class="h2-btn ghost" href="?sell" target="_blank" rel="noopener">How Julián sells your home ›</a></section>` : ''}
       <section class="h2-sec cream" id="hpAsk"><div class="h2-card">${kick('Request information', true)}<h2>Ask about this home</h2>
         <label class="h2-lab" for="qName">Full name *</label><input id="qName" class="h2-in" autocomplete="name" placeholder="Your full name">
         <div class="h2-duo"><div><label class="h2-lab" for="qPhone">Phone *</label><input id="qPhone" class="h2-in" type="tel" autocomplete="tel" placeholder="702-000-0000"></div><div><label class="h2-lab" for="qEmail">Email</label><input id="qEmail" class="h2-in" type="email" autocomplete="email" placeholder="you@email.com"></div></div>
         <label class="h2-lab" for="qWho">I am a…</label>${sel('qWho', ['Buyer','Seller','Buyer and seller','Neighbor','Real estate agent'])}
         <label class="h2-lab" for="qMsg">Message / questions</label><textarea id="qMsg" class="h2-in" rows="3" placeholder="Preferred showing times, financing questions…"></textarea>
         <p class="h2-err" id="qErr" hidden>Please add your name and phone.</p>
-        <button type="button" class="h2-btn navy block" id="qGo">SEND REQUEST →</button><p class="h2-fine c">${consent}</p></div></section>
-      <footer class="h2-foot"><div class="h2-logo big">JC</div><b>JULIÁN CRIDER</b><span>Boeckle &amp; Co. · <a href="tel:+17024982571">702-498-2571</a></span>
+        <button type="button" class="h2-btn navy block" id="qGo">Send request</button><p class="h2-fine c">${consent}</p></div></section>
+      <footer class="h2-foot"><div class="h2-logo big"><img class="on-light" src="img/p/photo-22cb48.png" alt=""><img class="on-dark" src="img/p/photo-324da7.png" alt=""></div><b>Julián J. Crider</b><span>Boeckle &amp; Co. · <a href="tel:+17024982571">702-498-2571</a></span>
         <span><a href="https://www.instagram.com/juliancriderestates/" target="_blank" rel="noopener">@juliancriderestates</a> · Nevada License S.0177760</span>
         <span>Boeckle &amp; Co., 4775 W Teco Ave #220, Las Vegas NV 89118 · Broker Landon Boeckle, B.1001882</span>
         <span>${d.enhanced ? 'Photos edited for light and color only. ' : ''}Equal Housing Opportunity.</span></footer></div>`;
@@ -2517,11 +2531,14 @@ function homePage(id){
     // Mortgage: live 30-year average when the rates feed answers.
     const calc = () => { const p = num($('mPrice').value), dn = Number($('mDown').value), rt = Number($('mRate').value), t = Number($('mTerm').value);
       $('mDownL').textContent = dn + '% (' + money(Math.round(p * dn / 100)) + ')'; $('mRateL').textContent = rt.toFixed(2) + '%';
-      $('mPay').textContent = money(Math.round(payment(p * (1 - dn / 100), rt, t))); };
+      const pay = $('mPay'), nv = money(Math.round(payment(p * (1 - dn / 100), rt, t))); if (pay.textContent !== nv) { pay.textContent = nv; pay.classList.remove('bump'); void pay.offsetWidth; pay.classList.add('bump'); } };
     ['mPrice','mDown','mRate','mTerm'].forEach(k => $(k).oninput = calc); calc();
+    const rv = [...document.querySelectorAll('.hp2 .h2-sec, .hp2 .h2-stats')]; rv.forEach(el => el.classList.add('rv'));
+    if ('IntersectionObserver' in window) { const io2 = new IntersectionObserver(es => es.forEach(x => { if (x.isIntersecting) { x.target.classList.add('in'); io2.unobserve(x.target); } }), {root: sc, rootMargin: '0px 0px -8% 0px'}); rv.forEach(el => io2.observe(el)); }
+    else rv.forEach(el => el.classList.add('in'));
     fetch(SHEET_URL + '?action=rates').then(r => r.json()).then(x => { const r30 = x && x.ok && x.rates && x.rates.f30; if (r30) { $('mRate').value = r30.rate.toFixed(2); calc(); } }).catch(() => {});
     $('hpLender').onclick = () => { closeSheet(); openSheet('book', {type: 'Buying a home'}); };
-    $('hpShare').onclick = () => { const u = location.href; if (navigator.share) navigator.share({title: d.address, url: u}).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => { $('hpShare').textContent = 'LINK COPIED ✓'; }); };
+    $('hpShare').onclick = () => { const u = location.href; if (navigator.share) navigator.share({title: d.address, url: u}).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => { $('hpShare').textContent = 'Link copied ✓'; }); };
     const thanks = (box, t) => { box.innerHTML = `<div class="h2-done"><b>Thank you.</b><p>${t}</p></div>`; };
     $('cGo').onclick = () => { const v = k => $(k).value.trim(); const ok = v('cAddr') && v('cName') && v('cPhone'); $('cErr').hidden = !!ok; if (!ok) return;
       sendLead({tab:'Website Leads', type:'Home value request', name:v('cName'), phone:v('cPhone'), email:'', property:v('cAddr'), timeline:v('cTl'), source:'juliancrider.com',
@@ -2533,13 +2550,13 @@ function homePage(id){
       thanks(document.querySelector('#hpAsk .h2-card'), 'Julián will get back to you shortly.'); };
     document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
       const t = document.querySelector(`[data-copytext="${b.dataset.copy}"]`).textContent;
-      (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => { b.textContent = 'COPIED ✓'; setTimeout(() => b.textContent = 'COPY', 1600); }).catch(() => {});
+      (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => { b.textContent = 'Copied ✓'; setTimeout(() => b.textContent = 'Copy', 1600); }).catch(() => {});
     });
     document.querySelectorAll('.hp2 [data-zoom]').forEach(img => img.onclick = () => {
       let i = Number(img.dataset.zoom);
-      const box = document.createElement('div');
-      box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,16,36,.96);display:flex;align-items:center;justify-content:center';
-      const show = () => { box.innerHTML = `<img src="${e(ph[i])}" referrerpolicy="no-referrer" alt="Photo ${i + 1}" style="max-width:100%;max-height:100%;object-fit:contain"><div style="position:absolute;top:14px;right:18px;color:#fff;font:600 13px Montserrat,sans-serif;letter-spacing:.15em">${i + 1} / ${ph.length} ✕</div>`; };
+      const box = document.createElement('div'); box.className = 'h2-lb';
+      box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.94);display:flex;align-items:center;justify-content:center';
+      const show = () => { box.innerHTML = `<img src="${e(ph[i])}" referrerpolicy="no-referrer" alt="Photo ${i + 1}" style="max-width:100%;max-height:100%;object-fit:contain"><div style="position:absolute;top:14px;right:18px;color:#fff;font:600 14px var(--font)">${i + 1} / ${ph.length} ✕</div>`; };
       show(); document.body.appendChild(box);
       let x0 = null;
       box.addEventListener('touchstart', ev => { x0 = ev.touches[0].clientX; }, {passive: true});
