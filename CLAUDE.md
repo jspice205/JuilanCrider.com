@@ -682,6 +682,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   gemini-2.5-flash-image, gemini-2.0-flash-preview-image-generation, gemini-2.0-flash-exp-image-generation, gemini-2.0-flash-exp
   (429 "limit: 0"/404 = not on the free plan → next; the working one is saved as GEMINI_IMAGE_OK) and texts the real reason.
   "enhance the photos [for <address>]" re-queues photos without an enhanced copy (queue items {driveId}) → "✨ Enhanced X of Y".
+  Nov 15 result: every free Gemini image model failed for Kinlock (free keys get no image output) → photos stay original.
+  listingPageData backfills sq ft + facts.record on first view for pages made before the full county read (facts.recordTried).
+  His design reference https://305princecharmingv4.vercel.app is unreachable from Claude's container (DNS), even after
+  allowing the host; ask him for screenshots.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

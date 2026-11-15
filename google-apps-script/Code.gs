@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-enhance-free';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-sqft-backfill';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1864,6 +1864,15 @@ function listingPageData(token) {
   if (!/^[a-f0-9]{12,}$/.test(token)) return {status: 'error'};
   const h = homeRows().filter(x => x.token === token)[0];
   if (!h) return {status: 'error'};
+  // Nov 15: pages made before the full county read (or by photos only) fill in sq ft + the public record on first view.
+  if (!h.facts.record && !h.facts.recordTried) {
+    try {
+      const apn = h.parcel || (parcelForAddress(h.address) || {}).apn;
+      if (apn) { h.parcel = apn; const pf = parcelFacts(parcelRecord(apn)), typed = h.facts.typed || [];
+        Object.keys(pf).forEach(k => { if (pf[k] && (k === 'record' || typed.indexOf(k) < 0)) h.facts[k] = pf[k]; }); }
+    } catch (e) { console.log('Listing backfill: ' + e.message); }
+    h.facts.recordTried = true; homeSave(h);
+  }
   const img = id => 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
   // Backup look (Nov 14, Gemini's free plan won't edit photos): an image service (wsrv.nl, free, no account) brightens,
   // adds contrast and color and sharpens on the fly. Never changes what's in the photo. The page falls back to the original.
@@ -2055,7 +2064,8 @@ function geminiEnhance(blob) {
     return {blob: Utilities.newBlob(Utilities.base64Decode(img.data), img.mimeType || img.mime_type || 'image/png', 'enhanced.png')};
   }
   if (usedUp) return {error: 'Google\'s free daily photo allowance is used up; say "enhance the photos" tomorrow and I\'ll try again'};
-  return {error: 'Google\'s free plan didn\'t edit it (' + last.slice(0, 140) + ')'};
+  console.log('Gemini image, every model failed: ' + last);
+  return {error: 'Google\'s free plan doesn\'t include photo editing (only paid Gemini keys do)'};
 }
 
 const LISTING_TAB = {name: 'Listing Flow', color: '#E37400', headers: ['Deal ID', 'Seller', 'Stage', 'Stage since', 'Drafted', 'Last draft']};
@@ -3972,7 +3982,7 @@ function parcelFacts(raw) {
 /** Facts for the listing copy: the home itself, never sale history, tax values or the parcel. */
 function copyFacts(f) {
   const c = JSON.parse(JSON.stringify(f || {})), r = c.record || {};
-  delete c.record; delete c.typed; delete c.link; delete c.snapshot;
+  delete c.record; delete c.typed; delete c.recordTried; delete c.link; delete c.snapshot;
   ['construction', 'roof', 'fireplace'].forEach(k => { if (r[k]) c[k] = r[k]; });
   return c;
 }
