@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-14-mute30';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-14-listinglink';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1865,20 +1865,31 @@ function listingPageData(token) {
   const h = homeRows().filter(x => x.token === token)[0];
   if (!h) return {status: 'error'};
   const img = id => 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
-  return {status: 'ok', address: h.address, facts: h.facts, price: h.price, mls: h.mls, portal: h.portal, instagram: h.instagram,
+  return {status: 'ok', address: h.address, parcel: h.parcel || '', facts: h.facts, price: h.price, mls: h.mls, portal: h.portal, instagram: h.instagram,
     photos: h.photos.map(p => img(h.originals || !p.e ? p.o : p.e)), enhanced: !h.originals && h.photos.some(p => p.e)};
 }
 /** "listing page 123 Desert Rose Ln, 4 bed 3 bath, pool, price 1.2-1.3M" → create or update the page. */
 function listingPageCommand(text) {
   const props = PropertiesService.getScriptProperties(), key = props.getProperty('GROQ_API_KEY');
-  const said = String(text || '').replace(/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\s*(for|on|at)?\s*[:\-]?\s*/i, '').trim();
+  let said = String(text || '').replace(/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\s*(for|on|at)?\s*[:\-]?\s*/i, '').trim();
+  // A Zillow / Redfin / Realtor.com / Homes.com link (Nov 14): the address comes from the link itself; beds, baths and size
+  // from the page's preview text when the site lets us read it. Never the price (that's Julián's call).
+  const link = (said.match(/https?:\/\/\S+/) || [])[0] || '';
+  let siteFacts = '';
+  if (link) {
+    const fromUrl = addressFromListingUrl(link);
+    try { const m = pageMeta(link); siteFacts = [m.title, m.details].filter(Boolean).join(' · ').slice(0, 400); } catch (e) {}
+    said = [fromUrl || (siteFacts.match(/\d+\s+[^,|]+/) || [''])[0], said.replace(link, '').trim()].filter(Boolean).join(', ');
+    if (!said) return 'I couldn\'t read an address from that link. Text "listing page" plus the address instead.';
+  }
   let h = homeFor(said);
   if (!said && h) return '🏡 ' + h.address + ': ' + homePageUrl(h.token) + '\n\nText me photos and I\'ll add them.';
   if (!said) return 'Which address? Text "listing page" plus the address, and any details you know (beds, baths, price).';
   let p = {};
   try { p = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
     {role: 'system', content: 'Pull listing details out of a Realtor\'s text. JSON only: {"address": "street address with city if given, else empty", "beds": "", "baths": "", "sqft": "", "lot": "", "year": "", "garage": "", "price": "list price or range exactly as written, else empty", "features": ["short features he mentioned"]}. Leave anything he did not say empty. Never guess.'},
-    {role: 'user', content: said}], {maxTokens: 500, noPick: true})); } catch (e) {}
+    {role: 'user', content: said + (siteFacts ? '\n\nFrom the listing website (use it for beds, baths, sqft, lot and year only; NEVER take a price from it): ' + siteFacts : '')}], {maxTokens: 500, noPick: true})); } catch (e) {}
+  if (siteFacts && p.price && said.indexOf(String(p.price).replace(/[^\d.]/g, '').slice(0, 3)) < 0) p.price = '';  // price only from his own words
   const addr = String(p.address || '').trim() || (h ? h.address : '') || said.split(',')[0];
   if (!h) h = homeFor(addr);
   const isNew = !h;
@@ -1901,6 +1912,7 @@ function listingPageCommand(text) {
   ['beds', 'baths', 'sqft', 'lot', 'year', 'garage'].forEach(k => { if (p[k]) h.facts[k] = String(p[k]); });
   if ((p.features || []).length) h.facts.features = (h.facts.features || []).concat(p.features).filter((x, i, a) => a.indexOf(x) === i).slice(0, 15);
   if (p.price) h.price = String(p.price);
+  if (link) h.facts.link = link;
   // The writing: only what's known; Fair Housing safe.
   try {
     const w = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
@@ -1914,6 +1926,15 @@ function listingPageCommand(text) {
   const f = h.facts, line = [f.beds && f.beds + ' bed', f.baths && f.baths + ' bath', f.sqft && f.sqft + ' sq ft', f.year && 'built ' + f.year].filter(Boolean).join(' · ');
   return '🏡 ' + (isNew ? 'Listing page ready' : 'Listing page updated') + ': ' + h.address + (line ? '\n' + line : '') + (h.price ? '\nPrice: ' + h.price : '') +
     '\n\n' + homePageUrl(h.token) + '\n\nText me the photos now and I\'ll enhance them for the page (add "original" to use them as they are). Missing details? Text "listing page ' + homeKey(h.address) + ', 4 bed, price 1.2M" and I\'ll update it.';
+}
+/** The street address inside a Zillow / Redfin / Realtor.com / Homes.com listing link, or ''. */
+function addressFromListingUrl(url) {
+  const u = String(url || ''), sp = x => decodeURIComponent(x).replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim();
+  let m = u.match(/zillow\.com\/homedetails\/([^\/?#]+)/i); if (m) return sp(m[1]);
+  m = u.match(/redfin\.com\/([A-Z]{2})\/([^\/]+)\/([^\/]+)\/home/i); if (m) { const z = (m[3].match(/(\d{5})$/) || [])[1] || ''; return sp(m[3].replace(/-\d{5}$/, '')) + ', ' + sp(m[2]) + ', ' + m[1].toUpperCase() + (z ? ' ' + z : ''); }
+  m = u.match(/realtor\.com\/realestateandhomes-detail\/([^\/?#]+)/i); if (m) { const q = m[1].split('_'); return [sp(q[0]), sp(q[1] || ''), (q[2] || '') + ' ' + (q[3] || '')].filter(x => x.trim()).join(', '); }
+  m = u.match(/homes\.com\/property\/([^\/?#]+)/i); if (m) return sp(m[1]);
+  return '';
 }
 /** "use original photos" / "use enhanced photos" / "remove photo 3" on the active listing page. */
 function listingPhotoCommand(text) {
@@ -4787,6 +4808,7 @@ Examples (all mean the same as the action shown):
   }
   if (calPick) { props.deleteProperty('BOSS_PENDING'); a = Object.assign(pend.a, {calendar: calPick}); }
   else if (pickA) a = pickA;
+  else if (/^\s*https?:\/\/\S*(zillow\.com\/homedetails|redfin\.com\/[A-Z]{2}\/|realtor\.com\/realestateandhomes-detail|homes\.com\/property)\S*\s*$/i.test(text)) a = {action: 'listingpage', message: text};  // a home link = make its listing page (Nov 14)
   else if (/^\s*(save\s+(this|that)\s*(link)?\s*[:\-]?\s*)?https?:\/\/\S+\s*$/i.test(text)) a = {action: 'jot', folder: 'links', message: text};
   else if (/^\s*(golf|swing( thoughts?)?|golf notes?)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'golf', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};

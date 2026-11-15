@@ -2323,8 +2323,9 @@ function clientPage(id){
     }));
   }).catch(() => { $('sheetBody').innerHTML = doneHTML('Can’t load right now','Please try again in a minute, or text Julián at 702-498-2571.'); });
 }
-// Listing page (Nov 14, juliancrider.com/?home=<id>): a finished listing for a listing appointment. Shawna fills it from
-// Julián's texts (address, details, photos enhanced by Google Gemini) via the Apps Script (?action=listing).
+// Listing page (Nov 14, juliancrider.com/?home=<id>): the pre-listing page Julián shows a homeowner at the listing
+// appointment. Shawna fills it from his texts (address or a Zillow/Redfin link, details, photos enhanced by Google Gemini)
+// via the Apps Script (?action=listing). Same look as the rest of the site.
 function homePage(id){
   const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   sheet.classList.add('full'); scrim.classList.add('full');
@@ -2333,30 +2334,42 @@ function homePage(id){
     if (d.status !== 'ok') { $('sheetBody').innerHTML = doneHTML('Listing not found','This link may have changed. Text Julián at 702-498-2571 for a fresh one.'); return; }
     const f = d.facts || {}, ph = d.photos || [];
     const facts = [['beds','Beds'],['baths','Baths'],['sqft','Sq ft'],['lot','Lot'],['year','Built'],['garage','Garage']].filter(([k]) => f[k]);
-    const gold = '#d4b06a', navy = '#0e1830', card = 'background:#16223f;border:1px solid #24345c;border-radius:16px;padding:16px;margin:0 0 14px';
-    const copyCard = (key, title, sub, text) => text ? `<div style="${card}"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b style="font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#fff">${title}</b><span style="font-size:12px;color:#8fa0c4">${sub}</span></div>
-      <p data-copytext="${key}" style="white-space:pre-line;color:#dfe5f2;font-size:15px;line-height:1.55;margin:10px 0 12px">${e(text)}</p>
-      <button type="button" class="mini" data-copy="${key}" style="background:${gold};color:${navy}">Copy</button></div>` : '';
-    $('sheetBody').innerHTML = `<article style="background:${navy};color:#fff;margin:-16px -16px 0;padding:0 0 28px;min-height:100%">
-      <div style="position:relative">${ph[0] ? `<img src="${e(ph[0])}" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in">` : `<div style="aspect-ratio:4/3;background:linear-gradient(160deg,#1b2a52,${navy})"></div>`}
-        <div style="position:absolute;left:0;right:0;bottom:0;padding:48px 18px 16px;background:linear-gradient(transparent,rgba(14,24,48,.92))">
-          <div style="font-size:11px;letter-spacing:.18em;color:${gold};font-weight:700">— LISTING PREVIEW</div>
-          <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.15;margin:6px 0 0;color:#fff">${e(d.address)}</h1>
-          ${f.subdivision || f.city ? `<div style="color:#c9d3ea;font-size:14px;margin-top:4px">${e([f.subdivision, f.city, f.zip].filter(Boolean).join(' · '))}</div>` : ''}</div></div>
-      <div style="padding:16px 16px 0">
-        ${facts.length ? `<div style="display:grid;grid-template-columns:repeat(${facts.length <= 4 ? facts.length : 3},1fr);gap:8px;margin:0 0 14px">${facts.map(([k,l]) => `<div style="${card};margin:0;padding:12px 6px;text-align:center"><div style="font-family:Georgia,serif;font-size:20px;color:#fff">${e(f[k])}</div><div style="font-size:11px;letter-spacing:.12em;color:#8fa0c4;text-transform:uppercase;margin-top:2px">${l}</div></div>`).join('')}</div>` : ''}
-        ${d.price ? `<div style="${card}"><div style="font-size:11px;letter-spacing:.16em;color:#8fa0c4">SUGGESTED LIST PRICE</div><div style="font-family:Georgia,serif;font-size:30px;color:${gold};margin-top:4px">${e(/^\$/.test(d.price) ? d.price : '$' + d.price)}</div><div style="font-size:12px;color:#8fa0c4;margin-top:4px">Based on Julián’s review of recent sales. Final price is your decision.</div></div>` : ''}
-        ${(f.features || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">${f.features.map(x => `<span style="font-size:13px;padding:6px 11px;border-radius:999px;border:1px solid #2c3d68;color:#dfe5f2">${e(x)}</span>`).join('')}</div>` : ''}
-        ${ph.length > 1 ? `<div style="display:flex;justify-content:space-between;align-items:baseline;margin:4px 0 10px"><b style="font-family:Georgia,serif;font-size:20px">Photos</b><span style="font-size:12px;color:#8fa0c4">${ph.length} photos${d.enhanced ? ' · enhanced' : ''}</span></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 18px">${ph.slice(1).map((u, i) => `<img src="${e(u)}" alt="Photo ${i + 2}" loading="lazy" referrerpolicy="no-referrer" data-zoom="${i + 1}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px;cursor:zoom-in;display:block">`).join('')}</div>` : ''}
-        ${d.portal ? `<div style="${card}"><b style="font-family:Georgia,serif;font-size:20px">About this home</b><p style="white-space:pre-line;color:#dfe5f2;font-size:15px;line-height:1.6;margin:10px 0 0">${e(d.portal)}</p></div>` : ''}
-        ${copyCard('mls','MLS description','Concise and factual', d.mls)}
-        ${copyCard('ig','Instagram caption','Hook, emojis and hashtags', d.instagram)}
-        <div style="${card};text-align:center"><div style="font-family:Georgia,serif;font-size:19px">Julián J. Crider</div><div style="color:#8fa0c4;font-size:13px;margin:4px 0 12px">Realtor · Boeckle &amp; Co. · 702-498-2571</div>
-          <button class="pill block" id="hpBook" style="background:${gold};color:${navy}">Book a call with Julián</button></div>
-        <p style="font-size:11px;color:#6f7fa5;line-height:1.5;margin:6px 2px 0">Details from public records and the homeowner; buyer to verify. ${d.enhanced ? 'Photos edited for light and color only. ' : ''}Julián J. Crider, NV license S.0177760, Boeckle &amp; Co.</p>
-      </div></article>`;
+    const card = 'background:var(--surface);border-radius:16px;padding:16px;margin:0 0 12px';
+    const step = (n, h, p) => `<div style="display:flex;gap:12px;margin:0 0 14px"><div style="flex:0 0 28px;height:28px;border-radius:50%;background:var(--ink);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">${n}</div><div><b style="display:block;font-size:16px">${h}</b><span style="color:var(--ink2);font-size:15px">${p}</span></div></div>`;
+    const copyCard = (key, title, sub, text) => text ? `<div style="${card}"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><b style="font-size:17px">${title}</b><span class="fine" style="margin:0">${sub}</span></div>
+      <p data-copytext="${key}" style="white-space:pre-line;color:var(--ink2);font-size:15px;line-height:1.55;margin:10px 0 12px">${e(text)}</p>
+      <button type="button" class="mini" data-copy="${key}">Copy</button></div>` : '';
+    const where = [d.address, f.city && !String(d.address).toLowerCase().includes(String(f.city).toLowerCase()) ? f.city : '', 'NV'].filter(Boolean).join(', ');
+    const maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(where);
+    $('sheetBody').innerHTML = `<article class="reader">
+      ${ph[0] ? `<img src="${e(ph[0])}" alt="${e(d.address)}" referrerpolicy="no-referrer" data-zoom="0" style="width:100%;margin:0 0 16px;border-radius:16px;aspect-ratio:4/3;object-fit:cover;display:block;cursor:zoom-in">` : ''}
+      <div class="kick">Listing preview · prepared by Julián J. Crider</div>
+      <h1>${e(d.address)}</h1>
+      ${f.subdivision || f.city ? `<p style="margin-top:-6px">${e([f.subdivision, f.city, f.zip].filter(Boolean).join(' · '))}</p>` : ''}
+      ${facts.length ? `<div style="display:grid;grid-template-columns:repeat(${facts.length <= 4 ? facts.length : 3},1fr);gap:8px;margin:0 0 14px">${facts.map(([k,l]) => `<div style="${card};margin:0;padding:12px 6px;text-align:center"><div style="font-size:20px;font-weight:700">${e(f[k])}</div><div style="font-size:12px;color:var(--muted);margin-top:2px">${l}</div></div>`).join('')}</div>` : ''}
+      ${d.price ? `<div style="${card}"><div class="fine" style="margin:0">Suggested list price</div><div style="font-size:28px;font-weight:800;letter-spacing:-.02em;margin-top:2px">${e(/^\$/.test(d.price) ? d.price : '$' + d.price)}</div><div class="fine" style="margin:4px 0 0">From Julián’s review of nearby sales, pending and active homes. The final price is always your call.</div></div>` : ''}
+      ${(f.features || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px">${f.features.map(x => `<span style="font-size:14px;padding:7px 12px;border-radius:999px;background:var(--surface)">${e(x)}</span>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:8px;margin:0 0 6px"><a class="pill ghost" style="flex:1;text-align:center;text-decoration:none" href="${maps}" target="_blank" rel="noopener">📍 Map</a>${f.link ? `<a class="pill ghost" style="flex:1;text-align:center;text-decoration:none" href="${e(f.link)}" target="_blank" rel="noopener">Listing ›</a>` : ''}<button class="pill ghost" style="flex:1" id="hpShare">Share</button></div>
+      ${ph.length > 1 ? `<h2>Photos <span class="fine" style="font-weight:400">${ph.length}${d.enhanced ? ' · edited for light and color' : ''}</span></h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 6px">${ph.slice(1).map((u, i) => `<img src="${e(u)}" alt="Photo ${i + 2}" loading="lazy" referrerpolicy="no-referrer" data-zoom="${i + 1}" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;cursor:zoom-in;display:block">`).join('')}</div>` : ''}
+      ${d.portal ? `<h2>About this home</h2><p style="white-space:pre-line">${e(d.portal)}</p>` : ''}
+      <h2>The plan, start to finish</h2>
+      ${step(1,'Paperwork','Listing agreement and the Nevada Duties Owed form, signed online in minutes.')}
+      ${step(2,'Prep and photos','Days 1 to 7: a short prep list, then professional photos, plus video or drone when the home calls for it.')}
+      ${step(3,'Go live','MLS, Zillow, Realtor.com, Instagram, its own page on juliancrider.com, your neighbors and my agent network.')}
+      ${step(4,'Showings and weekly updates','You hear from me every week: showings, online views and what buyers are saying.')}
+      ${step(5,'Offers to closing','I walk you through every term, not just price, then track every escrow deadline to the closing table (usually about 30 days).')}
+      <h2>Before photo day</h2>
+      <div style="${card}">${['Clear counters, fridge doors and bathroom vanities','Every light on, every bulb working, blinds open','Put away personal photos, pet bowls and toys','Fresh towels, beds made, one simple accent per room','Front door, porch and yard: swept, trimmed and tidy','Small repairs: drips, loose handles, chipped paint'].map(x => `<div style="display:flex;gap:10px;padding:5px 0"><span>✓</span><span style="color:var(--ink2)">${x}</span></div>`).join('')}</div>
+      <h2>Ready-made marketing</h2>
+      <p>Drafts from the details we have so far. I’ll polish them with you before anything goes live.</p>
+      ${copyCard('mls','MLS description','Concise and factual', d.mls)}
+      ${copyCard('ig','Instagram caption','Hook and hashtags', d.instagram)}
+      <button class="pill block" id="hpBook" style="margin-top:8px">Book a call with Julián</button>
+      <a class="pill ghost block" style="margin-top:8px" href="?sell" target="_blank" rel="noopener">How I sell your home ›</a>
+      <p class="fine" style="margin-top:14px">Details from Clark County public records${d.parcel ? ' (parcel ' + e(String(d.parcel).replace(/(\d{3})(\d{2})(\d{3})(\d{3})/, '$1-$2-$3-$4')) + ')' : ''} and the homeowner; buyer to verify. ${d.enhanced ? 'Photos edited for light and color only. ' : ''}Julián J. Crider, Realtor, NV license S.0177760, Boeckle &amp; Co. · 702-498-2571</p></article>`;
     $('hpBook').onclick = () => { sheet.classList.remove('full'); scrim.classList.remove('full'); openSheet('book', {type: 'Selling or home value'}); };
+    $('hpShare').onclick = () => { const u = location.href; if (navigator.share) navigator.share({title: d.address, url: u}).catch(() => {}); else if (navigator.clipboard) navigator.clipboard.writeText(u).then(() => { $('hpShare').textContent = 'Link copied ✓'; }); };
     document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => {
       const t = document.querySelector(`[data-copytext="${b.dataset.copy}"]`).textContent;
       (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => { b.textContent = 'Copied ✓'; setTimeout(() => b.textContent = 'Copy', 1600); }).catch(() => {});
@@ -2370,7 +2383,7 @@ function homePage(id){
       let x0 = null;
       box.addEventListener('touchstart', ev => { x0 = ev.touches[0].clientX; }, {passive: true});
       box.addEventListener('touchend', ev => { const dx = ev.changedTouches[0].clientX - (x0 == null ? 0 : x0); if (Math.abs(dx) > 40) { i = (i + (dx < 0 ? 1 : ph.length - 1)) % ph.length; show(); } else box.remove(); });
-      box.addEventListener('click', ev => { if (!('ontouchstart' in window)) box.remove(); });
+      box.addEventListener('click', () => { if (!('ontouchstart' in window)) box.remove(); });
     });
   }).catch(() => { $('sheetBody').innerHTML = doneHTML('Can’t load right now','Please try again in a minute, or text Julián at 702-498-2571.'); });
 }
