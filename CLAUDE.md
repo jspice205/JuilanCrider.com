@@ -700,6 +700,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   red Schedule a showing pill, one black "For sellers" band. Montserrat/Cormorant no longer loaded.
   UX touches (his 20-principles video): skeleton while loading, sections ease in once (.rv/.in), 150 ms chip feedback,
   photo press squash, payment bump, lightbox fade; all off with prefers-reduced-motion.
+  Hero shows "4 bd · 2.5 ba · 2,099 sq ft" under the address (his ask: sq ft next to baths). listingPageData retries the county
+  read every 6 h while sqft or record is missing (facts.recordTried = timestamp).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

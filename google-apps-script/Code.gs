@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-sqft-backfill';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-15-sqft-hero';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1865,13 +1865,14 @@ function listingPageData(token) {
   const h = homeRows().filter(x => x.token === token)[0];
   if (!h) return {status: 'error'};
   // Nov 15: pages made before the full county read (or by photos only) fill in sq ft + the public record on first view.
-  if (!h.facts.record && !h.facts.recordTried) {
+  // Retries (every 6 h) until the square footage is on the page.
+  if ((!h.facts.record || !h.facts.sqft) && !(Number(h.facts.recordTried) > Date.now() - 6 * 36e5)) {
     try {
       const apn = h.parcel || (parcelForAddress(h.address) || {}).apn;
       if (apn) { h.parcel = apn; const pf = parcelFacts(parcelRecord(apn)), typed = h.facts.typed || [];
         Object.keys(pf).forEach(k => { if (pf[k] && (k === 'record' || typed.indexOf(k) < 0)) h.facts[k] = pf[k]; }); }
     } catch (e) { console.log('Listing backfill: ' + e.message); }
-    h.facts.recordTried = true; homeSave(h);
+    h.facts.recordTried = Date.now(); homeSave(h);
   }
   const img = id => 'https://drive.google.com/thumbnail?id=' + id + '&sz=w2000';
   // Backup look (Nov 14, Gemini's free plan won't edit photos): an image service (wsrv.nl, free, no account) brightens,
