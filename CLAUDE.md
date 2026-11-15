@@ -673,6 +673,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (74vh photo, gradient, address/place/bd·ba·sqft/price over it); sticky frosted .hp-bar (Call + Book a call); sections fade
   up on scroll (.rv/.in via IntersectionObserver on the sheet, off with prefers-reduced-motion). Site-wide from his UX
   list: .iconbtn 44px hit areas (Fitts), .pill/.mini press = translate 1px + scale .985 (squash, snappy).
+  Nov 15 (neon photos): the wsrv.nl backup look is REMOVED (its settings blew colors out); pages show his originals until
+  Gemini makes real enhanced copies (billing on in AI Studio). County records now refresh on every "listing page" update and
+  beat listing-site/AI values (only details Julián typed, facts.typed, win); parcelFacts also returns facts.record
+  (subdivision, last sale + month/year, taxable value + fiscal year, land use, construction, roof, fireplaces, spa, garage sq
+  ft, APN; never the owner) → "Public record" section on ?home=. Listing copy gets copyFacts (no sale/tax/parcel numbers).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
