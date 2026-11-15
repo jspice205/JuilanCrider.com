@@ -695,6 +695,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   no made-up stats like the sample's 98.5%/400+ buyers), Free CMA form → Website Leads "Home value request", marketing copy,
   "Ask about this home" → "Listing page inquiry", navy footer. Reference used the wrong license (S.0200132) and his personal
   cell; the page uses S.0177760 and 702-498-2571.
+  Nov 15 (later, Julián: "layout is good but the branding should look like my website"): same layout, site brand: site tokens
+  (--bg/--surface/--ink/--red, SF/Inter --font, light + dark), JC mark images in header/footer, pill buttons and nav chips,
+  red Schedule a showing pill, one black "For sellers" band. Montserrat/Cormorant no longer loaded.
+  UX touches (his 20-principles video): skeleton while loading, sections ease in once (.rv/.in), 150 ms chip feedback,
+  photo press squash, payment bump, lightbox fade; all off with prefers-reduced-motion.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
