@@ -654,6 +654,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   `geminiEnhance` (GEMINI_API_KEY, GEMINI_IMAGE_MODEL default gemini-2.5-flash-image, ENHANCE_PROMPT = Phase One XC IQ4 look,
   never change the scene) unless his text says "original"; one summary text when the batch is done. "use original photos" /
   "use enhanced photos" / "remove photo 3" → `listingPhotoCommand`. No made-up comps/price: price only when he gives it.
+  Nov 14 (later): page restyled to the site's own look (reader layout, var(--surface) cards, .pill buttons) + Map / Listing /
+  Share buttons, "The plan, start to finish" (5 steps), "Before photo day" checklist, "Ready-made marketing", link to ?sell,
+  parcel number in the footer. A bare Zillow/Redfin/Realtor.com/Homes.com home link texted to Shawna (or "listing page <link>")
+  → listing page: `addressFromListingUrl` reads the address from the URL, pageMeta adds beds/baths/size when the site allows
+  (never its price), facts.link keeps the link. Listing-site photos are NOT copied (MLS photo copyright); his own photos only.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
