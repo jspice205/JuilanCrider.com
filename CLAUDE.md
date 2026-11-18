@@ -780,9 +780,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
   summary) sends one "📞 Missed call from …, hung up before saying anything" + one call-back task per number per 15 min
   (HANGUP_ cache). Recordings are queued for every call (the 8 s minimum is gone, his ask). Vapi's recording URLs are in a
-  private R2 bucket ("hipaa-recordings", direct GET → 400 "Authorization"), so they can't be downloaded while Vapi's HIPAA
-  setting is on: sendCallAudio now reports "private" and texts him once a day how to turn HIPAA off (assistant → Advanced →
-  HIPAA off → Publish); other failures name the real status code.
+  private R2 bucket ("hipaa-recordings", direct GET → 400 "Authorization"; HIPAA is NOT on, Julián checked). Fix (Nov 18):
+  sendCallAudio first calls GET api.vapi.ai/call/<id>/mono-recording (then stereo-recording) with the Vapi key,
+  followRedirects false, and downloads the 302 Location (signed, short-lived) WITHOUT the key; old URL tries are the fallback.
+  "private" (no call id / key) → one text a day; other failures name the real status code.
 - Google Business Profile (Nov 18): connected to Metricool (gbpData accounts/104796038002576044555/locations/8184491172100404827,
   provider "gmb", gmbData type publication). Weekly posts Tue/Thu 10am: Nov 19 relocation, Nov 24 buydowns, Dec 1 Lake Las Vegas,
   Dec 8 sellers/home value, Dec 15 thank-you; no phone numbers in post text (Google rejects them). Advice given: rename to
