@@ -800,6 +800,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   The SPA renderer shows the date and a Sources list; "See the original post" only for Instagram-sourced articles (b.ig).
   First two: nevada-property-tax-cap (Clark County 3%/up-to-8% abatement) and nevada-duties-owed-form (NRED Form 525, NRS 645.252).
 
+- RealScout alerts (Nov 18, his ask): RealScout activity arrives in FUB as events (source "RealScout", e.g. type "Viewed Page").
+  `checkRealScout` (remindUpcoming, every 5 min; RS_LAST_EVENT = last event id seen, first run starts from now): requests
+  (a message or type inquiry/registration/request/showing/tour/offer/seller) → notifyJulian "🏡 X sent a request on RealScout" +
+  a Text task; browsing → one "👀 X is active on RealScout" per person per 2 h (RS_ACT_ cache) with types and up to 3 homes.
+  Skips realscout.com/agent/ page views (his own dashboard), other agents' contacts (isMine) and test contacts. The morning
+  update's "worth reaching out to" lists people active on RealScout in the last 24 h.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
