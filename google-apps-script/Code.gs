@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-18-morning';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-18-goldmine';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3805,13 +3805,8 @@ function whatsNewText() {
 
 /** "What do I have today" / morning briefing: everything pressing or new. Calendar, what came in (calls, leads, emails),
  *  then to-dos, waiting texts and approvals (Julián, Nov 12). */
-function agendaText(week) {
-  const range = week ? 'week' : 'today';
-  const parts = [calendarText(range), whatsNewText(), todoText(range), devLeadsDueText()];
-  PropertiesService.getScriptProperties().setProperty('WHATSNEW_AT', String(Date.now()));
-  if (/nothing new came in/.test(parts[1]) && /nothing on your to-do list/.test(parts[2]) && !/waiting on you|waiting for your OK|scheduled texts/.test(parts[2]))
-    parts.push('🎉 Everything\'s done for today. Nice work.');
-  return parts.filter(Boolean).join('\n\n');
+function agendaText(week) {  // Nov 18: same trimmed, forward-looking update as the morning text (no recap of what he already saw)
+  return morningUpdateText({week: !!week});
 }
 
 // ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
@@ -4007,16 +4002,19 @@ function morningBriefing() {
   if (props.getProperty('MORNING_BRIEFING') === 'off') return;
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (!boss) return;
-  const msg = morningUpdateText();
+  const msg = morningUpdateText({morning: true});
   try { bbSend(boss, humanize(msg)); bossMemory('assistant', msg); } catch (e) { console.log('Morning briefing: ' + e.message); }
 }
 
-function morningUpdateText() {
+/** opts.morning: the 8am text (greeting + Shawna's drafted follow-ups for people in the database). opts.week: this
+ *  week's calendar and to-dos instead of today + tomorrow ("what do I have this week"). */
+function morningUpdateText(opts) {
+  opts = opts || {};
   const props = PropertiesService.getScriptProperties(), now = Date.now(), tz = 'America/Los_Angeles';
   const fmt = (t, f) => Utilities.formatDate(new Date(t), tz, f);
   const ago = t => (now - t < 20 * 36e5 && fmt(t, 'yyyyMMdd') === fmt(now, 'yyyyMMdd')) ? fmt(t, 'h:mm a') : fmt(t, 'EEE h:mm a');
   const since = Math.max(now - 3 * 864e5, Number(props.getProperty('WHATSNEW_AT') || 0) || (now - 24 * 36e5));
-  const parts = ['Good morning ☀️ ' + fmt(now, 'EEEE, MMM d')];
+  const parts = [opts.morning ? 'Good morning ☀️ ' + fmt(now, 'EEEE, MMM d') : ''];
   let me = 0; try { me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id; } catch (e) {}
   const nameOf = p => [realFirst(p), p.lastName].join(' ').trim() || p.name || '';
   const skip = p => !p || isTestPerson(p) || (me && p.assignedUserId && Number(p.assignedUserId) !== Number(me)) ||
@@ -4024,8 +4022,8 @@ function morningUpdateText() {
     (p.tags || []).some(t => /^(Not Interested|Unsubscribed|Has Agent|Deceased|Bad Email|Agent|Partner)$/i.test(t));
 
   // 1. Calendar: today in full, tomorrow's first three.
-  parts.push(calendarText('today'));
-  try { const tm = calendarText('tomorrow'); if (!/nothing on your calendars/.test(tm)) parts.push(tm.split('\n\n').slice(0, 4).join('\n\n')); } catch (e) {}
+  parts.push(calendarText(opts.week ? 'week' : 'today'));
+  if (!opts.week) { try { const tm = calendarText('tomorrow'); if (!/nothing on your calendars/.test(tm)) parts.push(tm.split('\n\n').slice(0, 4).join('\n\n')); } catch (e) {} }
 
   // 2. Still needs you: only open loops.
   const need = [];
@@ -4064,14 +4062,17 @@ function morningUpdateText() {
         need.push('• 📧 ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + ' emailed you (unread):\n' + String(x.subject || '(no subject)').slice(0, 70)); });
   } catch (e) {}
   let todo = '';
-  try { todo = todoText('today').split('\n\n').filter(b => !/^💬 \d+ texts? may be waiting|^✅ nothing on your to-do list/.test(b)).join('\n\n'); } catch (e) {}
+  try { todo = todoText(opts.week ? 'week' : 'today').split('\n\n').filter(b => !/^💬 \d+ texts? may be waiting|^✅ nothing on your to-do list/.test(b)).join('\n\n'); } catch (e) {}
   try { const dv = devLeadsDueText(); if (dv) todo = [todo, dv].filter(Boolean).join('\n\n'); } catch (e) {}
   if (need.length) parts.push('🙋 still needs you:\n\n' + need.join('\n\n'));
   if (todo) parts.push(todo);
 
-  // 3. Who to reach out to: email clicks/opens in the last day, then new leads nobody has contacted yet.
+  // 3. Gold mine (morning only): people in the database nobody has personally followed up with, each with a drafted
+  // text or email waiting for his OK. Then: who to reach out to (email clicks/opens in the last day, new leads).
+  const seen = {};
+  if (opts.morning) { try { const o = findOpportunities(3); o.ids.forEach(id => seen[id] = 1); if (o.text) parts.push(o.text); } catch (e) { console.log('Opportunities: ' + e.message); } }
   try {
-    const picks = [], seen = {};
+    const picks = [];
     const add = (id, why) => {
       if (!id || seen[id] || picks.length >= 6) return; seen[id] = 1;
       let p = null; try { p = fubFetch('people/' + id + '?fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones', null, 'get'); } catch (e) { return; }
@@ -4108,9 +4109,91 @@ function morningUpdateText() {
 
   // 5. Only if something is actually down right now.
   if (props.getProperty('BB_DOWN_SINCE')) parts.push('⚠️ the texting Mac is offline, so I can\'t send or read texts. Wake it up or restart BlueBubbles.');
-  if (parts.length === 2 && /nothing on your calendars/.test(parts[1])) parts.push('🎉 Nothing open. Clear day.');
+  if (parts.filter(Boolean).length <= 2 && /nothing on your calendars/.test(parts[1])) parts.push('🎉 Nothing open. Clear day.');
   props.setProperty('WHATSNEW_AT', String(now));
   return parts.filter(Boolean).join('\n\n');
+}
+
+// GOLD MINE (Julián, Nov 18: "Shawna should see the database as a gold mine… open house visitors who haven't been
+// spoken to… emails, texts or voice memos"). Every morning she picks the few best people in his Follow Up Boss who came in
+// (open house, call, website, text) or are warm/hot, but have had no personal touch (text, call, email from him or
+// Shawna) in 14+ days, writes each a short follow-up as Julián and queues it for his OK. Text only with Text OK, else an
+// email from bcolv. Nothing is sent without his YES; he can also ask for a voice memo instead. Each person is suggested
+// at most once every 14 days (OPP_SEEN). OPPORTUNITIES=off turns it off; OPPORTUNITIES_PER_DAY (default 3).
+function findOpportunities(max) {
+  const props = PropertiesService.getScriptProperties(), now = Date.now(), out = {ids: [], text: ''};
+  if (props.getProperty('OPPORTUNITIES') === 'off') return out;
+  max = Number(props.getProperty('OPPORTUNITIES_PER_DAY') || max || 3);
+  const key = props.getProperty('GROQ_API_KEY'); if (!key) return out;
+  const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+  const seenMap = JSON.parse(props.getProperty('OPP_SEEN') || '{}');
+  Object.keys(seenMap).forEach(k => { if (now - seenMap[k] > 30 * 864e5) delete seenMap[k]; });
+  const fields = 'id,name,firstName,lastName,created,source,stage,tags,assignedUserId,phones,emails';
+  const pool = {};
+  ['Open House', 'Phone Lead', 'Website Lead', 'Texted In', 'Instagram DM', 'Tier A', 'Tier B'].forEach(tag => {
+    try { (fubFetch('people?tags=' + encodeURIComponent(tag) + '&limit=60&sort=-created&fields=' + fields, null, 'get').people || []).forEach(p => pool[p.id] = p); } catch (e) {}
+  });
+  const has = (p, re) => (p.tags || []).some(t => re.test(t));
+  const score = p => (has(p, /^open house$/i) ? 5 : 0) + (has(p, /^Tier A$/) ? 4 : has(p, /^Tier B$/) ? 3 : 0) + (has(p, /^(Phone Lead|Website Lead|Texted In|Instagram DM)$/) ? 3 : 0) +
+    (has(p, /^Clicked Email$/) ? 3 : has(p, /^Opened Email$/) ? 2 : 0) + (has(p, /^(Likely Seller|Relocation|Luxury Buyer|Buyer)$/) ? 1 : 0) + (has(p, /^Text OK$/) ? 1 : 0);
+  let queued = {};
+  try { const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+    if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach(r => { if (/^(pending|review|held)$/.test(r[4])) queued[r[1]] = 1; }); } catch (e) {}
+  const cands = Object.keys(pool).map(k => pool[k]).filter(p => Number(p.assignedUserId) === Number(me) && !isTestPerson(p) && !seenMap[p.id] && !queued[p.id] &&
+    now - new Date(p.created).getTime() > 2 * 864e5 && /^(Lead|Prospect|Nurture|Active Client|Hot Prospect)?$/i.test(String(p.stage || 'Lead')) &&
+    !has(p, /^(Not Interested|Unsubscribed|Do Not Email|Has Agent|Deceased|Bad Email|Agent|Partner|Referral Partner|Not Now|No Shawna|Pause|Text Opt-Out)$/i))
+    .sort((a, b) => score(b) - score(a) || new Date(b.created) - new Date(a.created)).slice(0, 14);
+  const picks = [];
+  cands.forEach(p => {
+    if (picks.length >= max) return;
+    const phone = bbE164(((p.phones || [])[0] || {}).value || ''), email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
+    const textOk = phone && has(p, /^Text OK$/) && !has(p, /^Not DNC checked$/);
+    if (!textOk && !email) return;
+    let notes = [], touched = 0;
+    try { notes = fubFetch('notes?personId=' + p.id + '&limit=15&sort=-created&fields=subject,body,created', null, 'get').notes || []; } catch (e) {}
+    notes.forEach(n => { if (/^(Text sent|Text from Juli|Email sent|Voice memo|Call|Send (bcolv )?(text|email)|Shawna (draft|replied)|Call notes)/i.test(n.subject || '')) touched = Math.max(touched, new Date(n.created).getTime()); });
+    try { (fubFetch('calls?personId=' + p.id + '&limit=3', null, 'get').calls || []).forEach(c => touched = Math.max(touched, new Date(c.created).getTime())); } catch (e) {}
+    if (now - touched < 14 * 864e5) return;
+    const how = has(p, /^open house$/i) ? 'signed in at an open house' : has(p, /^Phone Lead$/) ? 'called in' : has(p, /^Texted In$/) ? 'texted in' :
+      has(p, /^Instagram DM$/) ? 'messaged on Instagram' : has(p, /^Website Lead$/) ? 'came in through juliancrider.com' : 'is in his database';
+    const ctx = notes.filter(n => !/^(Shawna tagged|Funnel|Tier)/i.test(n.subject || '')).slice(0, 4).map(n => (n.subject || '') + ': ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 220)).join(' | ');
+    picks.push({p: p, phone: phone, email: email, textOk: textOk, how: how, touched: touched, ctx: ctx,
+      first: realFirst(p), who: [realFirst(p), p.lastName].join(' ').trim() || p.name,
+      interest: (p.tags || []).filter(t => /^(Buyer|Likely Seller|Relocation|Luxury Buyer|Open House Neighbor|Investor|Seller)$/i.test(t)).join(', ')});
+  });
+  if (!picks.length) return out;
+  let drafts = [];
+  try {
+    const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: 'You write short personal follow-ups AS Julián (first person), a real estate agent, advisor and developer in Las Vegas and Henderson. ' +
+        'Each person came in some way and nobody has personally followed up in a while. Write like a real person checking in, not a drip email: warm, brief, ' +
+        'reference how they came in only from the facts given, one easy no-oriented or open question (Chris Voss style, e.g. "Would it be crazy to…", "Are you still…", "What would make…"). ' +
+        'Never invent facts, homes, addresses, prices, rates or market numbers. No deal numbers. Fair Housing safe. Texts: 1 to 3 sentences, at most one emoji, no links, no sign-off. ' +
+        'Emails: a short plain subject and 3 to 5 sentences, signed "Julián". No dashes.' + julianVoice() +
+        '\nReturn JSON: {"drafts":[{"id":<person id>,"text":"...","subject":"... (emails only)"}]}'},
+      {role: 'user', content: picks.map(x => 'id ' + x.p.id + ': ' + x.who + ' (' + (x.textOk ? 'TEXT' : 'EMAIL') + '). They ' + x.how + ' on ' +
+        Utilities.formatDate(new Date(x.p.created), 'America/Los_Angeles', 'MMM d') + '. ' + (x.interest ? 'Tags: ' + x.interest + '. ' : '') +
+        (x.touched ? 'Last personal touch ' + Math.floor((now - x.touched) / 864e5) + ' days ago. ' : 'No personal follow-up yet. ') + (x.ctx ? 'Notes: ' + x.ctx : '')).join('\n\n')}],
+      {maxTokens: 1400})).drafts || [];
+    drafts = r;
+  } catch (e) { console.log('Opportunity drafts: ' + e.message); return out; }
+  const lines = [];
+  picks.forEach(x => {
+    const d = drafts.filter(d => String(d.id) === String(x.p.id))[0];
+    if (!d || !d.text) return;
+    const msg = humanize(d.text);
+    if (greetMismatch && greetMismatch(msg, x.p)) return;
+    const n = x.textOk ? addPending({personId: x.p.id, who: x.who, phone: x.phone, message: msg, at: now, long: true})
+      : addPending({kind: 'email', personId: x.p.id, who: x.who, email: x.email, subject: humanize(d.subject || 'Checking in'), message: msg, at: now});
+    seenMap[x.p.id] = now; out.ids.push(x.p.id);
+    const since = x.touched ? 'no personal touch in ' + Math.floor((now - x.touched) / 864e5) + ' days' : 'nobody has followed up yet';
+    lines.push('#' + n + ' ' + x.who + ': ' + x.how.replace(/ is in his database/, 'in your database').replace(/^/, '') + ', ' + since + '.\n' +
+      (x.textOk ? viaText(x.phone) : viaEmail(x.email)) + '\n"' + msg + '"');
+  });
+  props.setProperty('OPP_SEEN', JSON.stringify(seenMap));
+  if (lines.length) out.text = '💎 follow-ups I wrote for you (people nobody has reached in a while):\n\n' + lines.join('\n\n') +
+    '\n\nWant me to send them? Say yes to all, or yes with the number. I can make any of them a voice memo from me instead.';
+  return out;
 }
 
 /** Fridays 9am: how the week went, by text (and a copy by email to julianc@bcolv.com). */
@@ -5031,6 +5114,14 @@ function bossCommand(text, tries) {
   // A pending "send this text?" waiting for YES / NO
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   const queue = pendingQueue();
+  // "yes to all" / "send them all" / "yes 1 and 3" (Nov 18, the morning follow-ups come in a batch): approve each one.
+  const YES_WORD = /^\s*(?:yes|y|yeah|yep|sure|send|send it|go|go ahead|ok|okay|bet|run it|do it|approved?)(?:\s+please)?\s*/i;
+  if (queue.length && YES_WORD.test(text)) {
+    const rest = text.replace(YES_WORD, '');
+    const nums = /^(?:to\s+|for\s+)?(?:them\s+)?(?:all|every\s*(?:one|thing))(?:\s+of\s+them)?\s*[.!👍🏾👍]*\s*$/i.test(rest) ? queue.map(x => x.n)
+      : /^(?:to\s+|for\s+)?#?\d+(?:\s*(?:,|&|and|\+)?\s*#?\d+)+\s*[.!]*\s*$/i.test(rest) ? (rest.match(/\d+/g) || []).map(Number) : null;
+    if (nums && nums.length) { nums.forEach(n => { try { bossCommand('yes ' + n, 1); } catch (e) { console.log('Approve #' + n + ': ' + e.message); } }); return; }
+  }
   const ym = text.match(/^\s*(?:yes|y|yeah|yep|yup|sure|send|send it|go|go ahead|ok|okay|bet|run it|do it|do that|sounds good|perfect|approved?)(?:\s+please)?\s*(?:to|for)?\s*(?:#|number|no\.)?\s*(\d)?\s*[.!👍🏾👍]*\s*$/i);
   // "no all" / "cancel all": clear every approval that's waiting.
   if (/^\s*(no|cancel|clear|nah)\s+(them\s+)?all\s*(approvals?)?\s*[.!]*\s*$/i.test(text) && /^\s*(no|nah|cancel)|approval/i.test(text)) {
