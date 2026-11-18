@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-18-goldmine';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-18-hangups';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4922,7 +4922,8 @@ function sendCallAudio() {
         for (let i = 0; i < urls.length && !res; i++) res = tryGet(urls[i]) || tryGet(urls[i], true);
       } catch (e) {}
     }
-    if (!res) throw new Error('recording 403');
+    if (!res) { let code = 0; try { code = UrlFetchApp.fetch(x.url, {muteHttpExceptions: true}).getResponseCode(); } catch (e) {}
+      throw new Error((/hipaa-recordings|r2\.cloudflarestorage\.com/.test(x.url) ? 'private' : 'recording ' + (code || 'error'))); }
     let who = '';
     if (x.num) { try { const p = (fubFetch('people?limit=1&fields=id,name&phone=' + x.num.slice(2), null, 'get').people || [])[0]; who = p ? p.name : ''; } catch (e) {} }
     if (!who) who = (teamDirectory() || {})[x.num] || (x.num ? x.num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'a caller');
@@ -4936,7 +4937,13 @@ function sendCallAudio() {
   } catch (e) {
     x.tries++;
     console.log('Call audio not sent yet: ' + e.message);
-    if (/too big/.test(e.message) || (/recording 4\d\d/.test(e.message) && x.tries >= 3)) { list.shift(); try { bossTextSafe('🎧 I couldn\'t text you that call recording (' + e.message + '). It\'s linked in the call note in Follow Up Boss.'); } catch (e2) {} }
+    if (e.message === 'private' && x.tries >= 2) {  // Vapi's HIPAA setting keeps recordings in a private bucket nobody can download
+      list.shift();
+      const day = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyyMMdd');
+      if (props.getProperty('REC_PRIVATE_WARN') !== day) { props.setProperty('REC_PRIVATE_WARN', day);
+        try { bossTextSafe('🎧 I can\'t text you call recordings yet: Vapi is saving them as private (its HIPAA setting is on), so they can\'t be downloaded. ' +
+          'In Vapi: open your assistant, go to Advanced, turn HIPAA off, and Publish. You can still play every call in Vapi under Call Logs.'); } catch (e2) {} }
+    } else if (/too big/.test(e.message) || (/recording /.test(e.message) && x.tries >= 3)) { list.shift(); try { bossTextSafe('🎧 I couldn\'t text you that call recording (' + e.message + '). You can play it in Vapi under Call Logs.'); } catch (e2) {} }
   }
   props.setProperty('CALL_AUDIO', JSON.stringify(list));
 }
@@ -6382,7 +6389,7 @@ function vapiEndOfCall(m, props) {
   const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
   // Julián, Nov 14: like a voicemail, the call recording comes to him by text right after the summary (queued, so a
   // sleeping Mac doesn't lose it; processAssistantQueue sends it within a minute or two).
-  if (rec && Number(m.durationSeconds || 99) >= 8) { try { queueCallAudio(rec, num, mins, String((m.call || {}).id || m.callId || '')); } catch (e) { console.log('Call audio: ' + e.message); } }
+  if (rec) { try { queueCallAudio(rec, num, mins, String((m.call || {}).id || m.callId || '')); } catch (e) { console.log('Call audio: ' + e.message); } }
   let callerName = '', recapInfo = null;
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
@@ -6450,6 +6457,18 @@ function vapiEndOfCall(m, props) {
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (num && num === boss) {  // Julián testing from his own phone: no call-back task, but show him what a caller would get
     // Julián testing from his own phone: logged in FUB, no alert (Nov 13: he doesn't want updates about his own tests).
+    return json({status: 'ok'});
+  }
+  // Hang-ups (Nov 18, 702-233-3301 called twice and said nothing: two "Someone called" alerts, two tasks): the caller never
+  // spoke → one short "missed call" alert and one call-back task per number per 15 minutes.
+  const spoke = /(^|\n)\s*(User|Customer|Caller)\s*:/i.test(transcript);
+  if (!spoke || /no (caller )?(information|details)|did not provide any|^no summary/i.test(String(summary || ''))) {
+    const ck = CacheService.getScriptCache(), hk = 'HANGUP_' + (num || person.id);
+    if (ck.get(hk)) return json({status: 'ok'});
+    ck.put(hk, '1', 900);
+    try { notifyJulian('📞 Missed call from ' + (callerName || fmtNum(num)), 'They hung up before saying anything. There\'s a call-back task in Follow Up Boss.'); } catch (e) {}
+    createCallTask(person.id, 'Called and hung up before leaving a message. Call them back.', 'Call');
+    stat('calls');
     return json({status: 'ok'});
   }
   try { notifyJulian((callerName || 'Someone') + ' called', assistantName() + ' took a call' + (num ? ' from ' + num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : '') + ': ' + String(summary || 'no summary').slice(0, 220) + ' There\'s a call-back task in Follow Up Boss.'); } catch (e) {}
