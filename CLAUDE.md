@@ -731,6 +731,18 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   closer also matches "we'll let you know" (Emilee got a reply after "Ok great we will let you know! Thank you!").
   Call audio (Nov 17, Lori's recording link didn't open): sendCallAudio retries with the Vapi key and fresh URLs from GET
   api.vapi.ai/call/<id> (queue keeps callId); tells him after 3 failed tries.
+- Nov 17 (later): Top 200 only real, reachable people (no test contacts/Unknown, no Unsubscribed/Do Not Email/Not Interested/Bad
+  Email/Text Opt-Out unless Text OK, no Bounced without Opened Email, no never-engaged Farm/Not DNC checked Nurture; it was
+  198 with ~110 untouched farm contacts); Hot removes a leftover Warm tag. `trashBouncedOnce` (BOUNCED_TRASHED, hourly hook,
+  his OK "move them to Trash"): 88 Bounced → stage Trash + tag Bad Email, except Opened/Clicked Email, past client,
+  Referrer, Business & VIP, Top 200 or stage ≠ Lead (tag only); texts him the counts.
+  Company lookup: boss "company: X" / "company lookup X" / "registered agent for X" / "look up the company X" →
+  `companyLookupText` (OpenCorporates us_nv search link + SilverFlume esos.nv.gov; NV SOS has no API; TruePeopleSearch
+  not connected: no API and its terms forbid automated lookups).
+  Development Leads: a .xlsx/.xls/.csv texted from his phone → `importDevLeads` (BlueBubbles download; xlsx saved in Drive
+  "Development Leads" and converted via Drive v3 copy) → "Development Leads" tab (his columns + Status / Next step / Follow up /
+  Last update / Notes; matched by first column). Boss "dev leads" lists them (follow-ups first); "dev: <name> <update>"
+  logs a note + "status: …" / "next: …" / a follow-up date (resolveWhen). Due follow-ups show in agendaText.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
