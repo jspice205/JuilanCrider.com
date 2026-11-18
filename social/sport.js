@@ -44,6 +44,12 @@ const SETS = {
              ['Golf by the water', 'Reflection Bay, a Jack Nicklaus design, runs along the shoreline, and SouthShore has its own course.'],
              ['Gated and quiet', 'Enclaves like SouthShore are guard-gated, with hillside homes looking out over the lake and mountains.'],
              ['Close, but away', 'About 30 minutes to the Strip and the airport, but it feels like a weekend getaway every day.']]},
+  highlands: {bg: 'explore-high-roller.jpg', tag: 'Lifestyle · Luxury', cover: ['MacDonald Highlands', '& The Ridges'], sub: 'Two hillside enclaves, two ways to live',
+    slides: [['Two guard-gated hillsides', 'MacDonald Highlands in Henderson and The Ridges in Summerlin. Both gated, both known for custom and semi-custom homes.'],
+             ['MacDonald Highlands', 'Hillside lots in Henderson looking out over the valley and the Strip, home to DragonRidge Country Club, a private golf club.'],
+             ['The Ridges', 'Custom estates on the west side of Summerlin, minutes from Red Rock Canyon and Downtown Summerlin.'],
+             ['Pick by your daily life', 'Henderson side: closer to the airport and Lake Las Vegas. Summerlin side: closer to Red Rock trails, shopping and dining.'],
+             ['Tour both, day and night', 'Lot slope, view lines, privacy and HOA rules change street to street. See them in person before you choose.']]},
 };
 
 // Color palettes. Pick with PALETTE=<name>. Default "quiet" (black/white, red only on the tag and button; Julián's pick Oct 31).
