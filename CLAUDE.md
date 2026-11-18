@@ -748,6 +748,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   RealScout himself for property lookups. API token planned: REALSCOUT_API_KEY via Settings tab + API docs link (not built yet).
   Meta (Nov 17): business portfolio "juliancriderestates" is restricted from Events Manager (Pixel) for years; he was told to
   Request Review + complete Business info; never create a new portfolio to get around a restriction.
+  Google Analytics (Nov 17): GA4 G-2Y3G2S4T47 loads in loadThirdParty() only after cookie Accept (consent saved in
+  localStorage jc_consent, banner no longer returns); sendLead fires gtag 'generate_lead' {lead_type}. Not on sign.html.
+  Social plan: real estate gets its own YouTube channel ("Julián Crider | Las Vegas Real Estate") and TikTok business account;
+  "Julian Crider Golfs" stays for golf / Sahara Investment Group content (compliance first). Reels cross-post via Metricool.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

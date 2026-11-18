@@ -1068,7 +1068,7 @@ img{max-width:100%;display:block}
 </div>
 <div id="printArea"></div>
 <div class="cookie" id="cookie" role="dialog" aria-label="Cookie consent">
-  <p><b>Your privacy</b> This site uses cookies and outside services (live MLS search, web fonts and, later, analytics). None of them load until you accept.</p>
+  <p><b>Your privacy</b> This site uses cookies and outside services (live MLS search, web fonts and Google Analytics). None of them load until you accept.</p>
   <div class="duo"><button class="pill ghost" data-consent="decline">Decline</button><button class="pill" data-consent="accept">Accept</button></div>
 </div>
 
@@ -2187,6 +2187,7 @@ const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzqOjOSjwfZynEC6uNUlh
 function chipVal(scope, name){ const b = scope.querySelector(`[data-chips="${name}"]`); return b ? (b.dataset.value || '') : ''; }
 function joinNotes(parts){ return parts.filter(p => p && String(p).split(': ')[1]).join(' | '); }
 function sendLead(payload){
+  try { if (window.gtag && payload && payload.action !== 'enrich') gtag('event', 'generate_lead', {lead_type: String(payload.type || payload.tab || 'lead').slice(0, 80)}); } catch(e){}
   try { fetch(SHEET_URL, {method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)}).catch(()=>{}); } catch(e){}
 }
 function contactVals(){ const v = id => ($(id) ? $(id).value.trim() : ''); return {name: (v('fFirst')+' '+v('fLast')).trim(), phone: v('fPhone'), email: v('fEmail')}; }
@@ -2736,9 +2737,14 @@ function loadThirdParty(){
   if (!document.getElementById('gfont')){ const l = document.createElement('link'); l.id='gfont'; l.rel='stylesheet'; l.href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'; document.head.appendChild(l); }
   const box = $('idxBox'); if (IDX_EMBED_ENABLED && box && !box.querySelector('iframe')) box.innerHTML = `<iframe title="Las Vegas MLS home search" src="${IDX_URL}" loading="lazy"></iframe>`;
   if ($('cmap')) loadCommunityMap();
-  // Analytics and tracking pixels go here in the build, and only here.
+  // Google Analytics (GA4, Nov 17): only after Accept, like everything else here.
+  if (!window.gtag){ window.dataLayer = window.dataLayer || []; window.gtag = function(){ dataLayer.push(arguments); };
+    gtag('js', new Date()); gtag('config', 'G-2Y3G2S4T47');
+    const g = document.createElement('script'); g.async = true; g.src = 'https://www.googletagmanager.com/gtag/js?id=G-2Y3G2S4T47'; document.head.appendChild(g); }
 }
-function setConsent(v){ consent = v; $('cookie').hidden = true; if (v === 'accept') loadThirdParty(); }
+function setConsent(v){ consent = v; $('cookie').hidden = true; try { localStorage.setItem('jc_consent', v); } catch(e){} if (v === 'accept') loadThirdParty(); }
+// Remember the choice so the banner doesn't come back every visit.
+try { const saved = localStorage.getItem('jc_consent'); if (saved) { consent = saved; $('cookie').hidden = true; if (saved === 'accept') loadThirdParty(); } } catch(e){}
 document.addEventListener('click', e => { const b = e.target.closest('[data-consent]'); if (b) setConsent(b.dataset.consent); });
 $('cookieSettings').onclick = () => { $('cookie').hidden = false; };
 
