@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-17-voss-rules';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-17-devleads';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -389,10 +389,119 @@ function autoUpdateFromGitHub() {
   try { monthlyMarketMemo(); } catch (e) { console.log('Market memo: ' + e.message); }
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '3') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
+  try { if (PropertiesService.getScriptProperties().getProperty('BOUNCED_TRASHED') !== '1') trashBouncedOnce(); } catch (e) { console.log('Bounced trash: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
   } catch (e) { console.log('Email footer: ' + e.message); }
+}
+
+/** "company Desert Rose LLC" / "registered agent for …": Nevada SOS has no API, so Shawna sends ready links. */
+function companyLookupText(text) {
+  const name = String(text || '').replace(/^\s*(who('s| is) the\s+)?/i, '').replace(/^\s*(look up (the )?)?(company|business|entity|llc|corp(oration)?|registered agent)( look ?up| search| info)?\s*(for|on|of)?\s*[:\-]?\s*/i, '')
+    .replace(/\b(who owns|look up( the)? (company|business|llc)|registered agent( for| of)?)\b/ig, '').replace(/[?.!]+$/, '').trim();
+  if (!name) return 'Which company? Text "company" plus the name, like "company Desert Rose Holdings LLC".';
+  return '🏢 ' + name + '\n\nNevada business records (registered agent, officers, status):\nhttps://opencorporates.com/companies/us_nv?q=' + encodeURIComponent(name) +
+    '\n\nOfficial Nevada SilverFlume search (paste the name there):\nhttps://esos.nv.gov/EntitySearch/OnlineEntitySearch';
+}
+
+const DEV_TAB = {name: 'Development Leads', color: '#8e562e', headers: ['Name / project', 'Status', 'Next step', 'Follow up', 'Last update', 'Notes']};
+/** Loads a spreadsheet Julián texted into the Development Leads tab (his columns kept, plus Status / Next step / Follow up /
+ *  Last update / Notes). Rows are matched by their first column, so sending an updated file updates, never duplicates. */
+function importDevLeads(att) {
+  const props = PropertiesService.getScriptProperties();
+  const res = UrlFetchApp.fetch(props.getProperty('BB_URL').replace(/\/+$/, '') + '/api/v1/attachment/' + encodeURIComponent(att.guid) + '/download?password=' + encodeURIComponent(props.getProperty('BB_PASSWORD')), {muteHttpExceptions: true});
+  if (res.getResponseCode() >= 300) throw new Error('download ' + res.getResponseCode());
+  const name = att.transferName || 'leads.xlsx';
+  let rows;
+  if (/\.csv$/i.test(name)) rows = Utilities.parseCsv(res.getContentText());
+  else {
+    const folder = DriveApp.getFoldersByName('Development Leads').hasNext() ? DriveApp.getFoldersByName('Development Leads').next() : DriveApp.createFolder('Development Leads');
+    const file = folder.createFile(res.getBlob().setName(name));
+    const conv = JSON.parse(UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + file.getId() + '/copy', {method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: {Authorization: 'Bearer ' + ScriptApp.getOAuthToken()}, payload: JSON.stringify({mimeType: 'application/vnd.google-apps.spreadsheet', name: name.replace(/\.\w+$/, '') + ' (copy)', parents: [folder.getId()]})}).getContentText());
+    if (!conv.id) throw new Error('Google couldn\'t convert the file');
+    rows = SpreadsheetApp.openById(conv.id).getSheets()[0].getDataRange().getDisplayValues();
+  }
+  rows = rows.filter(r => r.some(c => String(c).trim()));
+  if (rows.length < 2) throw new Error('no rows under the header');
+  const head = rows[0].map(h => String(h).trim()), sh = ensureTab(getSS(), DEV_TAB);
+  let cur = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0].map(String);
+  // Use his first column as the key column header the first time.
+  if (sh.getLastRow() <= 1 && cur[0] === DEV_TAB.headers[0] && head[0]) { cur[0] = head[0]; }
+  head.forEach(h => { if (h && !cur.some(c => c.toLowerCase() === h.toLowerCase())) cur.push(h); });
+  sh.getRange(1, 1, 1, cur.length).setValues([cur]);
+  const idx = h => cur.findIndex(c => c.toLowerCase() === String(h).toLowerCase());
+  const last = sh.getLastRow(), existing = last > 1 ? sh.getRange(2, 1, last - 1, cur.length).getValues() : [];
+  const key = v => String(v || '').trim().toLowerCase();
+  let added = 0, updated = 0;
+  rows.slice(1).forEach(r => {
+    const k = key(r[0]); if (!k) return;
+    let row = existing.find(e => key(e[0]) === k), isNew = !row;
+    if (isNew) { row = new Array(cur.length).fill(''); existing.push(row); }
+    head.forEach((h, i) => { const j = idx(h); if (j >= 0 && String(r[i]).trim()) row[j] = r[i]; });
+    if (!row[idx('Status')]) row[idx('Status')] = 'New';
+    row[idx('Last update')] = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'M/d/yyyy');
+    if (isNew) added++; else updated++;
+  });
+  existing.forEach(r => { while (r.length < cur.length) r.push(''); });
+  if (existing.length) sh.getRange(2, 1, existing.length, cur.length).setValues(existing);
+  return '📁 Development Leads: ' + added + ' new, ' + updated + ' updated (' + existing.length + ' total). Text "dev leads" to see them, or "dev: <name> <update>" to log progress, like "dev: Blue Diamond lot, met the owner, follow up Friday".';
+}
+/** "dev leads" lists them (follow-ups due first); "dev: <name> <update>" logs a note, a status ("status: under contract")
+ *  and a follow-up date if he says one. Due follow-ups also show in the morning briefing. */
+function devLeadsCommand(text) {
+  const sh = getSS().getSheetByName(DEV_TAB.name);
+  if (!sh || sh.getLastRow() < 2) return 'No development leads yet. Text me your spreadsheet (.xlsx or .csv) and I\'ll load it.';
+  const cur = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String), idx = h => cur.findIndex(c => c.toLowerCase() === h.toLowerCase());
+  const data = sh.getRange(2, 1, sh.getLastRow() - 1, cur.length).getValues(), tz = 'America/Los_Angeles';
+  const fu = r => { const v = r[idx('Follow up')]; return v instanceof Date ? v : v ? new Date(v) : null; };
+  if (!String(text || '').trim()) {
+    const list = data.filter(r => String(r[0]).trim()).sort((a, b) => (fu(a) || 9e15) - (fu(b) || 9e15)).slice(0, 12);
+    return '🏗 Development leads (' + data.filter(r => String(r[0]).trim()).length + ')\n\n' + list.map(r => { const f = fu(r);
+      return '• ' + r[0] + ' · ' + (r[idx('Status')] || 'New') + (f && !isNaN(f) ? ' · follow up ' + Utilities.formatDate(f, tz, 'EEE M/d') : '') + (r[idx('Next step')] ? '\n  next: ' + r[idx('Next step')] : ''); }).join('\n\n');
+  }
+  const t = String(text).trim(), low = t.toLowerCase();
+  const hitI = data.findIndex(r => { const n = String(r[0]).toLowerCase().trim(); return n && (low.indexOf(n) === 0 || n.split(/\s+/).filter(w => w.length > 3).some(w => low.indexOf(w) >= 0)); });
+  if (hitI < 0) return 'I couldn\'t match that to a development lead. Start with its name as it appears in the list ("dev leads" shows them).';
+  const r = data[hitI], stamp = Utilities.formatDate(new Date(), tz, 'M/d');
+  const st = t.match(/status\s*[:\-]\s*([^.;\n]+)/i); if (st) r[idx('Status')] = st[1].trim();
+  const nx = t.match(/next( step)?\s*[:\-]\s*([^.;\n]+)/i); if (nx) r[idx('Next step')] = nx[2].trim();
+  const when = resolveWhen(t); if (when) r[idx('Follow up')] = Utilities.parseDate(when.replace('T', ' '), tz, 'yyyy-MM-dd HH:mm');
+  r[idx('Notes')] = (stamp + ': ' + t + (r[idx('Notes')] ? '\n' + r[idx('Notes')] : '')).slice(0, 4000);
+  r[idx('Last update')] = Utilities.formatDate(new Date(), tz, 'M/d/yyyy');
+  sh.getRange(hitI + 2, 1, 1, cur.length).setValues([r]);
+  return '🏗 Logged on ' + r[0] + (st ? '\nStatus: ' + r[idx('Status')] : '') + (when ? '\nFollow up: ' + Utilities.formatDate(r[idx('Follow up')], tz, 'EEE M/d') : '');
+}
+function devLeadsDueText() {
+  try {
+    const sh = getSS().getSheetByName(DEV_TAB.name); if (!sh || sh.getLastRow() < 2) return '';
+    const cur = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(String), i = cur.findIndex(c => /^follow up$/i.test(c)); if (i < 0) return '';
+    const end = new Date(); end.setHours(23, 59, 59);
+    const due = sh.getRange(2, 1, sh.getLastRow() - 1, cur.length).getValues().filter(r => r[i] && new Date(r[i]) <= end && String(r[0]).trim());
+    return due.length ? '🏗 Development follow-ups\n\n' + due.map(r => '• ' + r[0]).join('\n\n') : '';
+  } catch (e) { return ''; }
+}
+
+/** One time (Julián, Nov 17: "move them to Trash"): contacts whose email bounced go to stage Trash with tag "Bad Email".
+ *  Kept out of Trash (tag only): anyone who opened an email, past clients, referrers / VIPs, Top 200, and anyone who
+ *  isn't a plain Lead. Only his own contacts. */
+function trashBouncedOnce() {
+  const props = PropertiesService.getScriptProperties();
+  const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
+  const people = (fubFetch('people?tags=Bounced&limit=100&fields=id,name,tags,stage,assignedUserId', null, 'get').people || []).filter(p => Number(p.assignedUserId) === Number(me));
+  let trashed = 0, kept = 0;
+  people.forEach(p => {
+    const t = p.tags || [], has = x => t.indexOf(x) >= 0;
+    const keep = has('Opened Email') || has('Clicked Email') || has('past client') || has('Referrer') || has('Business & VIP') || has('Top 200') || p.stage !== 'Lead';
+    try {
+      fubFetch('people/' + p.id + '?mergeTags=true', keep ? {tags: ['Bad Email']} : {tags: ['Bad Email'], stage: 'Trash'}, 'put');
+      if (keep) kept++; else trashed++;
+    } catch (e) { console.log('Bounced ' + p.id + ': ' + e.message); }
+  });
+  props.setProperty('BOUNCED_TRASHED', '1');
+  try { bossTextSafe('🗑 Done: moved ' + trashed + ' bounced-email contacts to Trash (tag "Bad Email"). Kept ' + kept + ' out of Trash because they opened an email before, are a past client or referrer, or are in your Top 200; they just got the "Bad Email" tag.'); } catch (e) {}
+  return {trashed: trashed, kept: kept};
 }
 
 // EMAIL OPENS — hourly (from autoUpdateFromGitHub). Reads FUB's email events (opens, clicks, unsubscribes from your
@@ -997,7 +1106,15 @@ function scoreFubDatabase() {
   // The sifter (Nov 13, Julián: "a top 100 or 200 that keep flowing through the database"): the 200 best-scored Hot/Warm/
   // Nurture contacts carry the tag "Top 200" (a Smart List shows them); every night some move up, some fall back.
   const topIds = {}, moves = {up: [], down: []}, RANK = {'Tier A': 3, 'Tier B': 2, 'Tier C': 1};
-  rows.filter(r => /^(Hot|Warm|Nurture)$/.test(r.s.tier)).slice(0, 200).forEach(r => topIds[r.p.id] = 1);
+  // Nov 17 check: test contacts, unsubscribed / bad-email / not-interested people and ~110 never-contacted farm (Not DNC
+  // checked) contacts were filling the list. Only real, reachable people now; the list may hold fewer than 200.
+  const topOk = r => { const t = r.p.tags || [], has = x => t.indexOf(x) >= 0;
+    if (isTestPerson(r.p) || /^(unknown|no name)$/i.test(String(r.p.name || '').trim())) return false;
+    if (['Unsubscribed', 'Do Not Email', 'Not Interested', 'Bad Email', 'Text Opt-Out'].some(has) && !has('Text OK')) return false;
+    if (has('Bounced') && !has('Opened Email')) return false;
+    if ((has('Farm') || has('Not DNC checked')) && r.s.tier === 'Nurture' && !has('Opened Email') && !has('Clicked Email')) return false;
+    return true; };
+  rows.filter(r => /^(Hot|Warm|Nurture)$/.test(r.s.tier) && topOk(r)).slice(0, 200).forEach(r => topIds[r.p.id] = 1);
   if (PropertiesService.getScriptProperties().getProperty('SCORECARD_TAGS') !== 'no') {
     for (const {p, s} of rows) {
       if (!(s.tier in TIERS)) continue;  // past clients, partners and active clients keep their own tags
@@ -1005,6 +1122,7 @@ function scoreFubDatabase() {
       let next = old.filter(t => !/^Tier [ABC]$/.test(t));
       if (TIERS[s.tier]) next.push(TIERS[s.tier]);
       next = next.filter(t => t !== 'Top 200'); if (topIds[p.id]) next.push('Top 200');
+      if (next.indexOf('Hot') >= 0) next = next.filter(t => t !== 'Warm');  // Nov 17: Lisa carried both Hot and Warm
       const was = ['Tier A', 'Tier B', 'Tier C'].filter(hasT)[0], now = TIERS[s.tier], nm = p.name || [p.firstName, p.lastName].join(' ');
       if (was && now && RANK[now] > RANK[was]) moves.up.push(nm + ' (' + now.replace('Tier ', '') + ')'); else if (was && now && RANK[now] < RANK[was]) moves.down.push(nm);
       // Farm, legacy and not-DNC-checked contacts get a Tier but never an automatic plan (legacy goes out in batches).
@@ -3074,6 +3192,13 @@ function bbWebhook(e) {
     const said0 = String(data.text || '');
     const imgs2 = /\b(listing|photos?|pics?|original|enhanced?)\b/i.test(said0) ? imgs : imgs.filter(a => !/\.png$/i.test(a.transferName || '') && !/png/i.test(a.mimeType || ''));
     imgs.length = 0; imgs2.forEach(x => imgs.push(x));
+    // DEVELOPMENT LEADS (Nov 17): a spreadsheet (xlsx/xls/csv) Julián texts is loaded into the "Development Leads" tab.
+    const sheetAtt = (data.attachments || []).filter(a => /\.(xlsx|xls|csv)$/i.test(a.transferName || '') || /spreadsheet|excel|text\/csv/i.test(a.mimeType || ''))[0];
+    if (sheetAtt && from && from === boss0) {
+      let msg; try { msg = importDevLeads(sheetAtt); } catch (e) { msg = '📁 I couldn\'t read that spreadsheet (' + e.message + '). Try sending it as .xlsx or .csv.'; }
+      try { bossTextSafe(msg); } catch (e) {}
+      return json({status: 'ok'});
+    }
     if (imgs.length && from && from === boss0) {
       let n = 0; try { n = queueListingPhotos(imgs, String(data.text || '')); } catch (e) { console.log('Listing photos queue: ' + e.message); }
       if (n && !String(data.text || '').replace(/\ufffc/g, '').replace(/\b(listing|photos?|pics?|original|enhanced?|as is|here|these)\b/gi, '').trim()) return json({status: 'ok'});
@@ -3682,11 +3807,11 @@ function whatsNewText() {
  *  then to-dos, waiting texts and approvals (Julián, Nov 12). */
 function agendaText(week) {
   const range = week ? 'week' : 'today';
-  const parts = [calendarText(range), whatsNewText(), todoText(range)];
+  const parts = [calendarText(range), whatsNewText(), todoText(range), devLeadsDueText()];
   PropertiesService.getScriptProperties().setProperty('WHATSNEW_AT', String(Date.now()));
   if (/nothing new came in/.test(parts[1]) && /nothing on your to-do list/.test(parts[2]) && !/waiting on you|waiting for your OK|scheduled texts/.test(parts[2]))
     parts.push('🎉 Everything\'s done for today. Nice work.');
-  return parts.join('\n\n');
+  return parts.filter(Boolean).join('\n\n');
 }
 
 // ---------- Approvals: several can wait at once, numbered (#1, #2…); plain YES = the newest ----------
@@ -5022,6 +5147,9 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏾🏾👍🏾🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
+  else if (/^\s*(company|business|entity|llc)\s*(look ?up|search|info)?\s*[:\-]\s*\S/i.test(text) || /^\s*(company|business|llc)\s+(look ?up|search)\s+\S/i.test(text) || /^\s*(who('s| is) the\s+)?registered agent\s+(for|of|on)\s+\S/i.test(text) || /^\s*look up (the )?(company|business|llc)\s+\S/i.test(text)) a = {action: 'company', message: text};  // Nov 17
+  else if (/^\s*(dev(elopment)?( leads?| projects?)?|projects?)\s*(list|update|status)?\s*[:?]?\s*$/i.test(text)) a = {action: 'devleads', message: ''};  // Nov 17
+  else if (/^\s*dev(elopment)?( lead| project)?\s*[:\-]\s*\S/i.test(text)) a = {action: 'devleads', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/\b(remove|delete|take (down|out|off)|get rid of|clear|drop|erase)\b.{0,40}\b(photos?|pics?|pictures?|images?)\b/i.test(text) && !/\b(text|email|send)\b/i.test(text)) a = {action: 'listingphotos', message: text};  // Nov 15
   else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete|take (down|out|off)|get rid of|drop) (the )?(photo|pic|picture|image) ?#?\d+|.*\b(duplicate|dupe)s?\b.*\b(photo|pic|picture|image|listing)|.*\b(photo|pic|picture|image)s?\b.*\b(duplicate|dupe|look the same|are the same|repeat)|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
@@ -5351,6 +5479,8 @@ Examples (all mean the same as the action shown):
     if (a.action === 'memoscript') return say(memoScriptText());
     if (a.action === 'listingpage') return say(listingPageCommand(a.message || text));
     if (a.action === 'listingphotos') return say(listingPhotoCommand(a.message || text));
+    if (a.action === 'company') return say(companyLookupText(a.message || text));
+    if (a.action === 'devleads') return say(devLeadsCommand(a.message || ''));
     if (a.action === 'thanks') return say(['You got it 🙏🏾', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
