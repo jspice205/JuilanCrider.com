@@ -763,6 +763,19 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   cleanup notices, duplicates count, opens list. Team activity: his FUB key can't see Joey's/Tana's contacts (people?assignedUserId=1
   → 0) and the only 3 deals are his, so a team section needs Joey (admin) to share access or a broker-level key.
 
+- Gold mine (Nov 18, Julián: "Shawna should see the database as a gold mine… open house visitors who haven't been spoken
+  to… emails, texts or voice memos"; this is his explicit change to the Oct 29 inbound-only rule, approvals only):
+  `findOpportunities` runs inside the 8am update only. Pool = his contacts tagged Open House / Phone Lead / Website Lead /
+  Texted In / Instagram DM / Tier A / Tier B, scored (open house 5, Tier A 4, B 3, lead source 3, clicked 3/opened 2, buyer/
+  seller/relocation 1, Text OK 1); skips test, Not Interested/Unsubscribed/Do Not Email/Has Agent/Agent/Partner/Not Now/
+  No Shawna/Pause/Text Opt-Out/Bad Email/Deceased, non-lead stages, people with Text Queue rows waiting, created <2 days, and
+  anyone with a personal touch (Text sent/Text from Julián/Email sent/Voice memo/Call notes/Shawna replied notes or a logged call)
+  in 14 days. Top 3 (OPPORTUNITIES_PER_DAY) get one Groq-drafted follow-up as Julián (only given facts, no prices, no-oriented
+  question), queued as approvals (text if Text OK and not "Not DNC checked", else bcolv email); OPP_SEEN = once per 14 days
+  per person; OPPORTUNITIES=off stops it. Approvals: "yes to all" / "send them all" / "yes 1 and 3" approve several at once.
+  The "what do I have today/this week" agenda now returns the same trimmed update (agendaText → morningUpdateText({week})),
+  without the follow-up drafts.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
