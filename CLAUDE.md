@@ -751,7 +751,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Google Analytics (Nov 17): GA4 G-2Y3G2S4T47 loads in loadThirdParty() only after cookie Accept (consent saved in
   localStorage jc_consent, banner no longer returns); sendLead fires gtag 'generate_lead' {lead_type}. Not on sign.html.
   Social plan: real estate gets its own YouTube channel ("Julián Crider | Las Vegas Real Estate") and TikTok business account;
-  "Julian Crider Golfs" stays for golf / Sahara Investment Group content (compliance first). Reels cross-post via Metricool.
+  "Julian Crider Golfs" stays for golf / Sahara Investment Group content (compliance first). Reels cross-post via Metricool (Nov 18: all 17 scheduled REELs Nov 19-Jan 16 also go to YouTube Shorts (type short, not for kids, title ending #shorts) + TikTok (public); schedule new Reels to all three; Trial Reels stay Instagram-only; Instagram library music (audioConfiguration) does not carry over).
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
