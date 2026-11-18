@@ -753,6 +753,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Social plan: real estate gets its own YouTube channel ("Julián Crider | Las Vegas Real Estate") and TikTok business account;
   "Julian Crider Golfs" stays for golf / Sahara Investment Group content (compliance first). Reels cross-post via Metricool (Nov 18: all 17 scheduled REELs Nov 19-Jan 16 also go to YouTube Shorts (type short, not for kids, title ending #shorts) + TikTok (public); schedule new Reels to all three; Trial Reels stay Instagram-only; Instagram library music (audioConfiguration) does not carry over).
 
+- Morning update (Nov 18, Julián: "repeats itself… I was there… more current and future facing… leads I could reach out to"):
+  morningBriefing → `morningUpdateText` (the "what do I have today" agenda command is unchanged): today's calendar + tomorrow's
+  first 3; "still needs you" = only open loops (client texts whose thread's last line is theirs, one per person; Shawna's
+  callers with a real ask, one per person, junk/no-info calls skipped; unread emails 3 days; to-dos/approvals/dev follow-ups
+  via todoText); "worth reaching out to" (≤6: email clicks/opens last 24 h, clicks first, then uncontacted leads ≤5 days;
+  his contacts only, skips Not Interested/Unsubscribed/Has Agent/Agent/Partner/Trash/Closed/test; Not DNC checked → "email only");
+  open deals (closings first); a warning only when the texting Mac is down. Dropped: alert recaps, recording errors,
+  cleanup notices, duplicates count, opens list. Team activity: his FUB key can't see Joey's/Tana's contacts (people?assignedUserId=1
+  → 0) and the only 3 deals are his, so a team section needs Joey (admin) to share access or a broker-level key.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
