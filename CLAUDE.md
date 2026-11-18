@@ -791,6 +791,15 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   there (service areas instead), replace the old Development/Investment/Family logo, description/services/hours provided.
   Q&A is off on his profile (Google's "available soon").
 
+- Weekly articles (Nov 18, Julián: "1-3 SEO and AI-targeting blogs a week… don't make up any information… add value"):
+  a weekly scheduled task writes 1-3 new BLOGS entries (fields date + refs [[name, url]] + refnote; facts only from official or
+  primary sources found by web search, cited in refs; no prices, rates, stats or claims that can't be sourced; Fair Housing safe;
+  plain, engaging, Chris Voss-friendly voice; topics his out-of-state/luxury buyers and Las Vegas sellers search for, never
+  repeating a slug). Then `node blog/build.js` (writes static blog/<slug>/index.html pages with title/description/canonical/
+  Article JSON-LD + citations, rebuilds the /blog/ lines in sitemap.xml and the "## Articles" list in llms.txt), PR + squash-merge.
+  The SPA renderer shows the date and a Sources list; "See the original post" only for Instagram-sourced articles (b.ig).
+  First two: nevada-property-tax-cap (Clark County 3%/up-to-8% abatement) and nevada-duties-owed-form (NRED Form 525, NRS 645.252).
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
