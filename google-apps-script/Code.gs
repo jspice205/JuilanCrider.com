@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-15-honest';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-17-voss-rules';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3289,9 +3289,9 @@ function textParagraphs(t) {
   if (tail) paras.push(tail);
   return paras.filter(Boolean).length > 1 ? paras.filter(Boolean).join('\n\n') : t;
 }
-/** Hand emojis in the darkest skin tone (Julián, Nov 14): 👍 → 👍🏿, 🙏 → 🙏🏿; any other tone becomes 🏿 too. */
+/** Hand emojis in the darkest skin tone (Julián, Nov 14): 👍 → 👍🏾, 🙏 → 🙏🏾; any other tone becomes 🏿 too. */
 function darkHands(t) {
-  return String(t || '').replace(/(👍|👎|👋|🙏|👏|🙌|✊|👊|🤛|🤜|💪|✌|🤞|👌|🤌|🤏|🤙|🫶|🤘|☝|👉|👈|👆|👇|✋|🤚|🖐|🫡|🤲|👐|🫰|🫵|🤟|✍)(\uFE0F)?(\uD83C[\uDFFB-\uDFFF])?/g, (m, h) => h + '\uD83C\uDFFF');
+  return String(t || '').replace(/(👍|👎|👋|🙏|👏|🙌|✊|👊|🤛|🤜|💪|✌|🤞|👌|🤌|🤏|🤙|🫶|🤘|☝|👉|👈|👆|👇|✋|🤚|🖐|🫡|🤲|👐|🫰|🫵|🤟|✍)(\uFE0F)?(\uD83C[\uDFFB-\uDFFF])?/g, (m, h) => h + '\uD83C\uDFFE');  // Nov 17: medium-dark 🏾 (was 🏿)
 }
 
 /** Sounds less like a bot (Nov 14, Lisa got "Got it, Lisa." three texts in a row): no "Got it"/"I hear you"-style opener
@@ -3473,7 +3473,7 @@ function assistantReply(person, from, text) {
   // Replies to someone who texted first may go until 10pm (ASSISTANT_END_HOUR); texts Julián starts stay 9am-9pm (TCPA).
   const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
   // The client closed the conversation ("thanks!", "ok", "sounds good", 👍): they get the last word, no reply (Nov 13).
-  const closer = /^\s*(?:(?:ok(?:ay)?|yes|yeah|yep|yup|great|perfect|awesome|got it|sure)[,!.…\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again|julian|julián))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!…🙏👍😊🙂❤️]*$/i.test(text);
+  const closer = /^\s*(?:(?:ok(?:ay)?|great|sounds good|perfect)[,!.\s]*)?(?:we|i)(?:'ll| will) (?:let you know|be in touch|reach out|get back to you)[^?]*$/i.test(text) || /^\s*(?:(?:ok(?:ay)?|yes|yeah|yep|yup|great|perfect|awesome|got it|sure)[,!.…\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again|julian|julián))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!…🙏👍😊🙂❤️]*$/i.test(text);
   // Alert wording (Nov 13): either she's answering (he can jump in) or it's his (she did NOT reply). Never both.
   const willAnswer = ok && !closer && hour >= 8 && hour < endHour && (mode === 'auto' || mode === 'backup' || invited);
   if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
@@ -4312,7 +4312,8 @@ function campaignRosterText(query) {
 const SHAWNA_TAGS = {
   moved_away: ['Moved Away', 'Out of area'], agent: ['Agent', 'Partner'], referral_partner: ['Referral Partner', 'Partner'],
   relocation: ['Relocation'], seller: ['Likely Seller'], investor: ['Investor'], has_agent: ['Has Agent'],
-  bought_elsewhere: ['Bought Elsewhere'], renter: ['Renter'], past_client: ['past client']
+  bought_elsewhere: ['Bought Elsewhere'], renter: ['Renter'], past_client: ['past client'],
+  developer: ['Developer', 'Partner'], contractor: ['General Contractor', 'Partner'], vendor: ['Vendor', 'Partner']
 };
 function applyShawnaTags(personId, keys, where) {
   const add = [];
@@ -4471,7 +4472,7 @@ HOW TO TEXT (this matters most):
 - Sound like a real person texting a friend he respects. Relaxed, warm, specific to what THEY said. Contractions, natural rhythm, a little personality.
 - Catch up like a human first. If they share something personal or casual, respond to that first (a quick reaction, a light question about them) before anything about real estate. Don't rush to business.
 - 1 to 3 short sentences. One question at most, and not every text needs a question.
-- Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏿 🙏🏿 👍🏿 🏡 👀 ☀️ 🔑 👋🏿 😂). Hand emojis always in the darkest skin tone (🏿), Julián's choice; 🙏🏿 is a good thank you, never by habit at the end of every text and never in back-to-back texts.
+- Emojis: most texts have none. Use one only now and then when it truly fits (😊 🙌🏿 🙏🏾 👍🏾 🏡 👀 ☀️ 🔑 👋🏾 😂). Hand emojis always in the darkest skin tone (🏿), Julián's choice; 🙏🏾 is a good thank you, never by habit at the end of every text and never in back-to-back texts.
 - Sound like a person, not a bot (Julián, Nov 14): use their first name once in a while, not in every text; never start two texts in a row the same way (no "Got it, Lisa." every time); a ❤️/👍 reaction or a plain "thanks" needs no answer.
 - Spacing (Julián, Nov 14): anything longer than about two sentences goes in 2 or 3 short paragraphs with a blank line between them (use \n\n), the way a person texts: the catch-up or answer, then the detail, then the question on its own. Never one big block. Short replies stay one line.
 - Read the WHOLE conversation first and answer what they actually said in context (who they are, what you already told them, what was planned). Never answer only the last line.
@@ -4490,6 +4491,7 @@ Them: "Not ready yet" → "Totally fair 🙌🏾 I'm here whenever you are. Mind
 
 GOALS (gently, over time): understand what they want and when, help them feel taken care of, and when they're ready, offer a quick call (juliancrider.com/?book), a showing (juliancrider.com/?showing) or a home value (juliancrider.com/?value).
 ${CLIENT_QUESTIONS}
+${SALES_RULES}
 LET THEM END IT (Julián, Nov 13): never close the conversation yourself. No wrap-up sign-offs like "talk soon", "have a great day", "take care" or "let me know if you need anything" as the last line. Leave the door open with something easy to answer or a natural next step, so the client decides when the conversation is over.
 WELL ROUNDED: you know real estate and lending inside out and explain it in plain words: loan types (conventional, FHA, VA, jumbo, ARM), pre approval, down payment, PMI, points, DTI, closing costs, earnest money, inspection, appraisal, escrow, title, HOAs, Nevada and Las Vegas specifics, the steps of buying and selling. You also chat easily about Las Vegas, sports, food, pop culture and what's going on in the world, like a well read friend. For anything current (today's rates, the market, news, scores, events) use only the LIVE INFO given and say where it's from; if there's none, say you'll confirm. Rates: share today's averages, say their own rate depends on credit, down payment and loan type, and offer to connect them with a great lender.
 RULES: never invent facts, listings, prices, availability, rates or promises. General education about loans and the process is great; no personal lending, legal or tax advice (point to their lender or CPA, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
@@ -4592,10 +4594,10 @@ function bossTextSafe(msg) {
 }
 
 /** Call recordings waiting to be texted to Julián (CALL_AUDIO, kept 12 hours). */
-function queueCallAudio(url, num, mins) {
+function queueCallAudio(url, num, mins, callId) {
   const props = PropertiesService.getScriptProperties(), list = JSON.parse(props.getProperty('CALL_AUDIO') || '[]');
   if (list.some(x => x.url === url)) return;
-  list.push({url: url, num: num || '', mins: mins || '', at: Date.now(), tries: 0});
+  list.push({url: url, num: num || '', mins: mins || '', callId: callId || '', at: Date.now(), tries: 0});
   props.setProperty('CALL_AUDIO', JSON.stringify(list.slice(-10)));
 }
 function sendCallAudio() {
@@ -4607,8 +4609,18 @@ function sendCallAudio() {
   const x = list[0];
   if (Date.now() - x.at < 45 * 1000) return;  // let the summary text land first
   try {
-    const res = UrlFetchApp.fetch(x.url, {muteHttpExceptions: true});
-    if (res.getResponseCode() >= 300) throw new Error('recording ' + res.getResponseCode());
+    // Nov 17 (Lori's call: the link in the FUB note didn't open): Vapi's private recording links need its key, and a fresh
+    // link can be read from the call itself. Tries plain, then with the key, then every recording URL on the call.
+    const vk = props.getProperty('VAPI_API_KEY'), tryGet = (u, auth) => { try { const r = UrlFetchApp.fetch(u, {muteHttpExceptions: true, headers: auth && vk ? {Authorization: 'Bearer ' + vk} : {}}); return r.getResponseCode() < 300 && r.getBlob().getBytes().length > 2000 ? r : null; } catch (e) { return null; } };
+    let res = tryGet(x.url) || tryGet(x.url, true);
+    if (!res && vk && x.callId) {
+      try {
+        const c = JSON.parse(UrlFetchApp.fetch('https://api.vapi.ai/call/' + x.callId, {muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + vk}}).getContentText() || '{}'), a = c.artifact || {};
+        const urls = [a.recordingUrl, a.stereoRecordingUrl, ((a.recording || {}).mono || {}).combinedUrl, (a.recording || {}).stereoUrl, c.recordingUrl, c.stereoRecordingUrl].filter(Boolean);
+        for (let i = 0; i < urls.length && !res; i++) res = tryGet(urls[i]) || tryGet(urls[i], true);
+      } catch (e) {}
+    }
+    if (!res) throw new Error('recording 403');
     let who = '';
     if (x.num) { try { const p = (fubFetch('people?limit=1&fields=id,name&phone=' + x.num.slice(2), null, 'get').people || [])[0]; who = p ? p.name : ''; } catch (e) {} }
     if (!who) who = (teamDirectory() || {})[x.num] || (x.num ? x.num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'a caller');
@@ -4622,7 +4634,7 @@ function sendCallAudio() {
   } catch (e) {
     x.tries++;
     console.log('Call audio not sent yet: ' + e.message);
-    if (/too big|recording 4\d\d/.test(e.message)) { list.shift(); try { bossTextSafe('🎧 I couldn\'t text you that call recording (' + e.message + '). It\'s linked in the call note in Follow Up Boss.'); } catch (e2) {} }
+    if (/too big/.test(e.message) || (/recording 4\d\d/.test(e.message) && x.tries >= 3)) { list.shift(); try { bossTextSafe('🎧 I couldn\'t text you that call recording (' + e.message + '). It\'s linked in the call note in Follow Up Boss.'); } catch (e2) {} }
   }
   props.setProperty('CALL_AUDIO', JSON.stringify(list));
 }
@@ -5008,7 +5020,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(meeting( notes?)?|joey meeting|team meeting)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'meetings', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*(listings?|new listing|coming soon|renovating|renovation)\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'listings', message: text};
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
-  else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏿🏾👍🏿🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
+  else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏾🏾👍🏾🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
   else if (/\b(remove|delete|take (down|out|off)|get rid of|clear|drop|erase)\b.{0,40}\b(photos?|pics?|pictures?|images?)\b/i.test(text) && !/\b(text|email|send)\b/i.test(text)) a = {action: 'listingphotos', message: text};  // Nov 15
   else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete|take (down|out|off)|get rid of|drop) (the )?(photo|pic|picture|image) ?#?\d+|.*\b(duplicate|dupe)s?\b.*\b(photo|pic|picture|image|listing)|.*\b(photo|pic|picture|image)s?\b.*\b(duplicate|dupe|look the same|are the same|repeat)|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
@@ -5339,7 +5351,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'memoscript') return say(memoScriptText());
     if (a.action === 'listingpage') return say(listingPageCommand(a.message || text));
     if (a.action === 'listingphotos') return say(listingPhotoCommand(a.message || text));
-    if (a.action === 'thanks') return say(['You got it 🙏🏿', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
+    if (a.action === 'thanks') return say(['You got it 🙏🏾', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
@@ -5721,7 +5733,7 @@ function callNotesParse(full) {
       '{"who": "the other person\'s full name (as Julián wrote it, else from the call; empty if unknown)", "phone": "their phone if said", "email": "their email if said", ' +
       '"summary": "2 to 4 short lines: who they are and what was discussed", "details": "key facts, one per line: budget, areas, beds, timeline, pre-approval, must haves, their situation, anything personal worth remembering", ' +
       '"next": "the next step that was agreed", "followup": "YYYY-MM-DD when Julián should follow up (what they agreed, else 2 days from today)", "followupType": "Call, Text, Email, Showing or Follow Up", ' +
-      '"tags": "comma separated, only if clear: moved_away, agent, referral_partner, relocation, seller, investor, has_agent, bought_elsewhere, renter, past_client", ' +
+      '"tags": "comma separated, only if clear: moved_away, agent, referral_partner, relocation, seller, investor, has_agent, bought_elsewhere, renter, past_client, developer, contractor, vendor", ' +
       '"intent": "not_now, not_interested or empty", "deal": "offer, under_contract, closed, listing or empty", ' +
       '"text": "a short follow-up text from Julián in his voice: thank them, recap one specific thing they said, the next step. Warm, human, light Chris Voss, 1 emoji at most, no dashes", ' +
       '"emailSubject": "short subject", "emailBody": "a short recap email (3 to 6 sentences, plain paragraphs, no signature) if the call had details worth putting in writing, else empty"}'},
@@ -6055,7 +6067,7 @@ function vapiEndOfCall(m, props) {
   const mins = m.durationSeconds ? Math.round(m.durationSeconds / 6) / 10 + ' min' : '';
   // Julián, Nov 14: like a voicemail, the call recording comes to him by text right after the summary (queued, so a
   // sleeping Mac doesn't lose it; processAssistantQueue sends it within a minute or two).
-  if (rec && Number(m.durationSeconds || 99) >= 8) { try { queueCallAudio(rec, num, mins); } catch (e) { console.log('Call audio: ' + e.message); } }
+  if (rec && Number(m.durationSeconds || 99) >= 8) { try { queueCallAudio(rec, num, mins, String((m.call || {}).id || m.callId || '')); } catch (e) { console.log('Call audio: ' + e.message); } }
   let callerName = '', recapInfo = null;
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
@@ -6246,6 +6258,14 @@ function vapiLookup(num) {
 /** Shawna's phone instructions (Vapi). Built from the same facts she uses for texts, so both stay in sync. */
 // Discovery questions (Nov 13, Julián's sales question list rewritten for real estate in Chris Voss style: calibrated
 // "what/how" questions, no "why", labels, no-oriented asks). Shawna uses at most ONE per message, only when it fits.
+/** Julián's rules (Nov 17, after the Emilee Durrant listing went to her agent and a client thread where Shawna called
+ *  herself the mortgage liaison and assumed a purchase price). Used in texts and on Vapi calls. */
+const SALES_RULES = `OBJECTIONS (Chris Voss): people almost always give a reason not to move forward. Don't accept the first no and don't argue. Label it ("It sounds like the timing feels off" / "It seems like you've already got someone you trust"), mirror their last few words, then ask a calibrated how/what question that looks for a way through ("What would have to be true for this to make sense?", "How would you want this to look if it went perfectly?", "What's the biggest thing holding you back?"). Use an accusation audit when it fits ("You're probably thinking I just want the listing"). Keep working toward a solution for 2 or 3 exchanges. If you still can't resolve it, that's the moment to get a call or meeting on the calendar: "Would it be a bad idea to hop on a quick call today so we can figure this out together?"
+NUMBERS ON A CALL, NOT IN TEXT: general facts are fine by text (a list price, today's average rates, how a loan works). But anything about THEIR deal's final numbers (offer price, what to list at, counteroffers, negotiating, commission or fees, their exact payment, seller credits) is never written by text or email. Just say "Let's hop on a quick call to go over that" or "Let's talk through that in person." Never explain why (no "for legal reasons", no Fair Housing or lender rules), just move it to a call.
+FACTS, NOT ASSUMPTIONS: only use numbers and details someone actually gave (Julián, the client, the lender). Never assume a purchase or sale price, a budget, or a loan amount. If a number is needed and you don't have it, ask or move to a call.
+NEVER CLAIM A ROLE: you are only who you are. Payment and rate numbers come from Joey, our mortgage liaison with Cross Country Mortgage ("my colleague Joey, our mortgage liaison, ran the numbers through Cross Country"). Never say you are the lender, liaison, or anyone else.
+WHO THEY ARE: Julián also calls and texts real estate agents, developers, builders, general contractors and vendors from this line. Tell them apart from future clients: talk shop with professionals (projects, timelines, referrals, co-op) and never run a buyer or seller script on them.
+DESCRIBING JULIÁN: "a real estate agent, advisor and developer in Las Vegas and Henderson."`;
 const CLIENT_QUESTIONS = `QUESTION BANK (use at most one per message, only when it fits what they just said; never interrogate, never list several):
 Discovery: What has you thinking about a move right now? / What would make this move feel like a win a year from now? / When you say [their word], what does that look like for you?
 Timing: What happens if nothing changes in the next six months? / What makes now the right time rather than later?
@@ -6258,10 +6278,11 @@ Fair Housing: never ask about family status, children, religion, race, disabilit
 
 function vapiPrompt() {
   const name = assistantName();
-  return `You are ${name}, the inbound AI receptionist for Julián J. Crider, a luxury real estate agent and developer (Realtor®) with The DeBenedetto Team at Boeckle & Co., serving Las Vegas and Henderson, Nevada. Your greeting already said you're Julián's assistant and that the call may be recorded. Never claim to be human; if asked, say warmly that you're Julián's AI assistant.
+  return `You are ${name}, the inbound AI receptionist for Julián J. Crider, a luxury real estate agent, advisor and developer (Realtor®) with The DeBenedetto Team at Boeckle & Co., serving Las Vegas and Henderson, Nevada. Your greeting already said you're Julián's assistant and that the call may be recorded. Never claim to be human; if asked, say warmly that you're Julián's AI assistant.
 ${assistantKnowledge()}
 
 ${CLIENT_QUESTIONS.replace('use at most one per message', 'ask one at a time on the phone')}
+${SALES_RULES.replace(/by text|over text|in a text/g, 'on this call')}
 
 FIRST: call the lookup_caller tool right away, quietly, before your second sentence. If they're a known contact, use their first name and pick up where things left off (for example "Hi Dan, good to hear from you. Did the report make sense?"). Never read the notes out loud or mention a CRM, and never ask for something you already know.
 
@@ -6575,8 +6596,8 @@ function remindUpcoming() {
     const time = Utilities.formatDate(ev.getStartTime(), 'America/Los_Angeles', 'h:mm a');
     const where = String(ev.getLocation() || '').split(',')[0].trim();
     const text = /showing|tour/i.test(ev.getTitle())
-      ? `Hey ${first}, Julián here 👋🏿 Quick reminder, I'll see you ${where ? 'at ' + where + ' ' : ''}at ${time}. If anything changed, just text me. See you soon!`
-      : `Hey ${first}, Julián here 👋🏿 Quick reminder about our ${time} today. See you soon!`;
+      ? `Hey ${first}, Julián here 👋🏾 Quick reminder, I'll see you ${where ? 'at ' + where + ' ' : ''}at ${time}. If anything changed, just text me. See you soon!`
+      : `Hey ${first}, Julián here 👋🏾 Quick reminder about our ${time} today. See you soon!`;
     try {
       bbSend(phone, text);
       if (person) fubFetch('notes', {personId: person.id, subject: 'Reminder text sent', body: text});

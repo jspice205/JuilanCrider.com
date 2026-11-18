@@ -112,7 +112,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   gemini-2.5-flash). "give me a minute" now names a rejected key (401) or a used-up daily allowance.
 - Shawna knows the business from SHAWNA_FACTS in Code.gs + one fact per row in the "Shawna Knowledge" sheet tab
   (assistantKnowledge); humanize() strips dashes from everything she writes and `darkHands` turns every hand emoji
-  into the darkest skin tone 🏿 (Julián, Nov 14; 🙏🏿 for thank you). Spacing (Nov 14): bbSendNow runs `textParagraphs` on texts to
+  into the medium-dark skin tone 🏾 (Julián, Nov 17; was 🏿 Nov 14; 🙏🏾 for thank you). Spacing (Nov 14): bbSendNow runs `textParagraphs` on texts to
   clients (not his own phones): 170+ chars, 3+ sentences, no line breaks → 2-3 paragraphs with blank lines, a closing
   question on its own; assistantPrompt asks for \n\n paragraphs too. Nov 14 (Lisa thread, three "Got it, Lisa." texts): assistantReply
   ignores tapbacks ("Liked “…”", "Loved “…”"); closer also matches "Yes…. Thank you so much"; `varyOpener` drops a repeated
@@ -721,6 +721,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   ran): a chat reply that claims a completed action (removed/sent/added/updated/scheduled…) is replaced by "I can't do that
   one myself… passed it to Claude" + a Claude request. Listing photo intake skips PNGs (iPhone screenshots) unless his text
   says listing/photos/original.
+
+- SALES_RULES (Nov 17, after Emilee Durrant 304 listed with her agent; in assistantPrompt + vapiPrompt): Chris Voss objection
+  handling (label, mirror, calibrated questions, accusation audit; 2-3 tries, then get a call on the calendar); a deal's final
+  numbers (offer, list price strategy, counters, commission, their payment, credits) never by text/email, just "let's hop on a
+  quick call", no reason given; facts not assumptions (never assume a price/budget); never claim a role (payment numbers come
+  from "Joey, our mortgage liaison, through Cross Country"); tell agents/developers/GCs/vendors from clients (SHAWNA_TAGS
+  developer/contractor/vendor); describe Julián as "a real estate agent, advisor and developer in Las Vegas and Henderson".
+  closer also matches "we'll let you know" (Emilee got a reply after "Ok great we will let you know! Thank you!").
+  Call audio (Nov 17, Lori's recording link didn't open): sendCallAudio retries with the Vapi key and fresh URLs from GET
+  api.vapi.ai/call/<id> (queue keeps callId); tells him after 3 failed tries.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
