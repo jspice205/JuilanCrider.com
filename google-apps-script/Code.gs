@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-18-recordings';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-18-realscout';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4088,6 +4088,9 @@ function morningUpdateText(opts) {
       rows.sort((x, y) => (y[3] === 'click') - (x[3] === 'click') || Number(y[5] || 0) - Number(x[5] || 0));
       rows.forEach(r => add(r[7], (r[3] === 'click' ? 'clicked' : Number(r[5]) > 1 ? 'opened ' + r[5] + 'x' : 'opened') + ' "' + String(r[4]).replace(/^JC /, '').slice(0, 40) + '"'));
     }
+    try { const rs = {}; (fubFetch('events?limit=60&sort=-created', null, 'get').events || []).filter(e => /realscout/i.test(e.source || '') &&
+        now - new Date(e.created).getTime() < 24 * 36e5 && !/realscout\.com\/agent\//i.test(e.pageUrl || '')).forEach(e => rs[e.personId] = (rs[e.personId] || 0) + 1);
+      Object.keys(rs).sort((a, b) => rs[b] - rs[a]).forEach(id => add(id, 'active on RealScout (' + rs[id] + ' action' + (rs[id] > 1 ? 's' : '') + ' in the last day)')); } catch (e) {}
     (fubFetch('people?limit=25&sort=-created&fields=id,created,source,contacted,assignedUserId', null, 'get').people || [])
       .filter(p => now - new Date(p.created).getTime() < 5 * 864e5 && !p.contacted).forEach(p => add(p.id, 'new ' + (p.source || 'lead') + ' lead, not contacted yet'));
     if (picks.length) parts.push('📈 worth reaching out to:\n\n' + picks.join('\n\n'));
@@ -6913,8 +6916,48 @@ function checkTextingMac() {
   if (topic) try { UrlFetchApp.fetch('https://ntfy.sh/' + topic, {method: 'post', payload: msg, headers: {Title: 'Shawna is offline'}, muteHttpExceptions: true}); } catch (e) {}
 }
 
+// REALSCOUT (Nov 18, Julián: "if a request happens or anything active on RealScout happens Shawna should let me know").
+// RealScout sends its activity to Follow Up Boss as events (source "RealScout"). Every 5 minutes: requests and inquiries
+// (anything with a message, or a type like Property Inquiry / Seller Inquiry / Registration / showing) → an alert right
+// away; browsing (viewed/saved homes, searches) → one "active on RealScout" alert per person per 2 hours with what they
+// looked at. His own agent-dashboard views (realscout.com/agent/…), other agents' contacts and test contacts are skipped.
+function checkRealScout() {
+  const props = PropertiesService.getScriptProperties(), last = Number(props.getProperty('RS_LAST_EVENT') || 0);
+  const evs = (fubFetch('events?limit=50&sort=-created', null, 'get').events || []).filter(e => /realscout/i.test(e.source || ''));
+  if (!last) { props.setProperty('RS_LAST_EVENT', String(evs.length ? evs[0].id : 1)); return; }  // first run: start from now
+  const fresh = evs.filter(e => e.id > last).reverse();
+  if (!fresh.length) return;
+  props.setProperty('RS_LAST_EVENT', String(fresh[fresh.length - 1].id));
+  const cache = CacheService.getScriptCache(), byPerson = {};
+  fresh.forEach(e => {
+    if (/realscout\.com\/agent\//i.test(e.pageUrl || '')) return;
+    (byPerson[e.personId] = byPerson[e.personId] || []).push(e);
+  });
+  Object.keys(byPerson).forEach(pid => {
+    let p = null; try { p = fubFetch('people/' + pid + '?fields=id,name,firstName,lastName,tags,phones,assignedUserId,stage', null, 'get'); } catch (e) { return; }
+    if (!p || isTestPerson(p) || !isMine(p.id)) return;
+    const who = [realFirst(p), p.lastName].join(' ').trim() || p.name || 'Someone';
+    const where = e => { const pr = e.property || {}; return [pr.street, pr.city].filter(Boolean).join(', ') || String(e.pageTitle || '').replace(/\s*\|.*$/, '').slice(0, 80); };
+    const list = byPerson[pid];
+    const asks = list.filter(e => String(e.message || '').trim() || /inquiry|registration|request|showing|tour|contact|offer|seller/i.test(e.type || ''));
+    asks.forEach(e => {
+      try { notifyJulian('🏡 ' + who + ' sent a request on RealScout', (e.type || 'Request') + (where(e) ? ': ' + where(e) : '') +
+        (String(e.message || '').trim() ? '\n"' + String(e.message).trim().slice(0, 300) + '"' : '') + '\nThey\'re in Follow Up Boss. Want me to write the reply?', '', who); } catch (x) {}
+      try { createCallTask(p.id, 'RealScout ' + (e.type || 'request') + (where(e) ? ' (' + where(e) + ')' : '') + '. Reply today.', 'Text'); } catch (x) {}
+    });
+    const browse = list.filter(e => asks.indexOf(e) < 0);
+    if (!browse.length || cache.get('RS_ACT_' + pid)) return;
+    cache.put('RS_ACT_' + pid, '1', 2 * 3600);
+    const kinds = {}; browse.forEach(e => kinds[e.type || 'Activity'] = (kinds[e.type || 'Activity'] || 0) + 1);
+    const homes = browse.map(where).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).slice(0, 3);
+    try { notifyJulian('👀 ' + who + ' is active on RealScout', Object.keys(kinds).map(k => k.toLowerCase() + (kinds[k] > 1 ? ' ×' + kinds[k] : '')).join(', ') +
+      (homes.length ? '\n' + homes.map(h => '• ' + h).join('\n') : '') + '\nGood moment to reach out.', '', who); } catch (x) {}
+  });
+}
+
 function remindUpcoming() {
   try { checkTextingMac(); } catch (e) { console.log('Mac check: ' + e.message); }
+  try { checkRealScout(); } catch (e) { console.log('RealScout: ' + e.message); }
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
   try { processPersonalEmailOutbox(); } catch (e) { console.log('Personal email: ' + e.message); }
