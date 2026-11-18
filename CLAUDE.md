@@ -743,8 +743,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "Development Leads" and converted via Drive v3 copy) → "Development Leads" tab (his columns + Status / Next step / Follow up /
   Last update / Notes; matched by first column). Boss "dev leads" lists them (follow-ups first); "dev: <name> <update>"
   logs a note + "status: …" / "next: …" / a follow-up date (resolveWhen). Due follow-ups show in agendaText.
-  RealScout (Nov 17): already connected to FUB (customRealScoutPropertyViewsCount etc. exist, empty so far). Homes > Search has a
-  "Search all homes" button → https://juliancrider.realscout.com (public search; /agent is his private dashboard). He uses
+  RealScout (Nov 17): already connected to FUB (customRealScoutPropertyViewsCount etc. exist, empty so far). Homes > Search leads with a
+  "Search all homes" button (Nov 17: RealScout first, MLS map search under it) → https://juliancrider.realscout.com (public search; /agent is his private dashboard). He uses
   RealScout himself for property lookups. API token planned: REALSCOUT_API_KEY via Settings tab + API docs link (not built yet).
   Meta (Nov 17): business portfolio "juliancriderestates" is restricted from Events Manager (Pixel) for years; he was told to
   Request Review + complete Business info; never create a new portfolio to get around a restriction.
