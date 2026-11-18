@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-17-devleads';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-18-morning';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3997,26 +3997,120 @@ function pipelineText(ask) {
   return out.length ? '📋 Your deals right now:\n\n' + out.join('\n\n') : 'You don\'t have any open deal cards right now.';
 }
 
-/** 8am every day: Shawna texts Julián his day (calendar, numbered to-dos, what's waiting) plus hot leads who opened or
- *  clicked his emails overnight. Turn off with Script Property MORNING_BRIEFING = off. */
+/** 8am every day: what's open and what's next, not a recap of what he already lived through (Julián, Nov 18: "it
+ *  repeats itself… more current and future facing… leads I could reach out to"). Sections, each only when it has
+ *  something: today's calendar + tomorrow's first items, what still needs him (unanswered texts, callers to call back,
+ *  unread emails, to-dos, approvals), who to reach out to in Follow Up Boss, his open deals, and a system warning only
+ *  when something is actually down. Turn off with Script Property MORNING_BRIEFING = off. */
 function morningBriefing() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('MORNING_BRIEFING') === 'off') return;
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (!boss) return;
-  const parts = ['Good morning ☀️ here\'s your ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE') + ':', agendaText(false)];
+  const msg = morningUpdateText();
+  try { bbSend(boss, humanize(msg)); bossMemory('assistant', msg); } catch (e) { console.log('Morning briefing: ' + e.message); }
+}
+
+function morningUpdateText() {
+  const props = PropertiesService.getScriptProperties(), now = Date.now(), tz = 'America/Los_Angeles';
+  const fmt = (t, f) => Utilities.formatDate(new Date(t), tz, f);
+  const ago = t => (now - t < 20 * 36e5 && fmt(t, 'yyyyMMdd') === fmt(now, 'yyyyMMdd')) ? fmt(t, 'h:mm a') : fmt(t, 'EEE h:mm a');
+  const since = Math.max(now - 3 * 864e5, Number(props.getProperty('WHATSNEW_AT') || 0) || (now - 24 * 36e5));
+  const parts = ['Good morning ☀️ ' + fmt(now, 'EEEE, MMM d')];
+  let me = 0; try { me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id; } catch (e) {}
+  const nameOf = p => [realFirst(p), p.lastName].join(' ').trim() || p.name || '';
+  const skip = p => !p || isTestPerson(p) || (me && p.assignedUserId && Number(p.assignedUserId) !== Number(me)) ||
+    /^(Trash|Closed|Past Client)$/i.test(String(p.stage || '')) ||
+    (p.tags || []).some(t => /^(Not Interested|Unsubscribed|Has Agent|Deceased|Bad Email|Agent|Partner)$/i.test(t));
+
+  // 1. Calendar: today in full, tomorrow's first three.
+  parts.push(calendarText('today'));
+  try { const tm = calendarText('tomorrow'); if (!/nothing on your calendars/.test(tm)) parts.push(tm.split('\n\n').slice(0, 4).join('\n\n')); } catch (e) {}
+
+  // 2. Still needs you: only open loops.
+  const need = [];
+  try {  // client texts nobody has answered yet (the thread's last line is theirs), one line per person
+    const seen = {};
+    JSON.parse(props.getProperty('TEXT_LOG') || '[]').filter(x => now - x.at < 3 * 864e5 && !x.read && !x.reply && !isOwnNumber(x.phone))
+      .reverse().forEach(x => {
+        const ph = x.phone || '', k = ph || x.who;
+        if (!ph || seen[k] || need.length >= 5) return; seen[k] = 1;
+        let th = []; try { th = bbThread(ph).split('\n').filter(Boolean); } catch (e) {}
+        if (th.length && /Julián: /.test(th[th.length - 1])) return;  // Julián or Shawna already answered
+        let who = x.who;
+        try { const p = (fubFetch('people?limit=1&fields=id,firstName,lastName,name,tags,stage,assignedUserId,phones&phone=' + ph.replace(/\D/g, '').slice(-10), null, 'get').people || [])[0];
+          if (p && isTestPerson(p)) return; if (p) who = nameOf(p) || who; } catch (e) {}
+        need.push('• 💬 ' + who + ' texted ' + ago(x.at) + ', no reply yet:\n"' + String(x.text || '').replace(/\s+/g, ' ').slice(0, 110) + '"');
+      });
+  } catch (e) {}
+  try {  // callers Shawna took who left something real to follow up on, one line per person
+    const seen = {};
+    (fubFetch('notes?limit=40&sort=-created&fields=id,subject,body,created,personId', null, 'get').notes || [])
+      .filter(n => /^Call with Shawna/.test(n.subject || '') && new Date(n.created).getTime() > since).forEach(n => {
+        if (seen[n.personId] || need.length >= 8) return; seen[n.personId] = 1;
+        const sum = String(n.body || '').split('\n')[0];
+        if (/no (caller )?(information|details|summary)|did not provide any|outside real.?estate|wrong number|^no summary/i.test(sum)) return;
+        let p = null; try { p = fubFetch('people/' + n.personId + '?fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones', null, 'get'); } catch (e) {}
+        if (p && isTestPerson(p)) return;
+        const ph = p && (p.phones || [])[0] ? String(p.phones[0].value || '') : '';
+        need.push('• 📞 Call back ' + ((p && nameOf(p)) || 'a caller') + (ph && !/\d{3}-\d{3}-\d{4}/.test(nameOf(p)) ? ' ' + ph : '') + ' (' + ago(new Date(n.created).getTime()) + '):\n' + sum.slice(0, 120));
+      });
+  } catch (e) {}
+  try {  // unread emails from real people (last 3 days)
+    const r = bcolvCall({action: 'search', query: 'in:inbox is:unread newer_than:3d -from:me', max: 15}), seen = {};
+    ((r && r.messages) || []).filter(x => !x.fromMe && !/mailer-daemon|postmaster|no-?reply|notification|followupboss|google\.com|calendar/i.test(x.from) &&
+      !/delivery status|undeliverable|auto.?reply|out of office/i.test(x.subject || '')).sort((x, y) => y.date - x.date)
+      .forEach(x => { const k = String(x.from).toLowerCase(); if (seen[k] || Object.keys(seen).length >= 4) return; seen[k] = 1;
+        need.push('• 📧 ' + (String(x.from).replace(/<.*>/, '').replace(/"/g, '').trim() || x.from) + ' emailed you (unread):\n' + String(x.subject || '(no subject)').slice(0, 70)); });
+  } catch (e) {}
+  let todo = '';
+  try { todo = todoText('today').split('\n\n').filter(b => !/^💬 \d+ texts? may be waiting|^✅ nothing on your to-do list/.test(b)).join('\n\n'); } catch (e) {}
+  try { const dv = devLeadsDueText(); if (dv) todo = [todo, dv].filter(Boolean).join('\n\n'); } catch (e) {}
+  if (need.length) parts.push('🙋 still needs you:\n\n' + need.join('\n\n'));
+  if (todo) parts.push(todo);
+
+  // 3. Who to reach out to: email clicks/opens in the last day, then new leads nobody has contacted yet.
   try {
+    const picks = [], seen = {};
+    const add = (id, why) => {
+      if (!id || seen[id] || picks.length >= 6) return; seen[id] = 1;
+      let p = null; try { p = fubFetch('people/' + id + '?fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones', null, 'get'); } catch (e) { return; }
+      if (skip(p)) return;
+      const tags = p.tags || [], tier = tags.indexOf('Tier A') >= 0 ? 'Hot' : tags.indexOf('Tier B') >= 0 ? 'Warm' : '';
+      const ph = (p.phones || [])[0] ? String(p.phones[0].value || '') : '';
+      const how = tags.indexOf('Not DNC checked') >= 0 ? 'email only (not DNC checked)' : tags.indexOf('Text OK') >= 0 ? 'call or text ' + ph : ph ? 'call ' + ph : 'email';
+      picks.push('• ' + nameOf(p) + (tier ? ' (' + tier + ')' : '') + ': ' + why + '\n' + how);
+    };
     const sh = getSS().getSheetByName(EMAIL_OPENS_TAB.name);
     if (sh && sh.getLastRow() > 1) {
-      const rows = sh.getRange(2, 1, Math.min(sh.getLastRow() - 1, 300), 5).getValues().filter(r => r[0] instanceof Date && Date.now() - r[0].getTime() < 16 * 36e5);
-      const seen = {}, hot = [];
-      rows.forEach(r => { if (!seen[r[2]] && hot.length < 5) { seen[r[2]] = 1; hot.push('• ' + r[2] + (r[3] === 'click' ? ' clicked ' : ' opened ') + '"' + String(r[4]).slice(0, 40) + '"'); } });
-      if (hot.length) parts.push('👀 opened your emails since last night:\n' + hot.join('\n'));
+      const rows = sh.getRange(2, 1, Math.min(sh.getLastRow() - 1, 400), 8).getValues().filter(r => r[0] instanceof Date && now - r[0].getTime() < 24 * 36e5);
+      rows.sort((x, y) => (y[3] === 'click') - (x[3] === 'click') || Number(y[5] || 0) - Number(x[5] || 0));
+      rows.forEach(r => add(r[7], (r[3] === 'click' ? 'clicked' : Number(r[5]) > 1 ? 'opened ' + r[5] + 'x' : 'opened') + ' "' + String(r[4]).replace(/^JC /, '').slice(0, 40) + '"'));
     }
+    (fubFetch('people?limit=25&sort=-created&fields=id,created,source,contacted,assignedUserId', null, 'get').people || [])
+      .filter(p => now - new Date(p.created).getTime() < 5 * 864e5 && !p.contacted).forEach(p => add(p.id, 'new ' + (p.source || 'lead') + ' lead, not contacted yet'));
+    if (picks.length) parts.push('📈 worth reaching out to:\n\n' + picks.join('\n\n'));
   } catch (e) {}
-  try { const d = Number(props.getProperty('DUP_COUNT') || 0); if (d) parts.push('🧹 ' + d + ' possible duplicate contacts are listed in the "Duplicates" tab.'); } catch (e) {}
-  const msg = parts.join('\n\n');
-  try { bbSend(boss, humanize(msg)); bossMemory('assistant', msg); } catch (e) { console.log('Morning briefing: ' + e.message); }
+
+  // 4. Open deals, closings first.
+  try {
+    const deals = [];
+    [1, 2].forEach(pid => (fubFetch('deals?pipelineId=' + pid + '&limit=100', null, 'get').deals || []).forEach(d => {
+      if (/closed|lost|gifts|nurture|personal listings/i.test(String(d.stageName || ''))) return;
+      if (me && d.users && d.users.length && !d.users.some(u => Number(u.id) === Number(me))) return;
+      const toClose = d.projectedCloseDate ? Math.ceil((new Date(d.projectedCloseDate).getTime() - now) / 864e5) : null;
+      deals.push({c: toClose == null ? 999 : toClose, t: '• ' + (d.name || 'deal') + ': ' + String(d.stageName || '').trim().toLowerCase() +
+        (toClose != null ? ', closes ' + fmt(new Date(d.projectedCloseDate), 'MMM d') + (toClose >= 0 ? ' (' + toClose + ' days)' : '') : '')});
+    }));
+    deals.sort((x, y) => x.c - y.c);
+    if (deals.length) parts.push('🏡 your deals:\n\n' + deals.slice(0, 6).map(x => x.t).join('\n'));
+  } catch (e) {}
+
+  // 5. Only if something is actually down right now.
+  if (props.getProperty('BB_DOWN_SINCE')) parts.push('⚠️ the texting Mac is offline, so I can\'t send or read texts. Wake it up or restart BlueBubbles.');
+  if (parts.length === 2 && /nothing on your calendars/.test(parts[1])) parts.push('🎉 Nothing open. Clear day.');
+  props.setProperty('WHATSNEW_AT', String(now));
+  return parts.filter(Boolean).join('\n\n');
 }
 
 /** Fridays 9am: how the week went, by text (and a copy by email to julianc@bcolv.com). */
