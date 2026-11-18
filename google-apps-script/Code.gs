@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-18-hangups';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-18-recordings';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4914,7 +4914,22 @@ function sendCallAudio() {
     // Nov 17 (Lori's call: the link in the FUB note didn't open): Vapi's private recording links need its key, and a fresh
     // link can be read from the call itself. Tries plain, then with the key, then every recording URL on the call.
     const vk = props.getProperty('VAPI_API_KEY'), tryGet = (u, auth) => { try { const r = UrlFetchApp.fetch(u, {muteHttpExceptions: true, headers: auth && vk ? {Authorization: 'Bearer ' + vk} : {}}); return r.getResponseCode() < 300 && r.getBlob().getBytes().length > 2000 ? r : null; } catch (e) { return null; } };
-    let res = tryGet(x.url) || tryGet(x.url, true);
+    let res = null;
+    // Nov 18: Vapi's recording URLs are private (direct GET → 400 "Authorization"). The supported route is
+    // GET api.vapi.ai/call/<id>/mono-recording (or stereo-recording) with the key, which answers with a 302 to a short-lived
+    // signed link; that link is fetched WITHOUT the key (a signed store rejects an extra Authorization header).
+    if (vk && x.callId) {
+      ['mono-recording', 'stereo-recording'].forEach(kind => {
+        if (res) return;
+        try {
+          const r = UrlFetchApp.fetch('https://api.vapi.ai/call/' + x.callId + '/' + kind, {muteHttpExceptions: true, followRedirects: false, headers: {Authorization: 'Bearer ' + vk}});
+          const h = r.getHeaders(), loc = h.Location || h.location;
+          if (loc) res = tryGet(loc);
+          else if (r.getResponseCode() < 300 && r.getBlob().getBytes().length > 2000) res = r;
+        } catch (e) {}
+      });
+    }
+    if (!res) res = tryGet(x.url) || tryGet(x.url, true);
     if (!res && vk && x.callId) {
       try {
         const c = JSON.parse(UrlFetchApp.fetch('https://api.vapi.ai/call/' + x.callId, {muteHttpExceptions: true, headers: {Authorization: 'Bearer ' + vk}}).getContentText() || '{}'), a = c.artifact || {};
@@ -4923,7 +4938,7 @@ function sendCallAudio() {
       } catch (e) {}
     }
     if (!res) { let code = 0; try { code = UrlFetchApp.fetch(x.url, {muteHttpExceptions: true}).getResponseCode(); } catch (e) {}
-      throw new Error((/hipaa-recordings|r2\.cloudflarestorage\.com/.test(x.url) ? 'private' : 'recording ' + (code || 'error'))); }
+      throw new Error((!x.callId || !vk) && /hipaa-recordings|r2\.cloudflarestorage\.com/.test(x.url) ? 'private' : 'recording ' + (code || 'error')); }
     let who = '';
     if (x.num) { try { const p = (fubFetch('people?limit=1&fields=id,name&phone=' + x.num.slice(2), null, 'get').people || [])[0]; who = p ? p.name : ''; } catch (e) {} }
     if (!who) who = (teamDirectory() || {})[x.num] || (x.num ? x.num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'a caller');
@@ -4941,8 +4956,7 @@ function sendCallAudio() {
       list.shift();
       const day = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyyMMdd');
       if (props.getProperty('REC_PRIVATE_WARN') !== day) { props.setProperty('REC_PRIVATE_WARN', day);
-        try { bossTextSafe('🎧 I can\'t text you call recordings yet: Vapi is saving them as private (its HIPAA setting is on), so they can\'t be downloaded. ' +
-          'In Vapi: open your assistant, go to Advanced, turn HIPAA off, and Publish. You can still play every call in Vapi under Call Logs.'); } catch (e2) {} }
+        try { bossTextSafe('🎧 I couldn\'t download that call recording from Vapi (its link is private and the call id or Vapi key was missing). You can play it in Vapi under Call Logs.'); } catch (e2) {} }
     } else if (/too big/.test(e.message) || (/recording /.test(e.message) && x.tries >= 3)) { list.shift(); try { bossTextSafe('🎧 I couldn\'t text you that call recording (' + e.message + '). You can play it in Vapi under Call Logs.'); } catch (e2) {} }
   }
   props.setProperty('CALL_AUDIO', JSON.stringify(list));
