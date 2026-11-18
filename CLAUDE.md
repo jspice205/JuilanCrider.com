@@ -776,6 +776,20 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   The "what do I have today/this week" agenda now returns the same trimmed update (agendaText → morningUpdateText({week})),
   without the follow-up drafts.
 
+- Hang-ups + recordings (Nov 18: 702-233-3301 called twice and said nothing → two "Someone called" alerts + two tasks, and
+  "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
+  summary) sends one "📞 Missed call from …, hung up before saying anything" + one call-back task per number per 15 min
+  (HANGUP_ cache). Recordings are queued for every call (the 8 s minimum is gone, his ask). Vapi's recording URLs are in a
+  private R2 bucket ("hipaa-recordings", direct GET → 400 "Authorization"), so they can't be downloaded while Vapi's HIPAA
+  setting is on: sendCallAudio now reports "private" and texts him once a day how to turn HIPAA off (assistant → Advanced →
+  HIPAA off → Publish); other failures name the real status code.
+- Google Business Profile (Nov 18): connected to Metricool (gbpData accounts/104796038002576044555/locations/8184491172100404827,
+  provider "gmb", gmbData type publication). Weekly posts Tue/Thu 10am: Nov 19 relocation, Nov 24 buydowns, Dec 1 Lake Las Vegas,
+  Dec 8 sellers/home value, Dec 15 thank-you; no phone numbers in post text (Google rejects them). Advice given: rename to
+  "Julián J. Crider, Realtor" (keyword-stuffed name risks suspension), hide 1700 S Pavilion Center Dr unless he meets clients
+  there (service areas instead), replace the old Development/Investment/Family logo, description/services/hours provided.
+  Q&A is off on his profile (Google's "available soon").
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
