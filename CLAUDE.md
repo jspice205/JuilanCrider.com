@@ -20,7 +20,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   "Where do you live now?"; `scoreLead` tags `Luxury Buyer` ($1.3M+), `Relocation` (lives outside NV) and
   `Luxury Relocation 60 Days` (both + Ready now/1–3 months → Hot). Julián's target: out-of-state $1.3M–$3.3M buyers;
   never target/exclude by sex, family status or age (Fair Housing), community map
-  (Leaflet, loads on tap/consent), JSON-LD for SEO. Images live in `img/`.
+  REMOVED Nov 19 (his ask; Relocate > Neighborhoods is the area list only), JSON-LD for SEO. Images live in `img/`.
   Nov 14: buttons (.pill/.mini) have the layered look (gradient + inset highlight + shadow, press-down on tap; light and dark).
   Photos are files in `img/p/` (were 60 base64 photos inside index.html: 5.8 MB → 230 KB); all <img> lazy-load
   except the header logo. Never paste base64 images into index.html again: save the file in img/ and link it.
