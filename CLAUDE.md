@@ -807,6 +807,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Skips realscout.com/agent/ page views (his own dashboard), other agents' contacts (isMine) and test contacts. The morning
   update's "worth reaching out to" lists people active on RealScout in the last 24 h.
 
+- Open-house dates (Nov 19): Claude sent Raj Sharma 306, David Persin 276, John Chess 275 "thanks for … the open house on
+  Oct 28" (bcolv, verified Sent), but Oct 28 was the FUB bulk-import date; they signed in Oct 11, Aug 2, Aug 1.
+  findOpportunities now reads the "Signed in:" date from their notes (FUB created only if after LIVE_SINCE) and the prompt
+  never guesses a date. Always check a contact's real sign-in date before writing "on <date>".
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
