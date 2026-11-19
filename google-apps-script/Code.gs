@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-yesall';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-oppdates';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4161,7 +4161,11 @@ function findOpportunities(max) {
     const how = has(p, /^open house$/i) ? 'signed in at an open house' : has(p, /^Phone Lead$/) ? 'called in' : has(p, /^Texted In$/) ? 'texted in' :
       has(p, /^Instagram DM$/) ? 'messaged on Instagram' : has(p, /^Website Lead$/) ? 'came in through juliancrider.com' : 'is in his database';
     const ctx = notes.filter(n => !/^(Shawna tagged|Funnel|Tier)/i.test(n.subject || '')).slice(0, 4).map(n => (n.subject || '') + ': ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 220)).join(' | ');
-    picks.push({p: p, phone: phone, email: email, textOk: textOk, how: how, touched: touched, ctx: ctx,
+    let when = '';
+    const sm = notes.map(n => String(n.body || '')).join('\n').match(/Signed in:?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
+    if (sm) { const d = /-/.test(sm[1]) ? new Date(sm[1] + 'T12:00:00') : new Date(sm[1]); if (!isNaN(d)) when = Utilities.formatDate(d, 'America/Los_Angeles', 'MMM d'); }
+    else if (new Date(p.created) > LIVE_SINCE) when = Utilities.formatDate(new Date(p.created), 'America/Los_Angeles', 'MMM d');
+    picks.push({p: p, phone: phone, email: email, textOk: textOk, how: how, touched: touched, ctx: ctx, when: when,
       first: realFirst(p), who: [realFirst(p), p.lastName].join(' ').trim() || p.name,
       interest: (p.tags || []).filter(t => /^(Buyer|Likely Seller|Relocation|Luxury Buyer|Open House Neighbor|Investor|Seller)$/i.test(t)).join(', ')});
   });
@@ -4175,10 +4179,10 @@ function findOpportunities(max) {
         'Never invent facts, homes, addresses, prices, rates or market numbers. No deal numbers. Fair Housing safe. Texts: 1 to 3 sentences, at most one emoji, no links, no sign-off. ' +
         'Notes are Julián\'s private records: never mention ratings, scores, interest levels, tiers, tags or form answers word for word (no "you rated", "interest level was 8"); ' +
         'use them only to choose what to ask. Write time ranges with "to" (6 to 12 months), never a dash. ' +
+        'Only mention a date if one is given after "on"; otherwise say "recently" or "a while back", never guess a date. ' +
         'Emails: a short plain subject and 3 to 5 sentences, signed "Julián". No dashes.' + julianVoice() +
         '\nReturn JSON: {"drafts":[{"id":<person id>,"text":"...","subject":"... (emails only)"}]}'},
-      {role: 'user', content: picks.map(x => 'id ' + x.p.id + ': ' + x.who + ' (' + (x.textOk ? 'TEXT' : 'EMAIL') + '). They ' + x.how + ' on ' +
-        Utilities.formatDate(new Date(x.p.created), 'America/Los_Angeles', 'MMM d') + '. ' + (x.interest ? 'Tags: ' + x.interest + '. ' : '') +
+      {role: 'user', content: picks.map(x => 'id ' + x.p.id + ': ' + x.who + ' (' + (x.textOk ? 'TEXT' : 'EMAIL') + '). They ' + x.how + (x.when ? ' on ' + x.when : '') + '. ' + (x.interest ? 'Tags: ' + x.interest + '. ' : '') +
         (x.touched ? 'Last personal touch ' + Math.floor((now - x.touched) / 864e5) + ' days ago. ' : 'No personal follow-up yet. ') + (x.ctx ? 'Notes: ' + x.ctx : '')).join('\n\n')}],
       {maxTokens: 1400})).drafts || [];
     drafts = r;
