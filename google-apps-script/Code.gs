@@ -5146,7 +5146,7 @@ function bossCommand(text, tries) {
   if (queue.length && YES_WORD.test(text)) {
     const rest = text.replace(YES_WORD, '');
     // Nov 19: "Yes to All follow-ups" fell through to the router. Words after "all" (follow-ups, emails, texts, 3…) are fine.
-    const nums = /^(?:to\s+|for\s+)?(?:them\s+)?(?:all|every\s*(?:one|thing))(?:\s+(?:of\s+them|the|three|3|\d|follow[\s-]?ups?|emails?|texts?|drafts?|approvals?|messages?|of\s+those|those|these))*\s*[.!👍🏾👍]*\s*$/i.test(rest) ? queue.map(x => x.n)
+    const nums = /^(?:to\s+|for\s+)?(?:them\s+)?(?:all|every\s*(?:one|thing))(?:\s+(?:of\s+them|the|three|3|\d|follow[\s-]?ups?|emails?|texts?|drafts?|approvals?|messages?|of\s+those|those|these|please|now))*\s*[.!👍🏾👍]*\s*$/i.test(rest) ? queue.map(x => x.n)
       : /^(?:to\s+|for\s+)?#?\d+(?:\s*(?:,|&|and|\+)?\s*#?\d+)+\s*[.!]*\s*$/i.test(rest) ? (rest.match(/\d+/g) || []).map(Number) : null;
     if (nums && nums.length) { nums.forEach(n => { try { bossCommand('yes ' + n, 1); } catch (e) { console.log('Approve #' + n + ': ' + e.message); } }); return; }
   }
