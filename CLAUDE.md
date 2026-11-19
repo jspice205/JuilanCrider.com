@@ -818,6 +818,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   This one's yours" (bypasses the 2-h throttle). Emilee Durrant 304: their home lists Dec 1 with their agent Austin; their
   Montagna/Vineyards purchase waits on that sale → FUB tasks Dec 15 + Jan 5 to check whether it's under contract.
 
+- CMA "two numbers and a plan" (Nov 19, after losing Emilee's listing to a higher, likely padded number): reports/cma-template.html
+  page "Pricing strategy" when CMA.strategy is set: appraisal value (default = his "Average (most likely)" tier) with the
+  lender/renegotiation explanation, test-the-market list range (listLow/listHigh), plan "if no strong showings by day
+  reviewDay (14), adjust to adjustTo", "What happens at each price" table (default rows use the sold comps' median DOM and
+  plain Low/Medium/High risk, never invented odds), optional appraisers list (only names Julián gives). Comps come from him:
+  RPR (free with NAR, AI CMA) or the MLS, exported and sent to Claude; RPR has no API for agents, so nothing is "connected".
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
