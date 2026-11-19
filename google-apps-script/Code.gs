@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-pullout';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-blasts';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -6968,9 +6968,120 @@ function checkRealScout() {
   });
 }
 
+// ============================================================
+// CAMPAIGN SENDS (Nov 19, Julián: Thanksgiving article to his top active clients, "send whenever you feel is best").
+// One entry per send. Between start and end (9am-8pm PT only), each 5-minute tick sends to up to BLAST_PER_TICK (15)
+// people with any of the tags: a text if they're Text OK (business line), otherwise an email from julianc@bcolv.com.
+// Skips other agents' contacts, test contacts, opted-out / unsubscribed / bad email / Has Agent / Not Interested /
+// agents and partners. BLAST_<id> remembers who got it, so nobody gets it twice. One summary text to Julián at the end.
+// BLASTS=off stops all of them. {first} = their first name.
+// ============================================================
+const BLASTS = [
+  {id: 'thanksgiving-2026', start: '2026-11-20T09:00:00-08:00', end: '2026-11-21T20:00:00-08:00', tags: ['Top 200'],
+    subject: 'Happy Thanksgiving, {first} 🦃 (6 things happening this week)',
+    text: 'Hey {first}, happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/',
+    email: 'Hi {first},\n\nI just wanted to say thank you. This time of year I think about the people who make my work feel like more than work, and you\'re one of them.\n\n' +
+      'I also put together a short list of things happening Thanksgiving week here in Las Vegas that most people don\'t know about:\n\n' +
+      '1. Free turkey experts you can call or text, with the hours already converted to Pacific time\n2. The free USDA food safety hotline, open Thanksgiving morning\n' +
+      '3. Bellagio\'s free holiday display, perfect for a walk after dinner\n4. The Ethel M Cactus Garden holiday lights in Henderson\n5. The one kitchen rule that prevents the most common Thanksgiving fire\n' +
+      '6. A free turkey giveaway this Saturday in North Las Vegas, worth forwarding to anyone who could use a little help this year\n\n' +
+      'Here\'s the full list with all the details: https://juliancrider.com/blog/thanksgiving-week-las-vegas-free/\n\nFrom my family to yours, Happy Thanksgiving.'}
+];
+const BLAST_SKIP = /^(Unsubscribed|Do Not Email|Bad Email|Not Interested|Has Agent|Deceased|Agent|Partner|Text Opt-Out|No Shawna)$/i;
+function blastPeople(tags) {
+  const me = Number(PropertiesService.getScriptProperties().getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, out = {};
+  tags.forEach(tag => {
+    let next = '', guard = 0;
+    do {
+      const r = fubFetch('people?tags=' + encodeURIComponent(tag) + '&limit=100&fields=id,firstName,lastName,name,tags,emails,phones,assignedUserId,stage,customBirthday' + (next ? '&next=' + next : ''), null, 'get');
+      (r.people || []).forEach(p => { if (Number(p.assignedUserId) === Number(me)) out[p.id] = p; });
+      next = (r._metadata || {}).next || '';
+    } while (next && ++guard < 20);
+  });
+  return Object.keys(out).map(k => out[k]);
+}
+// Sends one message (text if Text OK, else email). Returns 'text' | 'email' | '' (skipped).
+function sendTouch(p, text, subject, email, label) {
+  const tags = p.tags || [];
+  if (isTestPerson(p) || tags.some(t => BLAST_SKIP.test(t)) || /^(Trash)$/i.test(String(p.stage || ''))) return '';
+  let first = realFirst(p) || 'there'; if (/^(caller|unknown|no name|test)\b/i.test(first)) first = 'there';
+  const fill = s => String(s).replace(/\{first\}/g, first);
+  const phone = (p.phones || []).map(x => bbE164(x.value || '')).filter(Boolean)[0];
+  if (text && phone && tags.indexOf('Text OK') >= 0 && !isOwnNumber(phone)) {
+    PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + phone, String(Date.now()));
+    bbSendParts(phone, humanize(fill(text)));
+    try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: humanize(fill(text)) + '\n\n(' + label + ')'}); } catch (e) {}
+    return 'text';
+  }
+  const addr = (p.emails || []).filter(e => e.status !== 'Invalid').map(e => e.value).filter(validEmail)[0];
+  if (email && addr) {
+    const r = sendFromBcolv(addr, fill(subject), fill(email));
+    if (!r || r.ok === false) throw new Error('email to ' + addr + ': ' + ((r && r.error) || 'failed'));
+    try { fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + fill(subject), body: 'From julianc@bcolv.com to ' + addr + ':\n\n' + fill(email) + '\n\n(' + label + ')'}); } catch (e) {}
+    return 'email';
+  }
+  return '';
+}
+function runBlasts() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('BLASTS') === 'off') return;
+  const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), now = Date.now();
+  if (hour < 9 || hour >= 20) return;
+  BLASTS.forEach(b => {
+    if (now < new Date(b.start).getTime() || now > new Date(b.end).getTime()) return;
+    const k = 'BLAST_' + b.id, st = JSON.parse(props.getProperty(k) || '{"done":[],"text":0,"email":0,"skip":0}');
+    if (st.finished) return;
+    const people = blastPeople(b.tags).filter(p => st.done.indexOf(p.id) < 0);
+    let n = 0, i = 0, max = Number(props.getProperty('BLAST_PER_TICK') || 15), stopped = false;
+    for (; i < people.length && n < max; i++) {
+      const p = people[i];
+      try { const how = sendTouch(p, b.text, b.subject, b.email, b.id); if (how) { st[how]++; n++; } else st.skip++; }
+      catch (e) { console.log('Blast ' + b.id + ': ' + e.message); stopped = true; break; }  // mailer trouble: stop this tick, retry next
+      st.done.push(p.id);
+      props.setProperty(k, JSON.stringify(st));
+      Utilities.sleep(400);
+    }
+    if (!stopped && i >= people.length) {
+      st.finished = true; props.setProperty(k, JSON.stringify(st));
+      try { bossTextSafe('🦃 Done: your "' + b.id.replace(/-/g, ' ') + '" message went out. ' + st.email + ' emails from julianc@bcolv.com, ' + st.text + ' texts, ' + st.skip + ' skipped (no email/text consent, opted out, agents or test contacts).'); } catch (e) {}
+    }
+  });
+}
+
+// BIRTHDAYS (Nov 19, Julián: "send the birthday message a few days before a client's birthday or birthday month… so they
+// have time to sign up" for freebies). Daily after 9am: his contacts with the FUB Birthday field 3 days out, or tagged
+// "Bday <Month>" when the 1st of that month is 3 days out, get one early-birthday note with the freebies list (text if
+// Text OK, else bcolv email). Pool = tags Top 200 / VIP / past client / Text OK / Bday <Month>. BDAY_<id>_<year> = once a
+// year. One heads-up text to Julián listing who got it. BIRTHDAYS=off stops it.
+const BDAY_MSG = {
+  text: 'Happy early birthday, {first}! 🎂 Quick heads up so you can plan: a lot of places give birthday freebies, but most need you signed up in their app a few days ahead. Here\'s a good list: https://freebl.co Hope it\'s a great one.',
+  subject: 'Happy early birthday, {first} 🎂',
+  email: 'Hi {first},\n\nYour birthday is coming up, so happy early birthday!\n\nA quick tip so you can plan: a lot of restaurants and shops give free birthday treats, but most of them need you signed up in their app or rewards program a few days ahead. Here\'s a good list to look through: https://freebl.co\n\nHope it\'s a great one.'};
+function runBirthdays() {
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles';
+  if (props.getProperty('BIRTHDAYS') === 'off') return;
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), hour = Number(Utilities.formatDate(new Date(), tz, 'H'));
+  if (hour < 10 || hour >= 19 || props.getProperty('BDAY_RUN') === today) return;
+  props.setProperty('BDAY_RUN', today);
+  const in3 = new Date(Date.now() + 3 * 864e5), md = Utilities.formatDate(in3, tz, 'MM-dd'), year = Utilities.formatDate(in3, tz, 'yyyy');
+  const monthTag = Utilities.formatDate(in3, tz, 'd') === '1' ? 'Bday ' + Utilities.formatDate(in3, tz, 'MMMM') : '';
+  const pool = blastPeople(['Top 200', 'VIP', 'past client', 'Text OK'].concat(monthTag ? [monthTag] : []));
+  const sent = [];
+  pool.forEach(p => {
+    const bd = String(p.customBirthday || '').slice(5, 10), hit = bd === md || (monthTag && (p.tags || []).indexOf(monthTag) >= 0);
+    const k = 'BDAY_' + p.id + '_' + year;
+    if (!hit || props.getProperty(k)) return;
+    try { const how = sendTouch(p, BDAY_MSG.text, BDAY_MSG.subject, BDAY_MSG.email, 'early birthday'); props.setProperty(k, '1'); if (how) sent.push((realFirst(p) + ' ' + (p.lastName || '')).trim() + ' (' + how + ')'); }
+    catch (e) { console.log('Birthday ' + p.id + ': ' + e.message); }
+  });
+  if (sent.length) try { bossTextSafe('🎂 Sent early birthday wishes with the freebies list to:\n\n' + sent.join('\n')); } catch (e) {}
+}
+
 function remindUpcoming() {
   try { checkTextingMac(); } catch (e) { console.log('Mac check: ' + e.message); }
   try { checkRealScout(); } catch (e) { console.log('RealScout: ' + e.message); }
+  try { runBlasts(); } catch (e) { console.log('Blasts: ' + e.message); }
+  try { runBirthdays(); } catch (e) { console.log('Birthdays: ' + e.message); }
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
   try { processPersonalEmailOutbox(); } catch (e) { console.log('Personal email: ' + e.message); }

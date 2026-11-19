@@ -830,6 +830,17 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Ethel M lights (not confirmed free: $3 last season), NFPA cooking-fire tip, North Las Vegas turkey giveaway Sat Nov 21 8am
   Liberty Park first 500 households (to share), property-tax-cap link). Email/text to the Top 200 only after his OK.
 
+- Campaign sends + birthdays (Nov 19, his OK "send whenever you feel is best"): BLASTS in Code.gs (runBlasts on the 5-min
+  remindUpcoming tick, 9am-8pm PT, BLAST_PER_TICK 15, BLAST_<id> {done, text, email, skip, finished}): to his contacts with
+  the tags, text if Text OK else bcolv email via `sendTouch` (skips test/agents/partners/opted out/unsubscribed/Bad Email/
+  Has Agent/Not Interested/Trash; "Caller …" names greet "there"); one "🦃 Done" summary text. The "FUB note outbox" can't do
+  bulk (it only scans the newest 25 notes). First: thanksgiving-2026 to tag Top 200 (190 people, ~170 emails, a few texts),
+  Fri Nov 20 9am through Sat 8pm. BLASTS=off stops all. `runBirthdays` (daily 10am-7pm, BDAY_<id>_<year>): FUB custom field
+  customBirthday 3 days out, or tag "Bday <Month>" when the 1st is 3 days out, pool Top 200/VIP/past client/Text OK → early
+  birthday note with freebl.co (sign up in the apps a few days ahead); heads-up text listing who got it; BIRTHDAYS=off stops it.
+  Few contacts have customBirthday filled yet. Article themes: blog/build.js THEMES (b.theme 'thanksgiving' = autumn colors,
+  banner) on the static /blog/ page.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
