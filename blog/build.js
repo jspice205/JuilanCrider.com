@@ -14,6 +14,21 @@ const today = new Date().toISOString().slice(0, 10);
 const CTA = {book: ['Book a free 30-minute call', '/?book'], value: ['Get a free home value report', '/?value'], net: ['Estimate my net proceeds', '/?value'],
   search: ['Search homes', '/?start'], register: ['Register my builder visit', '/?book'], relocate: ['Open the relocation guide', '/?relocate']};
 
+// Seasonal looks for holiday articles (b.theme). Plain HTML/CSS so the page stays fast and readable everywhere.
+const THEMES = {
+  thanksgiving: {
+    css: `:root{--bg:#fbf6ee;--ink:#2b1d14;--muted:#7a6352;--line:#ead9c4;--red:#b5541c}
+@media (prefers-color-scheme:dark){:root{--bg:#1c140f;--ink:#f6ece0;--muted:#c4ab93;--line:#3a2a1f;--red:#e08a4f}}
+.tg-banner{margin:18px 0 6px;border-radius:18px;padding:22px 20px;background:linear-gradient(135deg,#7a2e12,#b5541c 45%,#d99a3c);color:#fff8ef;text-align:center}
+.tg-banner .leaves{font-size:26px;letter-spacing:6px}
+.tg-banner b{display:block;font-size:22px;margin:6px 0 2px}
+.tg-banner span{font-size:14px;opacity:.9}
+h2{color:var(--red)}
+h2::before{content:"🍂 ";font-size:.85em}
+.cta{background:var(--red);color:#fff}`,
+    banner: `<div class="tg-banner"><div class="leaves">🍂 🦃 🥧 🍁</div><b>Happy Thanksgiving</b><span>From my family to yours · Julián J. Crider</span></div>`}
+};
+
 const page = b => {
   const url = `${SITE}/blog/${b.slug}/`, img = /^https?:/.test(b.img) ? b.img : `${SITE}/${b.img}`;
   const body = b.body.filter(p => p !== '[[ig]]').map(p => p.startsWith('## ') ? `<h2>${p.slice(3)}</h2>` : `<p>${p}</p>`).join('\n');
@@ -47,10 +62,12 @@ img.hero{width:100%;border-radius:16px;margin:16px 0;aspect-ratio:4/3;object-fit
 h1{font-size:30px;line-height:1.2;margin:6px 0 14px}h2{font-size:21px;margin:28px 0 6px}
 a{color:var(--red)}.cta{display:block;text-align:center;background:var(--ink);color:var(--bg);padding:14px;border-radius:999px;text-decoration:none;font-weight:700;margin:28px 0 10px}
 .refs{font-size:15px}.note,.foot{color:var(--muted);font-size:14px}.foot{border-top:1px solid var(--line);margin-top:36px;padding-top:16px}
+${THEMES[b.theme] ? THEMES[b.theme].css : ''}
 </style></head>
 <body><main>
 <header><a href="/">Julián J. Crider · Las Vegas &amp; Henderson Real Estate</a></header>
 <article>
+${THEMES[b.theme] ? THEMES[b.theme].banner : ''}
 <img class="hero" src="${/^https?:/.test(b.img) ? b.img : '/' + b.img}" alt="">
 <div class="kick">${esc(b.tag)} · ${b.mins} min read${b.date ? ' · ' + new Date(b.date + 'T12:00:00Z').toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC'}) : ''} · By Julián J. Crider</div>
 <h1>${b.title}</h1>
