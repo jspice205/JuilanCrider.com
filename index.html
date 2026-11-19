@@ -782,20 +782,11 @@ img{max-width:100%;display:block}
   .vid{max-width:none}
   .vid video{aspect-ratio:21/9}
   .idx{height:78vh}
-  .cmap{height:440px}
   .sheet{top:50%;bottom:auto;max-width:600px;max-height:86vh;border-radius:22px;transform:translate(-50%,-46%);opacity:0;pointer-events:none;transition:transform .25s,opacity .2s}
   .sheet.on{transform:translate(-50%,-50%);opacity:1;pointer-events:auto}
   .grab{display:none}
   .cookie{left:auto;right:24px;bottom:24px;transform:none;width:400px}
 }
-.cmap{position:relative;margin:4px 16px 16px;height:340px;border-radius:16px;overflow:hidden;border:1px solid var(--hair);background:var(--surface);z-index:0}
-.cmap-load{position:absolute;inset:0;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;padding:16px}
-.cmap-load b{font-size:16px}.cmap-load small{color:var(--muted);font-size:13px}
-.cmap .leaflet-popup-content{color:#111;font-family:var(--font);font-size:13px;line-height:1.4}
-.cmap .leaflet-popup-content b{display:block;font-size:14px;margin-bottom:2px}
-.cmap .leaflet-popup-content a{display:inline-block;margin-top:6px;font-weight:600;color:#111}
-.cmap-legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:0 16px 10px;font-size:12px;color:var(--muted)}
-.cmap-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 .startcard{display:flex;align-items:center;gap:12px;width:calc(100% - 32px);margin:14px 16px 0;padding:14px 16px;border-radius:16px;background:var(--surface);text-align:left}
 .startcard span{flex:1;display:flex;flex-direction:column}.startcard b{font-size:15px}.startcard small{font-size:13px;color:var(--muted)}.startcard em{font-style:normal;font-size:22px;color:var(--muted)}
 .intents{display:grid;gap:8px;margin:6px 0 12px}
@@ -2137,34 +2128,6 @@ const TONE_ICON = {
 };
 const RSECS = [['r-over','Overview'],['r-hoods','Neighborhoods'],['r-do','Things to do'],['r-eat','Dining'],['r-golf','Golf'],['r-sports','Sports and arts'],['r-health','Schools and health'],['r-move','Moving checklist'],['r-escrow','Escrow timeline'],['r-guides','Guides and tools']];
 function tile(tone, label, img){ return img ? `<div class="tile"><img src="${G[img]}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div>` : `<div class="tile tone-${tone}">${TONE_ICON[tone]}<span class="ph">${label||'Photo coming'}</span></div>`; }
-/* ---------- Community map (Leaflet + OpenStreetMap; loads on tap or after cookie consent) ---------- */
-// Approximate community centers.
-const COMMUNITY_PINS = {'Summerlin':[36.158,-115.332],'The Ridges':[36.153,-115.317],'The Summit':[36.176,-115.346],'Red Rock Country Club':[36.143,-115.322],
-  'Queensridge':[36.170,-115.286],'Providence':[36.288,-115.287],'Iron Mountain Ranch':[36.296,-115.240],'MacDonald Highlands':[36.008,-115.040],'Anthem':[35.975,-115.095],
-  'Green Valley Ranch':[36.031,-115.085],'Seven Hills':[35.997,-115.117],'Lake Las Vegas':[36.108,-114.930],'Tuscany':[36.057,-114.990],'Spanish Hills':[36.129,-115.273],
-  'Southern Highlands':[35.993,-115.196],'Rhodes Ranch':[36.057,-115.293],'Mountain’s Edge':[36.013,-115.270],'Inspirada':[35.967,-115.118],'Nevada Trails':[36.028,-115.253],'Aliante':[36.292,-115.164]};
-const AREA_COLOR = {'Northwest and Summerlin':'#d13438','Henderson and Southeast':'#2563eb','Southwest':'#16a34a','North':'#d97706'};
-let cmapLoaded = false;
-function loadCommunityMap(){
-  if (cmapLoaded || !$('cmap')) return; cmapLoaded = true;
-  $('cmapLoad').innerHTML = '<b>Loading map…</b>';
-  const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
-  const js = document.createElement('script'); js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-  js.onerror = () => { cmapLoaded = false; $('cmapLoad').innerHTML = '<b>The map couldn’t load</b><small>Tap to try again</small>'; };
-  js.onload = () => {
-    $('cmap').innerHTML = '';
-    const map = L.map('cmap', {scrollWheelZoom: false, attributionControl: true});
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap contributors'}).addTo(map);
-    const pts = [];
-    RELO.areas.forEach(a => a.list.forEach(c => {
-      const ll = COMMUNITY_PINS[c[0]]; if (!ll) return; pts.push(ll);
-      L.circleMarker(ll, {radius: 8, color: '#fff', weight: 2, fillColor: AREA_COLOR[a.name] || '#888', fillOpacity: .95}).addTo(map)
-        .bindPopup(`<b>${c[0]}</b><span style="color:#6e6e73">${a.name}</span><br>${c[1]}<br><a href="#" data-book="Buying a home">Ask about homes here ›</a>`, {maxWidth: 240});
-    }));
-    map.fitBounds(pts, {padding: [24, 24]});
-  };
-  document.head.appendChild(js);
-}
 function renderRelo(){
   $('rnav').innerHTML = RSECS.map((s,i)=>`<button class="chip ${i?'':'on'}" data-go="${s[0]}">${s[1]}</button>`).join('');
   document.querySelectorAll('#rnav .chip').forEach(c => c.onclick = () => {
@@ -2178,9 +2141,7 @@ function renderRelo(){
     <h3 class="grp">A little history</h3><div class="pair"><img loading="lazy" decoding="async" src="${G.vintage}" alt="Vintage downtown Las Vegas"><img loading="lazy" decoding="async" src="${G.hoover}" alt="Hoover Dam"></div>
     <div class="prose">${RELO.history.map(p=>`<p>${p}</p>`).join('')}</div>
     <h3 class="grp">Ways to live here</h3><div class="hscroll">${[['custom','Custom homes','Built around how you live'],['highrise','Luxury high-rises','Strip views, full-service living'],['commercial','Commercial real estate','Investment and business property']].map(w=>`<button class="act-card" data-open="book" data-type="Buying a home"><div class="tile"><img src="${G[w[0]]}" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></div><div class="in"><b>${w[1]}</b><small>${w[2]}</small></div></button>`).join('')}</div></section>`;
-  h += `<section class="rsec" id="r-hoods"><h2>Neighborhoods</h2><p class="sub">See where each community sits, then tap one to learn more.</p>
-    <div class="cmap" id="cmap"><button class="cmap-load" id="cmapLoad" type="button"><b>Show the community map</b><small>Interactive map from OpenStreetMap</small></button></div>
-    <div class="cmap-legend">${RELO.areas.map(a=>`<span><i style="background:${AREA_COLOR[a.name]||'#888'}"></i>${a.name}</span>`).join('')}</div>
+  h += `<section class="rsec" id="r-hoods"><h2>Neighborhoods</h2><p class="sub">Tap any community to learn more.</p>
     ${RELO.areas.map(a=>`${a.img?`<div class="area"><div class="band tall"><img src="${G[a.img]}" alt="" loading="lazy"><span>${a.name}</span></div>`:`<div><div class="grp">${a.name}</div>`}<div class="comm">${a.list.map(c=>`<details><summary>${c[0]}</summary><p>${c[1]}</p>
       <a class="mini" href="#" data-book="Buying a home">Ask about homes here</a></details>`).join('')}</div></div>`).join('')}</section>`;
   h += `<section class="rsec" id="r-do"><h2>Memorable activities</h2><p class="sub">Tap any activity for details, directions and how to go.</p><div class="area"><div class="band tall wide"><img src="${G.wheel}" alt="" loading="lazy"><span>Get out and explore</span></div>
@@ -2205,8 +2166,6 @@ function renderRelo(){
   $('relo').innerHTML = h;
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { const [g,a] = b.dataset.act.split('-').map(Number); openActivity(g,a); });
   bindOpeners($('relo'));
-  $('cmapLoad').onclick = loadCommunityMap;
-  if (consent === 'accept') loadCommunityMap();
 }
 function openActivity(gi, ai){
   const g = RELO.activities[gi], a = g.items[ai];
@@ -2816,7 +2775,6 @@ bindOpeners($('nhComms'));
 let consent = null; // in the build, save this choice in a first-party cookie so the banner doesn't return each visit
 function loadThirdParty(){
   if (!document.getElementById('gfont')){ const l = document.createElement('link'); l.id='gfont'; l.rel='stylesheet'; l.href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'; document.head.appendChild(l); }
-  if ($('cmap')) loadCommunityMap();
   // Google Analytics (GA4, Nov 17): only after Accept, like everything else here.
   if (!window.gtag){ window.dataLayer = window.dataLayer || []; window.gtag = function(){ dataLayer.push(arguments); };
     gtag('js', new Date()); gtag('config', 'G-2Y3G2S4T47');
