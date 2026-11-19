@@ -812,6 +812,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   findOpportunities now reads the "Signed in:" date from their notes (FUB created only if after LIVE_SINCE) and the prompt
   never guesses a date. Always check a contact's real sign-in date before writing "on <date>".
 
+- Pull-outs (Nov 19 look-back: Lisa's "not going to work for us" got an instant Shawna reply; Emilee's "Our agent thinks we can
+  get $785K" got "sounds solid"): ASSISTANT.pullout (not going to work / decided to go with / another agent|home / our agent /
+  listed with / no longer interested…) makes the text sensitive (no auto reply) and always alerts "🙋 X may be pulling out.
+  This one's yours" (bypasses the 2-h throttle). Emilee Durrant 304: their home lists Dec 1 with their agent Austin; their
+  Montagna/Vineyards purchase waits on that sale → FUB tasks Dec 15 + Jan 5 to check whether it's under contract.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

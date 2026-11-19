@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-oppdates';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-pullout';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3370,6 +3370,9 @@ function bbWebhook(e) {
 const ASSISTANT = {
   model: 'llama-3.3-70b-versatile',
   escalate: /\b(offer|counter|contract|escrow|earnest|commission|lawyer|attorney|sue|complain|discriminat|inspection report|appraisal)\b/i,
+  // Nov 19 (Lisa's "not going to work for us" got an instant Shawna reply that closed the door): a client pulling out,
+  // choosing another home or naming their own agent goes to Julián, never an automatic answer.
+  pullout: /\b(not going to work|won'?t work|doesn'?t work for us|(decided|chosen|choose|going) (to )?(go|move forward|move on|proceed|work) with|another (agent|realtor|home|house|property)|different (agent|realtor|direction)|(our|my) (own )?(agent|realtor|listing agent)|signed with|listed with|going (a different|another) (way|direction)|no longer interested|we('ll| will) pass|decided not to|decided against)\b/i,
 };
 // What Shawna knows about Julián's business. Julián adds more by typing one fact per row in the "Shawna Knowledge" tab.
 const SHAWNA_FACTS = `About Julián: Julián J. Crider, Realtor® (NV license S.0177760), The DeBenedetto Team at Boeckle & Co. (broker Landon Boeckle, B.1001882), 4775 W Teco Ave #220, Las Vegas, NV 89118, office 725-465-7646. Cell/text 702-498-2571. Email julianc@bcolv.com. Background: started as a listing agent at one of the largest brokerages in the country, then moved into development (land, construction, getting housing built in the valley), so he looks at a home's value five years out, build quality, and whether it's the right move for the money. Promise: straight talk even when it costs him the deal, does what he says, answers the phone.
@@ -3585,9 +3588,9 @@ function assistantReply(person, from, text) {
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
   if (out.important || out.escalate) stat('neededYou');
-  const sens0 = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('No Shawna') >= 0;
+  const sens0 = ASSISTANT.escalate.test(text) || ASSISTANT.pullout.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('No Shawna') >= 0;
   const reply = varyOpener(humanize(out.reply), thread, realFirst(p));
-  const sensitive = ASSISTANT.escalate.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0 || tags.indexOf('No Shawna') >= 0;
+  const sensitive = ASSISTANT.escalate.test(text) || ASSISTANT.pullout.test(text) || tags.indexOf('Has Agent') >= 0 || tags.indexOf('Text Opt-Out') >= 0 || tags.indexOf('No Shawna') >= 0;
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   const today = Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd'), cnt = 'AI_CNT_' + person.id;
   const used = (props.getProperty(cnt) || '').split('|'), n = used[0] === today ? Number(used[1]) : 0;
@@ -3601,13 +3604,14 @@ function assistantReply(person, from, text) {
   const closer = /^\s*(?:(?:ok(?:ay)?|great|sounds good|perfect)[,!.\s]*)?(?:we|i)(?:'ll| will) (?:let you know|be in touch|reach out|get back to you)[^?]*$/i.test(text) || /^\s*(?:(?:ok(?:ay)?|yes|yeah|yep|yup|great|perfect|awesome|got it|sure)[,!.…\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again|julian|julián))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!…🙏👍😊🙂❤️]*$/i.test(text);
   // Alert wording (Nov 13): either she's answering (he can jump in) or it's his (she did NOT reply). Never both.
   const willAnswer = ok && !closer && hour >= 8 && hour < endHour && (mode === 'auto' || mode === 'backup' || invited);
-  if (out.important || out.escalate) {  // only what matters reaches Julián's phone (once per person every 2 hours)
+  const pulling = ASSISTANT.pullout.test(text);
+  if (out.important || out.escalate || pulling) {  // only what matters reaches Julián's phone (once per person every 2 hours; a pull-out always)
     props.setProperty('LAST_ALERT_ID', JSON.stringify({id: person.id, at: Date.now()}));
     const k = 'IMP_' + person.id;
-    if (Date.now() - Number(props.getProperty(k) || 0) > 2 * 36e5) {
+    if (pulling || Date.now() - Number(props.getProperty(k) || 0) > 2 * 36e5) {
       props.setProperty(k, String(Date.now()));
       const quote = (first || 'They') + ' texted: "' + String(text).slice(0, 140) + '"' + (out.why || out.reason ? ' (' + (out.why || out.reason) + ')' : '');
-      try { notifyJulian(willAnswer ? '💬 ' + (first || 'A client') + ' texted (I\'m answering)' : '🙋 ' + (first || 'A client') + ' needs YOU',
+      try { notifyJulian(pulling ? '🙋 ' + (first || 'A client') + ' may be pulling out. This one\'s yours' : willAnswer ? '💬 ' + (first || 'A client') + ' texted (I\'m answering)' : '🙋 ' + (first || 'A client') + ' needs YOU',
         quote + (willAnswer ? '\n\nI\'m answering and keeping the conversation going. If you text them yourself, I step back.'
           : '\n\nI did NOT reply: this one\'s for you. Want me to write it? Say "reply to ' + (first || 'them') + '" and anything to include.'), '', [first, p.lastName].join(' ').trim()); } catch (e) {}
     }
