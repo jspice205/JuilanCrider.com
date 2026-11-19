@@ -825,6 +825,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   plain Low/Medium/High risk, never invented odds), optional appraisers list (only names Julián gives). Comps come from him:
   RPR (free with NAR, AI CMA) or the MLS, exported and sent to Claude; RPR has no API for agents, so nothing is "connected".
 
+- Thanksgiving article (Nov 19, his ask: value for his top active clients, "something they'd tell a family member"):
+  blog thanksgiving-week-las-vegas-free (Butterball + USDA hotlines with Pacific times, Bellagio Conservatory free display,
+  Ethel M lights (not confirmed free: $3 last season), NFPA cooking-fire tip, North Las Vegas turkey giveaway Sat Nov 21 8am
+  Liberty Park first 500 households (to share), property-tax-cap link). Email/text to the Top 200 only after his OK.
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.
