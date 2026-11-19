@@ -4,6 +4,7 @@
        page.addInitScript(`window.CMA = ${JSON.stringify(data)}`) → page.goto(this file) → page.pdf({format:'Letter'})
      Pricing uses Julián's "Comp like an Appraiser" method: (highest sold $/sf − lowest sold $/sf) ÷ 2 / 3 / 4,
      add back the lowest $/sf, times the home's square feet = high / medium / average list price.
+     Pricing strategy page (Nov 19): set CMA.strategy (see strategyPage) for "two numbers and a plan".
      Never commit a client's report data to this repo; keep it local and share the PDF privately. -->
 <html lang="en"><head><meta charset="utf-8"><title>Comparative Market Analysis</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -79,6 +80,16 @@
   .bars .n{font-size:9px;color:#555;white-space:nowrap}
   .vals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
   .vals div{border-top:1px solid #e3e3e3;padding-top:8px}.vals b{display:block;font:300 20px/1.2 Inter}.vals small{font-size:9.5px;color:#777}
+  /* two numbers + plan (Nov 19) */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .two>div{border-top:3px solid #111;padding-top:10px}
+  .two>div.test{border-top-color:#b3262b}
+  .two b.v{display:block;font:300 34px/1.1 Inter;letter-spacing:-.01em;margin:4px 0}
+  .two p{font-size:11px;line-height:1.6;color:#444;margin:6px 0 0}
+  .plan{background:#f4f3f1;border-radius:4px;padding:14px 18px;margin-top:16px;font-size:11.5px;line-height:1.6}
+  .plan b{font-weight:600}
+  table.sc td{font-size:10.5px}
+  .apr{font-size:11px;line-height:1.6;color:#333;margin-top:14px}
   .disc{font-size:8.5px;color:#999;line-height:1.5;position:absolute;left:.7in;right:.7in;bottom:.8in}
 </style></head><body>
 <div id="out"></div>
@@ -88,6 +99,35 @@ const ppsf = (p, sf) => sf ? '$' + (p / sf).toFixed(0) : '—';
 function method(c){  // Julián's "Comp like an Appraiser"
   const hi = c.highPpsf, lo = c.lowPpsf, d = hi - lo, sf = c.subject.sqft;
   return [2,3,4].map(k => ({k, ppsf: lo + d / k, price: (lo + d / k) * sf}));
+}
+// "Two numbers and a plan" (Julián, Nov 19, after losing a listing to an agent's higher number): what it will likely
+// appraise for, where we could list to test the market with a set review date, and what happens at each price.
+// c.strategy = {appraisal, appraisalNote, listLow, listHigh, reviewDay (14), adjustTo, scenarios:[{price,label,dom,cut,appraisal,note}],
+//   appraisers:[{name, company, phone, note}]}. Only appraisal is needed; the rest falls back to the comps on file.
+// Never invent days on market or odds: the default scenarios use the sold comps' own median DOM and plain-language risk.
+function strategyPage(c, tiers, foot, n){
+  const st = c.strategy, ap = st.appraisal || tiers[2].price, sold = (c.sold || []).filter(r => r.dom != null).map(r => Number(r.dom)).sort((a, b) => a - b);
+  const med = sold.length ? sold[Math.floor(sold.length / 2)] : null, day = st.reviewDay || 14;
+  const lo = st.listLow || ap, hi = st.listHigh || ap, adj = st.adjustTo || ap;
+  const sc = st.scenarios || [
+    {price: $m(ap), label: 'At the appraisal value', dom: med != null ? 'About ' + med + ' days, like the closest sales' : 'In line with the closest sales', cut: 'Low', appraisal: 'Low', note: 'Priced where buyers and their lenders already agree.'},
+    {price: $m(lo) + (hi !== lo ? ' to ' + $m(hi) : ''), label: 'Testing the market', dom: med != null ? 'Likely longer than ' + med + ' days' : 'Likely longer than the closest sales', cut: 'Medium: we review on day ' + day, appraisal: 'Medium: a contract above ' + $m(ap) + ' may need to be renegotiated', note: 'Gives the market a chance to pay more, with a set date to adjust.'},
+    {price: 'Well above ' + $m(hi), label: 'Overpriced', dom: 'Often sits until the price comes down', cut: 'High', appraisal: 'High', note: 'Buyers compare it to the sales on the next pages and wait. Stale listings tend to sell for less.'}];
+  return `<section class="pg"><div class="kicker">Pricing strategy</div><h2 style="margin-top:10px">Two numbers and a plan</h2>
+    <div class="two">
+      <div><small class="kicker">What it will likely appraise for</small><b class="v">${$m(ap)}</b>
+        <p>${st.appraisalNote || 'Backed by the closest sold comps on the following pages. This is the number a buyer’s lender will lend on: when a contract comes in above it, the appraisal often comes in lower and the price gets renegotiated down before closing.'}</p></div>
+      <div class="test"><small class="kicker">Where we could list to test the market</small><b class="v">${$m(lo)}${hi !== lo ? ' to ' + $m(hi) : ''}</b>
+        <p>A little above the appraisal value, to give the market a chance to pay more. With a plan that protects you:</p></div>
+    </div>
+    <div class="plan"><b>The plan:</b> if we don’t have strong showings by day ${day}, we adjust to <b>${$m(adj)}</b>. ${st.planNote || 'We look at showings, feedback and online views together every week, so the decision is based on what buyers actually do.'}</div>
+    <div style="margin-top:20px" class="kicker">What happens at each price</div>
+    <table class="sc"><tr><th>Price</th><th>Likely time on market</th><th>Risk of a price cut</th><th>Appraisal risk</th></tr>
+      ${sc.map(r => `<tr><td><b>${r.price}</b><br><span class="muted">${r.label}</span></td><td>${r.dom}</td><td>${r.cut}</td><td>${r.appraisal}</td></tr><tr><td colspan="4" class="muted" style="font-size:10px;border-bottom:1px solid #ddd">${r.note || ''}</td></tr>`).join('')}</table>
+    ${st.appraisers && st.appraisers.length ? `<div style="margin-top:18px" class="kicker">Want a pre-listing appraisal? Appraisers I recommend</div>
+      <div class="apr">${st.appraisers.map(x => `<div><b>${x.name}</b>${x.company ? ', ' + x.company : ''}${x.phone ? ' · ' + x.phone : ''}${x.note ? '<br><span class="muted">' + x.note + '</span>' : ''}</div>`).join('')}
+      <div class="muted" style="font-size:9.5px;margin-top:6px">A pre-listing appraisal is optional and paid by the seller. Recommendations are for convenience; you’re free to choose any licensed appraiser.</div></div>` : ''}
+    ${foot(n)}</section>`;
 }
 function render(c){
   const s = c.subject, tiers = method(c), a = c.agent;
@@ -101,7 +141,7 @@ function render(c){
     <div class="inner"><div class="kicker">Comparative market analysis</div>
       <h1 class="addr" style="margin-top:14px">${s.street},<br>${s.cityZip}</h1>
       <div class="meta"><div>Prepared for<b>${c.preparedFor}</b></div><div>Dated<b>${c.date}</b></div><div>Prepared by<b>${a.name}</b></div></div></div>
-    <div class="toc">${(c.bio ? ['About Julián'] : []).concat(['The home','Pricing','Sold comps','Competition'], c.market ? ['Market trends'] : []).map((t,i) => `<div>${t}<small>Page ${i+2}</small></div>`).join('')}</div>
+    <div class="toc">${(c.bio ? ['About Julián'] : []).concat(['The home','Pricing'].concat(c.strategy ? ['Pricing strategy'] : [], ['Sold comps','Competition']), c.market ? ['Market trends'] : []).map((t,i) => `<div>${t}<small>Page ${i+2}</small></div>`).join('')}</div>
     <div class="agent"><img src="${a.photo}" alt=""><div class="c"><b>${a.name}</b><br>${a.title} · ${a.team}<br>${a.phone} · ${a.email} · ${a.site}</div></div>
   </section>
   ${c.bio ? `<section class="pg"><div class="kicker">Your agent</div><h2 style="font-size:40px;margin-top:10px" class="serif">${a.name}</h2>
@@ -128,6 +168,8 @@ function render(c){
     <div class="steps"><b>How this was priced (comp like an appraiser):</b> ${c.methodNote} Highest sold price per sq ft ${'$' + c.highPpsf.toFixed(2)}, lowest ${'$' + c.lowPpsf.toFixed(2)}; the difference (${'$' + (c.highPpsf - c.lowPpsf).toFixed(2)}) divided by 2, 3 and 4, added back to the lowest, times ${s.sqft.toLocaleString()} sq ft.</div>
     <div class="stat">${c.stats.map(x => `<div><b>${x[1]}</b><small>${x[0]}</small></div>`).join('')}</div>
     ${foot(++n)}</section>
+
+  ${c.strategy ? strategyPage(c, tiers, foot, ++n) : ''}
 
   <section class="pg"><div class="kicker">Sold comparables</div><h2 style="margin-top:10px">What buyers actually paid</h2>
     ${c.featured ? `<div class="cards">${c.featured.map(f => `<div class="card"><img src="${f.photo}" alt=""><b>${f.addr}</b><div class="p">${$m(f.price)}</div><small>${f.line}</small></div>`).join('')}</div>` : ''}
