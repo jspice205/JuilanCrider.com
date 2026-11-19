@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-18-realscout';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-yesall';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3395,7 +3395,7 @@ function assistantKnowledge() {
 
 /** Removes the dashes that make texts read like AI (keeps phone numbers and hyphenated words). */
 function humanize(t) {
-  return darkHands(String(t || '').replace(/\s*[—–]\s*/g, ', ').replace(/\s+-\s+/g, ', ').replace(/,\s*,/g, ',').trim());
+  return darkHands(String(t || '').replace(/(^|[^\d-])(\d{1,2})\s*[—–-]\s*(\d{1,2})(?![\d-])/g, '$1$2 to $3').replace(/\s*[—–]\s*/g, ', ').replace(/\s+-\s+/g, ', ').replace(/,\s*,/g, ',').trim());
 }
 /** One long text block → 2 or 3 short paragraphs with a blank line between (a question at the end stands alone).
  *  Leaves short texts, texts that already have line breaks, and anything under 3 sentences alone. */
@@ -4033,6 +4033,7 @@ function morningUpdateText(opts) {
       .reverse().forEach(x => {
         const ph = x.phone || '', k = ph || x.who;
         if (!ph || seen[k] || need.length >= 5) return; seen[k] = 1;
+        if (/^\s*(?:(?:ok(?:ay)?|great|perfect|awesome|got it|sounds good|yes|yep|cool)[,!.\s]*)*(?:thanks?|thank you|thank you so much|ty|appreciate (?:it|you))?[\s!.…🙏🏾🙏👍🏾👍❤️😊]*$/i.test(String(x.text || ''))) return;
         let th = []; try { th = bbThread(ph).split('\n').filter(Boolean); } catch (e) {}
         if (th.length && /Julián: /.test(th[th.length - 1])) return;  // Julián or Shawna already answered
         let who = x.who;
@@ -4172,6 +4173,8 @@ function findOpportunities(max) {
         'Each person came in some way and nobody has personally followed up in a while. Write like a real person checking in, not a drip email: warm, brief, ' +
         'reference how they came in only from the facts given, one easy no-oriented or open question (Chris Voss style, e.g. "Would it be crazy to…", "Are you still…", "What would make…"). ' +
         'Never invent facts, homes, addresses, prices, rates or market numbers. No deal numbers. Fair Housing safe. Texts: 1 to 3 sentences, at most one emoji, no links, no sign-off. ' +
+        'Notes are Julián\'s private records: never mention ratings, scores, interest levels, tiers, tags or form answers word for word (no "you rated", "interest level was 8"); ' +
+        'use them only to choose what to ask. Write time ranges with "to" (6 to 12 months), never a dash. ' +
         'Emails: a short plain subject and 3 to 5 sentences, signed "Julián". No dashes.' + julianVoice() +
         '\nReturn JSON: {"drafts":[{"id":<person id>,"text":"...","subject":"... (emails only)"}]}'},
       {role: 'user', content: picks.map(x => 'id ' + x.p.id + ': ' + x.who + ' (' + (x.textOk ? 'TEXT' : 'EMAIL') + '). They ' + x.how + ' on ' +
@@ -5139,10 +5142,11 @@ function bossCommand(text, tries) {
   let pend = JSON.parse(props.getProperty('BOSS_PENDING') || 'null');
   const queue = pendingQueue();
   // "yes to all" / "send them all" / "yes 1 and 3" (Nov 18, the morning follow-ups come in a batch): approve each one.
-  const YES_WORD = /^\s*(?:yes|y|yeah|yep|sure|send|send it|go|go ahead|ok|okay|bet|run it|do it|approved?)(?:\s+please)?\s*/i;
+  const YES_WORD = /^\s*(?:yes|y|yeah|yep|sure|send|send it|go|go ahead|ok|okay|bet|run it|do it|approved?|approve)(?:\s+please)?\s*/i;
   if (queue.length && YES_WORD.test(text)) {
     const rest = text.replace(YES_WORD, '');
-    const nums = /^(?:to\s+|for\s+)?(?:them\s+)?(?:all|every\s*(?:one|thing))(?:\s+of\s+them)?\s*[.!👍🏾👍]*\s*$/i.test(rest) ? queue.map(x => x.n)
+    // Nov 19: "Yes to All follow-ups" fell through to the router. Words after "all" (follow-ups, emails, texts, 3…) are fine.
+    const nums = /^(?:to\s+|for\s+)?(?:them\s+)?(?:all|every\s*(?:one|thing))(?:\s+(?:of\s+them|the|three|3|\d|follow[\s-]?ups?|emails?|texts?|drafts?|approvals?|messages?|of\s+those|those|these|please|now))*\s*[.!👍🏾👍]*\s*$/i.test(rest) ? queue.map(x => x.n)
       : /^(?:to\s+|for\s+)?#?\d+(?:\s*(?:,|&|and|\+)?\s*#?\d+)+\s*[.!]*\s*$/i.test(rest) ? (rest.match(/\d+/g) || []).map(Number) : null;
     if (nums && nums.length) { nums.forEach(n => { try { bossCommand('yes ' + n, 1); } catch (e) { console.log('Approve #' + n + ': ' + e.message); } }); return; }
   }
@@ -5791,7 +5795,8 @@ Examples (all mean the same as the action shown):
         lines.push('• ' + who + ' (text): "' + String(x.text || '').slice(0, 100) + '"');
       });
       const r = bcolvCall({action: 'inbox', days: 7, max: 10});
-      ((r && r.emails) || []).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
+      ((r && r.emails) || []).filter(m => !/mailer-daemon|postmaster|mail delivery|no-?reply|notification|followupboss|calendar/i.test(String(m.from || '')) &&
+        !/delivery status|undeliverable|returned mail|auto.?reply|out of office/i.test(String(m.subject || ''))).slice(0, 6).forEach(m => lines.push('• ' + String(m.from).replace(/<.*>/, '').replace(/"/g, '').trim() + ' (email "' + m.subject + '"): ' + String(m.body || '').replace(/\s+/g, ' ').slice(0, 100)));
       return say(lines.length ? 'still waiting on you:\n' + lines.join('\n') + '\n\nTell me what to say and I\'ll reply for you.' : 'you\'re all caught up. No unanswered texts or unread client emails this week.');
     }
     if (a.action === 'agenda') {  // "what do I have today" = the full update; "my to-dos/tasks" = just the list
