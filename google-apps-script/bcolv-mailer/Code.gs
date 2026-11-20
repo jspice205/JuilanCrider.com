@@ -14,6 +14,7 @@ function setupMailer() {
   const p = PropertiesService.getScriptProperties();
   if (!p.getProperty('MAILER_KEY')) p.setProperty('MAILER_KEY', Utilities.getUuid().replace(/-/g, ''));
   GmailApp.getAliases();  // asks for the Gmail permission now
+  MailApp.getRemainingDailyQuota();  // and the "send email" permission (v6)
   CalendarApp.getDefaultCalendar();  // and the Calendar permission (business appointments)
   console.log('BCOLV_MAILER_KEY = ' + p.getProperty('MAILER_KEY'));
   console.log('Sending as: ' + Session.getActiveUser().getEmail());
@@ -33,7 +34,7 @@ function doPost(e) {
       .map(e => ({title: e.getTitle(), start: e.getStartTime().getTime(), end: e.getEndTime().getTime(), description: e.getDescription()}));
     return out({ok: true, events: evs});
   }
-  if (d.action === 'version') return out({ok: true, version: 5});  // v2 attachments · v3 inbox + reply · v4 search · v5 safe thread replies
+  if (d.action === 'version') return out({ok: true, version: 6});  // v2 attachments · v3 inbox + reply · v4 search · v5 safe thread replies · v6 emoji subjects
   if (d.action === 'search') {  // any Gmail search (read or unread, sent or received): the last few messages of each thread
     const me = Session.getEffectiveUser().getEmail().toLowerCase(), list = [];
     GmailApp.search(String(d.query || ''), 0, Math.min(Number(d.max) || 8, 20)).forEach(t => {
@@ -78,7 +79,9 @@ function doPost(e) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.to || ''))) return out({ok: false, error: 'bad address'});
   // Attachments (v2): [{name, mimeType, base64}], e.g. a CMA PDF.
   const files = (d.attachments || []).slice(0, 5).map(a => Utilities.newBlob(Utilities.base64Decode(a.base64), a.mimeType || 'application/pdf', a.name || 'attachment.pdf'));
-  GmailApp.sendEmail(d.to, String(d.subject || '').slice(0, 200), String(d.text || ''),
-    {htmlBody: d.html || undefined, name: d.name || 'Julián Crider', attachments: files.length ? files : undefined});
+  // v6 (Nov 20): MailApp, because GmailApp turned the 🦃 in a subject into "������". Still sends from julianc@bcolv.com and
+  // still lands in its Sent folder, so Follow Up Boss tracks it the same way.
+  MailApp.sendEmail({to: d.to, subject: String(d.subject || '').slice(0, 200), body: String(d.text || ''),
+    htmlBody: d.html || undefined, name: d.name || 'Julián Crider', attachments: files.length ? files : undefined});
   return out({ok: true, from: Session.getEffectiveUser().getEmail(), attachments: files.length});
 }

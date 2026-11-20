@@ -613,6 +613,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   emoji-only text, a 👍/❤️, a tapback or an "Edited to “…”" event gets no reply (Mckenna Geary's edit had drawn a 2nd reply).
   (3) Never double-send: bbSendNow refuses the same text to the same number within 6 h (SENT_<md5> cache; logged "Text NOT
   sent · duplicate blocked"). Emilee Durrant 304 got the Thanksgiving text twice while he was re-working her; it bothered him.
+- TEST FIRST (Julián, Nov 20: "fix the emails and do the test first moving forward"): every BLASTS entry (unless noTest) first
+  runs `blastTest`: the exact text (with STOP line + card) to his phone and the exact email to julianc@bcolv.com, then one
+  approval (pending kind 'blast', 6 h); his YES sets BLAST_OK_<id> and the send starts. Emoji subjects: bcolv mailer v6 sends
+  with MailApp (GmailApp had mangled 🦃 into ������); main script strips subject emoji only while `mailerVersion()` < 6.
+  Julián must paste the v6 mailer once (bcolv account → Shawna Mailer → paste → run setupMailer → Deploy → Manage deployments
+  → edit → New version).
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
