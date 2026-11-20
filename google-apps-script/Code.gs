@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-calendar-fix';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-subject-fix';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -6481,6 +6481,9 @@ function testBusinessCalendar() {
 
 /** Sends an email FROM julianc@bcolv.com through the small "Shawna Mailer" script in that account. */
 function sendFromBcolv(to, subject, text, attachments, plain) {
+  // Nov 20: the 🦃 in the Thanksgiving subject arrived as "������" (emoji outside the basic plane break in Gmail subjects).
+  // Subjects never carry emoji; the body keeps them.
+  subject = String(subject || '').replace(/[\u{10000}-\u{10FFFF}\u2600-\u27BF\uFE0F\u200D]/gu, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').trim();
   const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
   if (!url) return {ok: false, error: 'bcolv mailer not set up'};
   const html = String(text).split(/\n{2,}/).map(par => '<p style="margin:0 0 12px">' + par.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('') +
@@ -7128,7 +7131,7 @@ const BLASTS = [
     stages: ['Active Client', 'Pending', 'Under Contract'], textOnly: true, anyOpenHouse: true,
     text: 'Hey {first}, happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/'},
   {id: 'thanksgiving-2026', start: '2026-11-20T09:00:00-08:00', end: '2026-11-21T20:00:00-08:00', tags: ['Top 200'], skipTextable: true, anyOpenHouse: true,
-    subject: 'Happy Thanksgiving, {first} 🦃 (6 things happening this week)',
+    subject: 'Happy Thanksgiving, {first} (6 free things happening this week)',
     text: 'Hey {first}, happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/',
     email: 'Hi {first},\n\nI just wanted to say thank you. This time of year I think about the people who make my work feel like more than work, and you\'re one of them.\n\n' +
       'I also put together a short list of things happening Thanksgiving week here in Las Vegas that most people don\'t know about:\n\n' +
