@@ -360,6 +360,16 @@ img{max-width:100%;display:block}
 
 /* Watch */
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;border-radius:14px;overflow:hidden}
+/* YouTube (Nov 19): Shorts as vertical tiles, full videos as wide cards; tap plays inside the site */
+.yt-shorts{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px}
+.yt-shorts button{flex:0 0 31%;max-width:150px;aspect-ratio:9/16;border-radius:12px;overflow:hidden;position:relative;scroll-snap-align:start;background:var(--surface)}
+.yt-shorts img,.yt-full img{width:100%;height:100%;object-fit:cover;display:block}
+.yt-shorts span,.yt-full span{position:absolute;left:0;right:0;bottom:0;padding:18px 8px 7px;font-size:12px;line-height:1.25;color:#fff;text-align:left;background:linear-gradient(transparent,rgba(0,0,0,.75));display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.yt-full{display:grid;gap:10px;margin-top:10px}
+.yt-full button{position:relative;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:var(--surface)}
+.yt-full span{font-size:14px;padding:26px 12px 10px}
+.yt-play{position:relative;width:100%;border-radius:14px;overflow:hidden;background:#000;margin-bottom:14px}
+.yt-play iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .grid3 a{position:relative;aspect-ratio:9/16;display:block;background:var(--surface)}
 .grid3 img{width:100%;height:100%;object-fit:cover}
 .grid3 svg{position:absolute;right:6px;top:6px}
@@ -1039,11 +1049,12 @@ img{max-width:100%;display:block}
       </div>
       <div class="grid3" id="tours"></div>
       <p class="fine">Sample tiles. Your latest Instagram videos fill this grid once your account is connected.</p>
-      <div class="textcard" style="margin:14px 0 0">
-        <div class="who" style="font-size:16px">YouTube: Julian Crider Estates</div>
-        <p style="color:var(--ink2);font-size:15px;margin:4px 0 12px">Full-length tours and market updates. New videos appear here automatically once the channel launches.</p>
-        <button class="pill block" data-open="signup" data-why="Get notified when the YouTube channel launches.">Notify me</button>
+      <div class="prof" style="margin-top:18px">
+        <img loading="lazy" decoding="async" class="av" src="img/julian-avatar.jpg" alt="">
+        <div style="flex:1"><div class="who">YouTube</div><div class="meta">Shorts, tours and market updates</div></div>
+        <a class="mini" href="https://www.youtube.com/channel/UCDqgwRG3yjItvj8HG7D-xtg?sub_confirmation=1" target="_blank" rel="noopener">Subscribe</a>
       </div>
+      <div id="ytBox"><p class="fine">Loading videos…</p></div>
 
     </div>
 
@@ -2855,6 +2866,30 @@ bindOpeners($('nhComms'));
 
 /* ---------- Cookie consent: nothing third-party loads until Accept ---------- */
 let consent = null; // in the build, save this choice in a first-party cookie so the banner doesn't return each visit
+// YouTube section (Nov 19, Julián: "open even for Shorts and full videos"): latest uploads from his channel via the Apps Script
+// (GET ?action=youtube reads the channel's public RSS feed; YouTube blocks the feed from browsers). Tap = play right here,
+// then a next step (book a call / relocation guide). No videos yet → just the Subscribe button.
+function loadYouTube(){
+  const box = $('ytBox'); if (!box) return;
+  const e = t => String(t || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  fetch(SHEET_URL + '?action=youtube').then(r => r.json()).then(d => {
+    const vids = (d.videos || []).filter(v => /^[\w-]{6,20}$/.test(v.id));
+    if (!vids.length) { box.innerHTML = '<p class="fine">New videos show up here as soon as they post. Subscribe to see them first.</p>'; return; }
+    const shorts = vids.filter(v => v.short).slice(0, 9), full = vids.filter(v => !v.short).slice(0, 4);
+    const thumb = v => `https://i.ytimg.com/vi/${v.id}/${v.short ? 'hq2' : 'hqdefault'}.jpg`;
+    box.innerHTML = (shorts.length ? `<span class="lab">Shorts</span><div class="yt-shorts">${shorts.map(v => `<button type="button" data-yt="${v.id}" data-short="1" aria-label="Play ${e(v.title)}"><img loading="lazy" src="${thumb(v)}" alt="" onerror="this.src='https://i.ytimg.com/vi/${v.id}/hqdefault.jpg'"><span>${e(v.title)}</span></button>`).join('')}</div>` : '') +
+      (full.length ? `<span class="lab" style="margin-top:12px;display:block">Videos</span><div class="yt-full">${full.map(v => `<button type="button" data-yt="${v.id}" aria-label="Play ${e(v.title)}"><img loading="lazy" src="${thumb(v)}" alt=""><span>${e(v.title)}</span></button>`).join('')}</div>` : '');
+    box.querySelectorAll('[data-yt]').forEach(b => b.onclick = () => {
+      const v = vids.find(x => x.id === b.dataset.yt), short = !!b.dataset.short;
+      openRaw('', `<div class="yt-play" style="aspect-ratio:${short ? '9/16;max-width:340px;margin:0 auto 14px' : '16/9'}"><iframe src="https://www.youtube-nocookie.com/embed/${v.id}?autoplay=1&playsinline=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="${e(v.title)}"></iframe></div>
+        <h3 style="font-size:18px;margin:0 0 12px">${e(v.title)}</h3>
+        <button class="pill block" data-open="book">Book a free call with Julián</button>
+        <button class="pill ghost block" style="margin-top:8px" onclick="location.href='/?relocate'">Moving to Vegas? Start here</button>
+        <a class="pill ghost block" style="margin-top:8px;text-align:center" href="https://www.youtube.com/channel/UCDqgwRG3yjItvj8HG7D-xtg?sub_confirmation=1" target="_blank" rel="noopener">Subscribe on YouTube</a>`);
+    });
+  }).catch(() => { box.innerHTML = '<p class="fine">Videos didn’t load. Tap Subscribe to watch on YouTube.</p>'; });
+}
+loadYouTube();
 function loadThirdParty(){
   if (!document.getElementById('gfont')){ const l = document.createElement('link'); l.id='gfont'; l.rel='stylesheet'; l.href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'; document.head.appendChild(l); }
   // Google Analytics (GA4, Nov 17): only after Accept, like everything else here.

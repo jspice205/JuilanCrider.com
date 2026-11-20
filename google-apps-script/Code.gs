@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-meet-options';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-youtube';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -167,8 +167,31 @@ function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'listing') return json(listingPageData(String(e.parameter.id || '')));
   if (e && e.parameter && e.parameter.action === 'photo') return json(listingPhotoData(String(e.parameter.id || ''), Number(e.parameter.i)));
   if (e && e.parameter && e.parameter.action === 'free') return json({status: 'ok', items: freeItems(30)});
+  if (e && e.parameter && e.parameter.action === 'youtube') return json({status: 'ok', videos: youtubeVideos()});
   if (e && e.parameter && e.parameter.action === 'slots') return json({status: 'ok', slots: bookingSlots(meetingFor(e.parameter)).map(d => d.toISOString())});
   return json({status: 'ok', message: 'JC Leads API is running'});
+}
+
+/** Latest uploads (Shorts + full videos) from his real estate YouTube channel for the site's YouTube section (Nov 19).
+ *  Reads the public RSS feed (no key), cached 30 min. Shorts are told apart by the /shorts/ link in the feed. */
+const YOUTUBE_CHANNEL = 'UCDqgwRG3yjItvj8HG7D-xtg';
+function youtubeVideos() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('YT_FEED');
+  if (hit) return JSON.parse(hit);
+  let vids = [];
+  try {
+    const res = UrlFetchApp.fetch('https://www.youtube.com/feeds/videos.xml?channel_id=' + (PropertiesService.getScriptProperties().getProperty('YOUTUBE_CHANNEL') || YOUTUBE_CHANNEL), {muteHttpExceptions: true});
+    if (res.getResponseCode() === 200) {
+      const root = XmlService.parse(res.getContentText()).getRootElement(), atom = root.getNamespace(), yt = XmlService.getNamespace('http://www.youtube.com/xml/schemas/2015');
+      vids = root.getChildren('entry', atom).map(en => {
+        const link = (en.getChild('link', atom) || {getAttribute: () => null}).getAttribute('href');
+        return {id: en.getChildText('videoId', yt), title: en.getChildText('title', atom), published: en.getChildText('published', atom),
+          short: /\/shorts\//.test(link ? link.getValue() : '')};
+      }).filter(v => v.id);
+    } else console.log('YouTube feed: ' + res.getResponseCode());
+  } catch (e) { console.log('YouTube feed: ' + e.message); }
+  cache.put('YT_FEED', JSON.stringify(vids), vids.length ? 1800 : 300);
+  return vids;
 }
 
 // ============================================================
