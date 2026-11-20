@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-blue-green';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-stop-tier-c';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1109,7 +1109,9 @@ function scorePerson(p) {
   if (Number(p.price) >= 1000000) { score += 5; why.push('$' + Math.round(Number(p.price) / 1e5) / 10 + 'M price range'); }
   const act = activityScore(p);
   score = Math.max(0, score + act.pts); why.push(...act.why);
-  const tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
+  let tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
+  // Nov 20 (Julián: "keep emails but move them to C"): someone who texted STOP stays on email but never above Tier C.
+  if (has('Text Opt-Out') && (tier === 'Hot' || tier === 'Warm')) { tier = 'Nurture'; why.push('replied STOP to texts'); }
   // Plans do the reaching out; Julián steps in when the lead does something.
   let next = {Hot: act.pts >= 25 ? 'They reached out: answer today' : 'Hot plan running: answer when they reply',
     Warm: 'Warm plan running: answer when they reply', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
@@ -7579,7 +7581,7 @@ function testOpenHouseText() {
 function processEmailOutbox() {
   const props = PropertiesService.getScriptProperties();
   const done = JSON.parse(props.getProperty('EMAIL_OUTBOX_DONE') || '[]');
-  const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+  const notes = (fubFetch('notes?limit=100&sort=-created', null, 'get').notes || [])
     .filter(n => /^send email$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
       Date.now() - new Date(n.created) < 36 * 36e5);
   notes.reverse().forEach(n => {
@@ -7685,7 +7687,7 @@ function processEmailAssistant(list) {
 function processBcolvEmailOutbox() {
   const props = PropertiesService.getScriptProperties();
   const done = JSON.parse(props.getProperty('BCOLV_OUTBOX_DONE') || '[]');
-  const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+  const notes = (fubFetch('notes?limit=100&sort=-created', null, 'get').notes || [])
     .filter(n => /^send bcolv email$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
       Date.now() - new Date(n.created) < 36 * 36e5);
   notes.reverse().forEach(n => {
@@ -7728,7 +7730,7 @@ function processBcolvEmailOutbox() {
  *  renamed "Send personal email - sent". Never for client business (those go from bcolv). */
 function processPersonalEmailOutbox() {
   const props = PropertiesService.getScriptProperties(), done = JSON.parse(props.getProperty('PERSONAL_OUTBOX_DONE') || '[]');
-  (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+  (fubFetch('notes?limit=100&sort=-created', null, 'get').notes || [])
     .filter(n => /^send personal email$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 && Date.now() - new Date(n.created) < 36 * 36e5)
     .forEach(n => {
       done.push(n.id); props.setProperty('PERSONAL_OUTBOX_DONE', JSON.stringify(done.slice(-100)));
@@ -7760,7 +7762,7 @@ function processFubOutbox() {
   try { processBcolvEmailOutbox(); } catch (e) { console.log('bcolv email outbox: ' + e.message); }
   const props = PropertiesService.getScriptProperties();
   const done = JSON.parse(props.getProperty('OUTBOX_DONE') || '[]');
-  const notes = (fubFetch('notes?limit=25&sort=-created', null, 'get').notes || [])
+  const notes = (fubFetch('notes?limit=100&sort=-created', null, 'get').notes || [])
     .filter(n => /^send text$/i.test(String(n.subject || '').trim()) && n.createdById === 2 && done.indexOf(n.id) < 0 &&
       Date.now() - new Date(n.created) < 36 * 36e5);
   notes.reverse().forEach(n => {

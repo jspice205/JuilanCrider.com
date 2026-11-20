@@ -601,6 +601,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Blue/green (Nov 20, his ask): bbSendNow records the service (BB_LAST_SERVICE); every "Text sent" note subject is built by
   `textSentSubject()` → "Text sent · 🔵 blue (iMessage)" / "Text sent · 🟢 green (SMS)" (green = what carriers see). Subjects still
   start with "Text sent", so /^Text sent/ checks keep working; textStatusText shows the color.
+  STOP → Tier C (Nov 20, his ask "just text, keep emails but move them to C"): scoring caps anyone with Text Opt-Out at Nurture
+  (Tier C); emails continue. Outboxes (Send text / Send email / Send bcolv email / personal) now scan the newest 100 notes, not 25
+  (the Thanksgiving send's hundreds of notes pushed his apology "Send text" notes out of view).
+  Thanksgiving results (Nov 20): 71 texts, 176 emails (~13 people got the email twice at 11:48 from an overlapping tick), 2 STOPs
+  (Eli Durkovic 299, Joe Liu 310), double texts to Michael Wesley, Pascal Laoirie, Israel Simmons, Emily Travis, Zak Adams, Teddy
+  Truong (apology + card sent) and Emilee Durrant.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
