@@ -2505,6 +2505,7 @@ function pickTime(c, note){
             ? doneHTML('Showing booked', `${res.label} (Pacific time)${c.property ? ' at ' + c.property : ''}. Julián will text you to confirm${c.property ? '' : ' the home'}, and a reminder before. The buyer agreement is in your email.`)
             : golf ? doneHTML('We’re on ⛳', `${res.label} (Pacific time), ${c.holes || 18} holes${c.course ? ' at ' + c.course : ''}. Julián will text you to confirm the tee time.`)
             : c.kind === 'listing' ? doneHTML('You’re booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you at the home and text you a reminder before.`)
+            : c.kind === 'model' ? doneHTML('You’re booked', `${res.label} (Pacific time), model homes at ${c.property}. Julián will text you where to meet. Please don’t visit the builder before then: on the first visit he needs to be with you.`)
             : c.kind === 'video' ? doneHTML('You’re booked', `${res.label} (Pacific time).${res.link ? ' Video link: <a href="' + res.link + '" target="_blank" rel="noopener">' + res.link + '</a>.' : ''} A calendar invite is on its way.`)
             : doneHTML('You’re booked', `${res.label} (Pacific time). A calendar invite is on its way. Julián will call you at ${v.phone}.`);
         }).catch(requested);
@@ -2790,10 +2791,16 @@ function bookFlow(preset){
     document.querySelectorAll('#types .chip').forEach(c => c.onclick = () => { st.type=c.textContent; document.querySelectorAll('#types .chip').forEach(x=>x.classList.toggle('on',x===c)); });
     $('next1').onclick = () => { if (!st.type){$('tErr').style.display='block';return;} s2(); };
   }
+  // How to meet (Nov 19, Julián): buying adds Tour a home (→ Request a showing, agreement first), selling adds At my home
+  // (1-hour listing appointment), new construction adds a model home visit; relocating leads with video. No coffee or golf
+  // on the public form (his Nov 2 rule; golf stays on the private ?golf link).
+  const meetOpts = () => /Buying/.test(st.type) ? ['Phone call','Video call','Tour a home'] : /Selling/.test(st.type) ? ['Phone call','Video call','At my home']
+    : /New construction/.test(st.type) ? ['Phone call','Video call','Meet at a model home'] : /Relocating/.test(st.type) ? ['Video call','Phone call'] : ['Phone call','Video call'];
   function s2(){
     openRaw('Book a consultation', ggSteps(1)+`<p class="gg-h">A few quick questions</p>
-      <div class="field"><span class="lab">How should we meet?</span><div class="chips" data-chips="how" data-opts="Phone call|Video call (Zoom or Google Meet)"></div></div>
-      <div class="field"><span class="lab">If video, how long?</span><div class="chips" data-chips="len" data-opts="30 minutes|45 minutes"></div></div>
+      <div class="field"><span class="lab">How would you like to meet?</span><div class="chips" data-chips="how" data-opts="${meetOpts().join('|')}"></div></div>
+      <div class="field" id="lenF" hidden><span class="lab">How long?</span><div class="chips" data-chips="len" data-opts="30 minutes|45 minutes"></div></div>
+      <div class="field" id="commF" hidden><label for="comm">Which community or builder?</label><input id="comm" placeholder="e.g. Cadence, Toll Brothers in Summerlin"></div>
       <div class="field"><span class="lab">Timeline</span><div class="chips" data-chips="tl3" data-opts="Ready now|1–3 months|3–6 months|6–12 months|Just exploring"></div></div>
       ${/Buying|New|Relocating/.test(st.type)?`<div class="field"><span class="lab">Price range</span><div class="chips" data-chips="pr" data-opts="Under $500K|$500K–$1M|$1M–$1.3M|$1.3M–$3.3M|$3.3M+"></div></div>
       <div class="field"><span class="lab">Where do you live now?</span><div class="chips" data-chips="from" data-opts="Las Vegas area|California|Another state|Outside the U.S."></div></div>
@@ -2802,14 +2809,28 @@ function bookFlow(preset){
       ${/Selling/.test(st.type)?`<div class="field"><label for="addr">Property address</label><input id="addr" autocomplete="street-address"></div>`:''}
       <div class="duo"><button class="pill ghost" id="back2">Back</button><button class="pill" id="next2">Next: pick a day</button></div>`);
     $('back2').onclick = s1;
+    sheet.querySelector('[data-chips="how"]').addEventListener('click', () => { const h = chipVal(sheet,'how');
+      $('lenF').hidden = !/Video/.test(h); $('commF').hidden = !/model/.test(h); });
     $('next2').onclick = () => {
       st.how=chipVal(sheet,'how'); st.len=chipVal(sheet,'len'); st.tl=chipVal(sheet,'tl3'); st.pa=chipVal(sheet,'pa'); st.pr=chipVal(sheet,'pr'); st.from=chipVal(sheet,'from'); st.ag=chipVal(sheet,'ag'); st.addr=$('addr')?$('addr').value.trim():'';
       if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
+      const leadNotes = joinNotes(['Meet by: '+(st.how||''), 'Price range: '+(st.pr||''), 'Lives in: '+(st.from||''), 'Pre-approved: '+(st.pa||''), 'Working with agent: '+(st.ag||'')]);
+      if (/Tour a home/.test(st.how||'')) return showingFlow('');
+      if (/At my home/.test(st.how||'')) {
+        if (!st.addr) { alert('Add the property address so I know where to meet you.'); return; }
+        return pickTime({kind:'listing', minutes:60, property: st.addr, type:'Listing appointment', title:'Book a consultation', back: s2, what: 'At your home · ' + st.addr,
+          lead: {type:'Listing appointment', property: st.addr, timeline: st.tl||'', notes: leadNotes}, notes: ['Listing appointment', st.addr, st.tl && 'Timeline: ' + st.tl].filter(Boolean).join(' · ')});
+      }
+      if (/model/.test(st.how||'')) {
+        const comm = ($('comm') && $('comm').value.trim()) || 'Community to be chosen with Julián';
+        return pickTime({kind:'model', minutes:60, property: comm, type:'New construction', title:'Book a consultation', back: s2, what: 'Model home visit · ' + comm, askNote: 'Anything I should know? (optional)',
+          lead: {type:'Consultation: New construction', property: comm, timeline: st.tl||'', notes: leadNotes},
+          notes: ['Model home visit', comm, st.tl && 'Timeline: ' + st.tl, st.pa && 'Pre-approved: ' + st.pa].filter(Boolean).join(' · ')});
+      }
       const video = /Video/.test(st.how||''), minutes = video && /45/.test(st.len||'') ? 45 : 30;
       pickTime({kind: video ? 'video' : 'phone', minutes, type: st.type, title:'Book a consultation', back: s2, askNote: 'Anything I should know? (optional)',
         what: `${minutes}-minute ${video ? 'video' : 'phone'} call · ${st.type}`,
-        lead: {type:'Consultation: '+st.type, property: st.addr||'', timeline: st.tl||'',
-          notes: joinNotes(['Meet by: '+(st.how||''), 'Price range: '+(st.pr||''), 'Lives in: '+(st.from||''), 'Pre-approved: '+(st.pa||''), 'Working with agent: '+(st.ag||'')])},
+        lead: {type:'Consultation: '+st.type, property: st.addr||'', timeline: st.tl||'', notes: leadNotes},
         notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl, st.pa && 'Pre-approved: ' + st.pa].filter(Boolean).join(' · ')});
     };
   }
