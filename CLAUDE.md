@@ -573,6 +573,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   processTextQueue tags Text OK + note "Text consent". Only sign-ins within 90 days ("Signed in:" note date, else FUB created
   after LIVE_SINCE) = federal DNC established-business-relationship window for inquiries; older ones wait until he says
   "they're DNC checked" (OH_OPTIN_ALL=on). 75 open-house contacts on Nov 20.
+  Nov 20 (later, his rule): "anyone in my hot or warm list or in a deal stage can receive text messages after that first message";
+  agents stay on their own list. `textable(p)`: 'ok' (Text OK) | 'first' (deal stage Active Client/Pending/Under Contract always;
+  tags open house/Tier A/B/Hot/Warm with an inquiry in 90 days or OH_OPTIN_ALL) | ''. NO_TEXT_TAGS = opt-out/Has Agent/Agent/
+  Partner/Unsubscribed/Not Interested/Deceased/Bought Elsewhere/No Shawna/test. sendTouch texts 'first' people with
+  FIRST_TEXT_OPTOUT and then markTextOk (tag + "Text consent" note). runOpenHouseOptIn now covers all those groups (first text
+  OH_OPTIN.text for open house, .general for Hot/Warm, .deal for clients in a deal; ohopt rows skip people already Text OK).
+  Thanksgiving: blast thanksgiving-2026-text (textOnly, tags Top 200/Tier A/B/Hot/Warm/open house + deal stages, through Wed
+  Nov 25) + the email blast now skips textable people (skipTextable). His one-time call "for today, anyone that was at the open
+  house, excluding agents, gets the Thanksgiving text": anyOpenHouse → older open-house visitors get that greeting with the STOP
+  line ('greeting') but are NOT tagged Text OK.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
