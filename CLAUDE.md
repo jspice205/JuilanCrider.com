@@ -591,6 +591,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Text pacing (Nov 20, Julián: "space the text messages out so I don't get flagged as spam by AT&T"): group texts never burst.
   Text blasts and the card catch-up send TEXT_PER_TICK (default 4) per 5-min tick with `textGap()` 20-45 s random gaps (~40/h);
   Text Queue group steps (ohopt/t21/holiday/memo/free/bday) max 4 per 15-min run, same gaps. Emails keep BLAST_PER_TICK.
+  No doubles (Nov 20: Michael Wesley 263, Pascal Laoirie 262, Israel Simmons 259 got the Thanksgiving text twice, 10 s apart: a
+  tick sending 15 texts at ~15 s each ran past 5 min and the next tick overlapped): runBlasts/sendCardCatchup run one at a time
+  (CacheService BLAST_RUN / CARD_RUN, 10 min) and each person is re-checked against the saved state right before sending.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 

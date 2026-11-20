@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-text-pacing';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-no-doubles';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7223,6 +7223,12 @@ function sendTouch(p, text, subject, email, label, opts) {
 // the text"): people whose Thanksgiving text was their FIRST text from him (it had the STOP line, no "it's Julián") get one
 // short text saying who it is + his contact card. 9am-8pm, 15 per tick, once each (CARDCATCH_DONE). Ends Nov 25.
 function sendCardCatchup() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('CARD_RUN')) return;
+  cache.put('CARD_RUN', '1', 600);
+  try { sendCardCatchupNow(); } finally { cache.remove('CARD_RUN'); }
+}
+function sendCardCatchupNow() {
   const props = PropertiesService.getScriptProperties(), hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
   if (hour < 9 || hour >= 20 || Date.now() > new Date('2026-11-25T20:00:00-08:00').getTime() || props.getProperty('CARDCATCH') === 'off') return;
   const st = JSON.parse(props.getProperty('BLAST_thanksgiving-2026-text') || '{"done":[]}'), done = JSON.parse(props.getProperty('CARDCATCH_DONE') || '[]');
@@ -7252,6 +7258,14 @@ function textGap() { return 20000 + Math.floor(Math.random() * 25000); }
 function runBlasts() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('BLASTS') === 'off') return;
+  // Nov 20: a 5-minute tick that ran long overlapped the next one and 3 people got the Thanksgiving text twice. One run at a
+  // time (BLAST_RUN, 10 min), and each person is re-checked against the saved state right before sending.
+  const cache = CacheService.getScriptCache();
+  if (cache.get('BLAST_RUN')) return;
+  cache.put('BLAST_RUN', '1', 600);
+  try { runBlastsNow(props); } finally { cache.remove('BLAST_RUN'); }
+}
+function runBlastsNow(props) {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), now = Date.now();
   if (hour < 9 || hour >= 20) return;
   BLASTS.forEach(b => {
@@ -7264,6 +7278,7 @@ function runBlasts() {
     let n = 0, i = 0, max = b.textOnly ? Number(props.getProperty('TEXT_PER_TICK') || 4) : Number(props.getProperty('BLAST_PER_TICK') || 15), stopped = false;
     for (; i < people.length && n < max; i++) {
       const p = people[i];
+      try { const fresh = JSON.parse(props.getProperty(k) || '{}'); if ((fresh.done || []).indexOf(p.id) >= 0) continue; } catch (e) {}
       try { const how = sendTouch(p, b.text, b.subject, b.email, b.id, {textOnly: b.textOnly, skipTextable: b.skipTextable, anyOpenHouse: b.anyOpenHouse}); if (how) { st[how]++; n++; } else st.skip++; }
       catch (e) {
         console.log('Blast ' + b.id + ': ' + e.message);
