@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-text-groups';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-calendar-fix';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3809,7 +3809,9 @@ function rangeBounds(range) {
  *  the copies Shawna syncs onto the personal calendar left out so nothing shows twice. */
 function calendarText(range) {
   const {start, end} = rangeBounds(range), fmt = (d, f) => Utilities.formatDate(new Date(d), 'America/Los_Angeles', f), evs = [], seen = {};
-  const add = (t, s, biz) => { const k = String(t).toLowerCase().replace(/\W+/g, '') + '|' + Math.round(s / 6e4); if (seen[k]) return; seen[k] = 1; evs.push({t: t, s: s, biz: biz}); };
+  // Nov 20: an event that started the night before and runs past midnight ("Jewel 9 PM") showed under tomorrow too.
+  const from = range === 'tomorrow' ? start.getTime() : 0;
+  const add = (t, s, biz) => { if (s < from) return; const k = String(t).toLowerCase().replace(/\W+/g, '') + '|' + Math.round(s / 6e4); if (seen[k]) return; seen[k] = 1; evs.push({t: t, s: s, biz: biz}); };
   try { CalendarApp.getDefaultCalendar().getEvents(start, end).forEach(e => { if (!/\[synced by Shawna\]/.test(e.getDescription() || '')) add(e.getTitle(), e.getStartTime().getTime(), false); }); } catch (e) {}
   try { ((bcolvCall({action: 'events', from: start.toISOString(), to: end.toISOString()}) || {}).events || []).forEach(e => add(e.title, e.start, true)); } catch (e) {}
   evs.sort((x, y) => x.s - y.s);
