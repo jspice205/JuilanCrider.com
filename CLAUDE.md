@@ -501,6 +501,18 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   house: …", "market update for Lisa: …", "note for Dan: …", "send Dan his page" (approval; text if Text OK else bcolv
   email). Buyers tap Love/Pass/Tour (+ optional note) → POST clientReact → Reaction cell, FUB note, notifyJulian. Weekly
   listing (la-w) and buyer (lb-w) flow texts add the page link when one exists.
+- Client pages v2 (Nov 20, Julián: "most extensive data-driven private page… they might be selling more than one… there was no
+  address so the private page shouldn't have went out"): clientPageData (cached 10 min, CPD_<token>) returns properties (Client
+  Pages rows kind 'property': address + facts JSON from `propertyFactsFor` = parcelForAddress → parcelFacts, never the owner; filled
+  once, retried every 6 h; the old head address is migrated to a property row), deals (FUB deal card → DEAL_STAGES key, days in
+  stage, price, projected close) and dutiesSigned. Page: Where we are (5-step path), each home (Google Maps embed, fact tiles, "What
+  the numbers say" = $/sq ft at last sale, owned since, list $/sq ft, list vs last sale, only from real numbers), Public record,
+  Before photos checklist (ticks in localStorage), showing feedback / market updates / notes with counts, Documents (Duties Owed
+  status), buyers: homes + Loved/Tours/Passed counts + today's rates. Several homes → chips. Boss: "address for Charles: 123 Main St"
+  (fast path) / "Charles is also selling …" / "remove … from Charles' page" → clientPageCommand adds/removes property rows.
+  runListingFlow: a seller page is created/linked only when an address is known (deal name "… · 123 Main" or the contact's
+  address); otherwise the heads-up asks Julián for it. Deal-flow auto messages now go the NEXT day at 10am (heads-up the day
+  before so he can prepare; AUTO_DELAY_H hours overrides). Charles Walton 2484's page went out Nov 20 with no address.
 - 21-day check-ins (Nov 13, `runTouch21` after runListingFlow; TOUCH21): his Text OK contacts (not agents/partners/past
   clients/VIP/in a deal/opted out/not interested/Has Agent/Not DNC checked/test; not new in the last 21 days) get one text
   every 21 days, rotating TOUCH21.general or .homeowner (Likely Seller/neighbor/farm). Skips anyone with Text Queue rows
