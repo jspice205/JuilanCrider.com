@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-text-status';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-oh-texts';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1823,7 +1823,7 @@ function holdAuto(text) {
   const props = PropertiesService.getScriptProperties(), t = String(text || '').toLowerCase();
   const recent = JSON.parse(props.getProperty('AUTO_LAST') || '[]').filter(x => Date.now() - x.at < 2 * 864e5);
   const named = recent.filter(x => (x.who && t.indexOf(String(x.who).split(' ')[0].toLowerCase()) >= 0) ||
-    (/check.?in|21/.test(t) && /^t21-/.test(x.step)) || (/free/.test(t) && /^free-/.test(x.step)) || (/birthday|bday/.test(t) && /^bday-/.test(x.step)) || (/holiday/.test(t) && /^holiday-/.test(x.step)) || (/memo|market/.test(t) && /^memo-/.test(x.step)));
+    (/check.?in|21/.test(t) && /^t21-/.test(x.step)) || (/free/.test(t) && /^free-/.test(x.step)) || (/birthday|bday/.test(t) && /^bday-/.test(x.step)) || (/holiday/.test(t) && /^holiday-/.test(x.step)) || (/memo|market/.test(t) && /^memo-/.test(x.step)) || (/open.?house/.test(t) && /^ohopt-/.test(x.step)));
   const pick = named.length ? named : recent.slice(-1);
   if (!pick.length) return 'nothing automatic is waiting to go out right now.';
   const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name); let n = 0;
@@ -5497,6 +5497,10 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏾🏾👍🏾🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
+  else if (/\bdnc\b[^?]{0,20}\b(checked|scrubbed|clean|cleared|done)\b|\b(checked|scrubbed)\b[^?]{0,30}\b(dnc|do not call)\b/i.test(text)) {  // Nov 20: older open-house sign-ins
+    PropertiesService.getScriptProperties().setProperty('OH_OPTIN_ALL', 'on'); PropertiesService.getScriptProperties().deleteProperty('OHO_RUN');
+    return say('got it ✅ Older open-house visitors are included now. Their first texts get the usual heads-up the day before.');
+  }
   // "Did Lily's text go out?" / "what about the 21 day check in" / "who's getting texts today" (Nov 20: Shawna mixed up Lilian and
   // Lily and invented a "21-day check-in on 11/10"): answered from the records only (Text Queue + FUB "Text sent" notes), never AI.
   else if (/\b(did|has|have|was|were|is|are)\b[^?]{0,60}\b(texts?|messages?|check.?ins?)\b[^?]{0,40}\b(go|went|gone|sent|send|out|delivered)\b/i.test(text) ||
@@ -7132,7 +7136,7 @@ function blastPeople(tags) {
   tags.forEach(tag => {
     let next = '', guard = 0;
     do {
-      const r = fubFetch('people?tags=' + encodeURIComponent(tag) + '&limit=100&fields=id,firstName,lastName,name,tags,emails,phones,assignedUserId,stage,customBirthday' + (next ? '&next=' + next : ''), null, 'get');
+      const r = fubFetch('people?tags=' + encodeURIComponent(tag) + '&limit=100&fields=id,firstName,lastName,name,tags,emails,phones,assignedUserId,stage,customBirthday,created' + (next ? '&next=' + next : ''), null, 'get');
       (r.people || []).forEach(p => { if (Number(p.assignedUserId) === Number(me)) out[p.id] = p; });
       next = (r._metadata || {}).next || '';
     } while (next && ++guard < 20);
@@ -7233,6 +7237,7 @@ function remindUpcoming() {
   try { checkRealScout(); } catch (e) { console.log('RealScout: ' + e.message); }
   try { runBlasts(); } catch (e) { console.log('Blasts: ' + e.message); }
   try { runBirthdays(); } catch (e) { console.log('Birthdays: ' + e.message); }
+  try { runOpenHouseOptIn(); } catch (e) { console.log('Open house texts: ' + e.message); }
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
   try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
   try { processPersonalEmailOutbox(); } catch (e) { console.log('Personal email: ' + e.message); }
@@ -7305,7 +7310,7 @@ function processTextQueue() {
     if (macDown && !/^autoemail-/.test(step)) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
-    if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-|memo-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
+    if (!/^(oh-2h|ohopt-|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-|memo-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
     try {
       let res;
       if (/^autoemail-/.test(step)) {  // automatic deal-flow email (from julianc@bcolv.com): "Subject: …" then the body
@@ -7314,7 +7319,10 @@ function processTextQueue() {
         else { const sub = (String(text).match(/^Subject: (.*)/) || [, 'Update from Julián'])[1], body = String(text).replace(/^Subject: .*\n+/, '');
           const r = sendFromBcolv(to, sub, body); if (!r.ok) throw new Error(r.error || 'email failed');
           fubFetch('notes', {personId: id, subject: 'Email sent', body: 'To ' + to + ' (automatic): "' + sub + '"\n\n' + body}); res = 'sent'; }
-      } else res = step === 'scheduled' || step === 'call-thanks' || /^(auto|memo)-/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
+      } else res = step === 'scheduled' || step === 'call-thanks' || /^(auto|memo|ohopt)-/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
+      if (res === 'sent' && /^ohopt-/.test(step)) { try {  // open-house first text went (with the opt-out line): they're textable now
+        fubFetch('people/' + id + '?mergeTags=true', {tags: ['Text OK']}, 'put');
+        fubFetch('notes', {personId: id, subject: 'Text consent', body: 'Open house visitor. First text sent ' + new Date().toISOString().slice(0, 10) + ' with "reply STOP" opt-out (Julián\'s open-house texting rule, Nov 20). STOP → Text Opt-Out.'}); } catch (e) {} }
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
@@ -7322,6 +7330,56 @@ function processTextQueue() {
       if (n >= 24) cell(5, 'failed: ' + String(err.message).slice(0, 150));  // ~6 hours of retries
     }
   });
+}
+
+// OPEN HOUSE TEXTS (Nov 20, Julián: "anyone I upload to Follow Up Boss that comes from an open house can now receive text
+// messages; send an opt in or out for the first message"). Daily, his open-house contacts (tag "open house") who aren't
+// Text OK yet get ONE first text that says how to opt out; once it's sent they're tagged Text OK (STOP → Text Opt-Out, as
+// always). Only visitors who signed in within the last OH_OPTIN.windowDays (90) days: the federal Do Not Call rules allow a
+// business to text someone who made an inquiry in the last 3 months even if their number is on the DNC list. Older sign-ins
+// wait until a DNC check (Julián says "they're DNC checked" → OH_OPTIN_ALL=on). Batch of 10, heads-up the day before
+// (his rule), sent next day 11am. Skips mobile-less/landline, Has Agent, agents/partners, opted out, unsubscribed,
+// not interested, trash/closed, test. OH_OPTIN=off stops it.
+const OH_OPTIN = {perDay: 10, windowDays: 90,
+  text: 'Hey {first}, it\'s Julián Crider, the Realtor from the open house 👋🏾 Every so often I\'ll text you a quick note on homes and the Vegas market. If you\'d rather I didn\'t, just reply STOP and you won\'t hear from me here again. Is a move still on your radar, or has that changed?'};
+function runOpenHouseOptIn() {
+  const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles';
+  if (props.getProperty('OH_OPTIN') === 'off') return;
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), hour = Number(Utilities.formatDate(new Date(), tz, 'H'));
+  if (hour < 9 || hour >= 18 || props.getProperty('OHO_RUN') === today) return;
+  props.setProperty('OHO_RUN', today);
+  const all = props.getProperty('OH_OPTIN_ALL') === 'on', skip = /^(has agent|agent|partner|text opt-out|unsubscribed|not interested|deceased|bought elsewhere|no shawna|do not text|test\b)/i;
+  const pool = blastPeople(['open house', 'Open House']).filter(p => (p.tags || []).indexOf('Text OK') < 0 && !(p.tags || []).some(t => skip.test(t)) &&
+    !/^(trash|closed|past client)$/i.test(String(p.stage || '')) && !isTestPerson(p) && !props.getProperty('OHO_' + p.id) &&
+    (p.phones || []).some(x => !x.isLandline && x.type !== 'landline' && bbE164(x.value || '')));
+  const picked = [], older = [];
+  for (let i = 0; i < pool.length && picked.length < OH_OPTIN.perDay; i++) {
+    const p = pool[i];
+    let signed = null;
+    try { const notes = fubFetch('notes?personId=' + p.id + '&limit=20&fields=id,body,created', null, 'get').notes || [];
+      const m = notes.map(n => String(n.body || '')).join('\n').match(/Signed in:?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
+      signed = m ? new Date(m[1]) : null; } catch (e) {}
+    if (!signed && p.created && new Date(p.created) > LIVE_SINCE) signed = new Date(p.created);
+    const fresh = signed && Date.now() - signed.getTime() < OH_OPTIN.windowDays * 864e5;
+    if (!fresh && !all) { older.push(p); continue; }
+    picked.push(p);
+  }
+  if (older.length && !props.getProperty('OHO_OLDER_TOLD')) {
+    props.setProperty('OHO_OLDER_TOLD', today);
+    try { bossTextSafe('📵 Some open-house visitors signed in more than 3 months ago, so I\'m NOT texting them yet: after 3 months, the Do Not Call rules need their numbers checked first. Once they\'re checked, tell me "they\'re DNC checked" and I\'ll include them.'); } catch (e) {}
+  }
+  if (!picked.length) return;
+  const at = Utilities.parseDate(Utilities.formatDate(new Date(Date.now() + 864e5), tz, 'yyyy-MM-dd') + ' 11:00', tz, 'yyyy-MM-dd HH:mm');
+  const q = ensureTab(getSS(), TEXT_QUEUE_TAB), names = [];
+  picked.forEach(p => {
+    let first = realFirst(p) || 'there'; if (/^(caller|unknown|no name)\b/i.test(first)) first = 'there';
+    q.appendRow([at, p.id, cell(p.name || first), 'ohopt-' + today.replace(/-/g, ''), 'pending', 0, '', cell(OH_OPTIN.text.replace(/\{first\}/g, first))]);
+    props.setProperty('OHO_' + p.id, today); names.push(p.name || first);
+    try { autoNote('ohopt-' + today.replace(/-/g, ''), 'open-house first text', p.id, p.name || first); } catch (e) {}
+  });
+  ensureTextQueueTrigger();
+  try { bossTextSafe('🏠 Heads up: tomorrow (' + Utilities.formatDate(at, tz, 'EEE, MMM d') + ') at 11am, ' + names.length + ' open-house visitor' + (names.length === 1 ? '' : 's') + ' get their first text from you:\n\n' +
+    names.join('\n') + '\n\n"' + OH_OPTIN.text.replace(/\{first\}/g, '<name>') + '"\n\nIf they don\'t reply STOP, they\'re on your texting list. Say "hold" to stop them.'); } catch (e) {}
 }
 
 /** What the records say about texts (Nov 20): the Text Queue (sent in the last 3 days, waiting in the next 7) and, for a named

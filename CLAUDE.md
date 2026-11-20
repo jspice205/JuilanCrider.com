@@ -565,6 +565,14 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   reaches out (website showing/consultation request, or activity score 25+: reply, call, DM, new inquiry, site visits).
   Intake score alone never creates a task. Don't add call lists or outreach tasks.
 - Messaging style: Chris Voss (labels, no-oriented questions, calibrated how/what questions).
+- Open-house texting (Nov 20, Julián: "anyone I upload to FUB that comes from an open house can now receive text messages; send an
+  opt in or out for the first message"): `runOpenHouseOptIn` (remindUpcoming, once a day 9am-6pm, OHO_RUN; OH_OPTIN=off stops it):
+  his tag "open house" contacts, not Text OK yet, mobile number, no Has Agent/Agent/Partner/opt-out/unsubscribed/not interested/
+  bought elsewhere/No Shawna, not trash/closed/past client, OHO_<id> once → max 10/day as Text Queue step ohopt-YYYYMMDD due NEXT
+  day 11am (heads-up the day before; "hold"/"hold the open house texts"). First text OH_OPTIN.text says "reply STOP"; once sent,
+  processTextQueue tags Text OK + note "Text consent". Only sign-ins within 90 days ("Signed in:" note date, else FUB created
+  after LIVE_SINCE) = federal DNC established-business-relationship window for inquiries; older ones wait until he says
+  "they're DNC checked" (OH_OPTIN_ALL=on). 75 open-house contacts on Nov 20.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
