@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-test-first';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-card-retry';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7279,15 +7279,20 @@ function sendCardCatchupNow() {
       const notes = fubFetch('notes?personId=' + id + '&limit=15&fields=id,subject,body,created', null, 'get').notes || [];
       const tg = notes.filter(x => /^Text sent/.test(x.subject || '') && /\(thanksgiving-2026-text\)/.test(x.body || ''))[0];
       if (tg && Date.now() - new Date(tg.created).getTime() < 3 * 6e4) continue;  // just sent: next tick
-      done.push(id); props.setProperty('CARDCATCH_DONE', JSON.stringify(done));
-      if (!tg || /it's Julián|\[contact card\]/.test(tg.body) || !/reply STOP/.test(tg.body)) continue;  // knew him already, or got the card
-      if (notes.some(x => /contact card/i.test(x.body || '') && x.id !== tg.id)) continue;  // already got his card another way (e.g. the apology text)
+      // Nov 20 (Shawn Meagher 253 never got his card): mark someone done only when skipped on purpose or after the send works;
+      // a failed send is retried up to 3 times (CARDCATCH_TRY_<id>) instead of being lost.
+      const markDone = () => { done.push(id); props.setProperty('CARDCATCH_DONE', JSON.stringify(done)); };
+      if (!tg || /it's Julián|\[contact card\]/.test(tg.body) || !/reply STOP/.test(tg.body)) { markDone(); continue; }  // knew him already, or got the card
+      if (notes.some(x => /contact card/i.test(x.body || '') && x.id !== tg.id)) { markDone(); continue; }  // already got his card another way (e.g. the apology text)
       const p = fubFetch('people/' + id + '?fields=id,firstName,name,tags,phones', null, 'get');
-      if ((p.tags || []).indexOf('Text Opt-Out') >= 0) continue;
-      const phone = (p.phones || []).map(x => bbE164(x.value || '')).filter(Boolean)[0]; if (!phone) continue;
+      if ((p.tags || []).indexOf('Text Opt-Out') >= 0) { markDone(); continue; }
+      const phone = (p.phones || []).map(x => bbE164(x.value || '')).filter(Boolean)[0]; if (!phone) { markDone(); continue; }
+      const tries = Number(props.getProperty('CARDCATCH_TRY_' + id) || 0);
+      if (tries >= 3) { markDone(); continue; }
+      props.setProperty('CARDCATCH_TRY_' + id, String(tries + 1));
       const msg = 'P.S. this is Julián Crider, Realtor with Boeckle & Co. 👋🏾 Here\'s my contact card so you know it\'s me.';
       props.setProperty('AI_SENDING_' + phone, String(Date.now()));
-      bbSendParts(phone, msg + ' || [contact card]'); groupTextSent();
+      bbSendParts(phone, msg + ' || [contact card]'); groupTextSent(); markDone(); props.deleteProperty('CARDCATCH_TRY_' + id);
       fubFetch('notes', {personId: id, subject: textSentSubject(), body: msg + '\n[contact card]\n\n(thanksgiving contact card)'});
       n++; if (n < maxN) Utilities.sleep(textGap());
     } catch (e) { console.log('Card catch-up ' + id + ': ' + e.message); }
