@@ -841,6 +841,16 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Few contacts have customBirthday filled yet. Article themes: blog/build.js THEMES (b.theme 'thanksgiving' = autumn colors,
   banner) on the static /blog/ page.
 
+- Booking like GlossGenius (Nov 19, his screenshots of Skin by Lily): every site booking (Book a consultation, Request a
+  showing, listing appointment, golf) = 3 circles (details grid → calendar → person). ① the flow's own questions (no contact
+  fields; signed-with-agent / listed-now still get the polite no here) → ② `pickTime(c)`: month calendar "Select a day" (open
+  days from ?action=slots, others greyed, ‹ › between months that have slots) then "Select a time" list (start – end, golf =
+  tee time) with a "Details" box (day • what) → ③ "Your information" (first, last, email, phone all required; optional note;
+  unchecked "Text me helpful updates" box → book payload textOk Yes → bookSlot tags Text OK + "Text consent" note). The lead
+  (c.lead → sendLead with "Requested time" + "Text OK") is sent only at step 3, then the slot is booked. Showing keeps "Not
+  sure yet" (c.allowTbd); no slots / slots fail → straight to step 3 as a request. `ggSteps(n)` draws the circles (class ok,
+  never .done: that's the success-screen class).
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

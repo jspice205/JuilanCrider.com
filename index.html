@@ -565,6 +565,30 @@ img{max-width:100%;display:block}
 .steps i{flex:1;height:4px;border-radius:2px;background:var(--hair)}
 .steps i.on{background:var(--ink)}
 .err{color:var(--red);font-size:13px;margin:-4px 0 10px;display:none}
+/* Booking (Nov 19, Julián: "follow the booking flow of GlossGenius"): details → day → time → your information */
+.gg{display:flex;align-items:center;justify-content:center;margin:2px 0 6px}
+.gg span{width:46px;height:46px;border-radius:50%;border:1.5px solid var(--hair);display:grid;place-items:center;color:var(--muted);background:var(--bg);flex:0 0 auto}
+.gg span.ok{border-color:var(--ink);color:var(--ink)}
+.gg span.on{background:var(--ink);border-color:var(--ink);color:var(--bg);box-shadow:0 0 0 3px var(--surface)}
+.gg i{flex:1;max-width:64px;height:1.5px;background:var(--hair)}
+.gg i.ok{background:var(--ink)}
+.gg-h{text-align:center;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink2);margin:12px 0 14px}
+.gg-cal .mh{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.gg-cal .mh b{font-size:18px;font-weight:600}
+.gg-cal .mh button{width:44px;height:44px;border-radius:50%;font-size:22px;color:var(--ink)}
+.gg-cal .mh button:disabled{opacity:.25}
+.gg-cal .grid{display:grid;grid-template-columns:repeat(7,1fr);border-top:1px solid var(--hair)}
+.gg-cal .grid .dw{font-size:12px;font-weight:600;color:var(--muted);text-align:center;padding:8px 0}
+.gg-cal .grid button{height:46px;font-size:16px;color:var(--ink);font-weight:600;border-top:1px solid var(--hair);border-radius:0}
+.gg-cal .grid button:disabled{color:var(--muted);opacity:.45;font-weight:400;background:var(--surface)}
+.gg-cal .grid button.on{background:var(--ink);color:var(--bg);border-radius:12px}
+.gg-times{border-top:1px solid var(--hair);max-height:330px;overflow:auto;margin-bottom:6px}
+.gg-times button{display:block;width:100%;padding:15px 8px;font-size:16px;color:var(--ink);border-bottom:1px solid var(--hair);text-align:center}
+.gg-times button.on{background:var(--ink);color:var(--bg);border-radius:12px}
+.gg-det{margin-top:16px;background:var(--surface);border-radius:14px;padding:14px;text-align:center}
+.gg-det small{display:block;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.gg-ok{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border-radius:14px;padding:12px;font-size:13px;color:var(--ink2);margin:4px 0 12px}
+.gg-ok input{width:20px;height:20px;margin-top:1px;flex:0 0 auto;accent-color:var(--ink)}
 .done{text-align:center;padding:26px 8px 10px}
 .done .dot{width:56px;height:56px;border-radius:50%;background:var(--ink);margin:0 auto 14px;display:grid;place-items:center}
 .done .dot::after{content:"";width:14px;height:14px;border-radius:50%;background:var(--red)}
@@ -2365,88 +2389,131 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-book
 function bindOpeners(scope){ scope.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSheet(b.dataset.open, {type:b.dataset.type, prop:b.dataset.prop, why:b.dataset.why})); }
 ['s-homes','s-relo','s-me'].forEach(id => bindOpeners($(id))); bindOpeners(document.querySelector('.top'));
 
-// Request a showing (Julián, Nov 12): pick the day and time first (like a booking page), or "not sure yet, after I talk
-// with Julián", then the home and contact info. A picked time is booked on his calendar; the one-home agreement and
-// the Duties Owed form are emailed either way (as a review copy when there's no address yet).
+// Request a showing (Julián, Nov 12; booking order Nov 19 like GlossGenius): ① the home + two questions → ② day and time
+// from his calendar (or "not sure yet, after talking with Julián") → ③ contact info. A picked time is booked on his calendar;
+// the one-home agreement and the Duties Owed form are emailed either way (as a review copy when there's no address yet).
 function showingFlow(prefill){
-  const st = {slot:'', label:'', prop: prefill || ''};
-  const tz = {timeZone:'America/Los_Angeles'};
-  function times(note){
-    openRaw('Request a showing', `<div class="steps"><i class="on"></i><i></i></div><p class="fine" style="margin:-8px 0 12px">Step 1 of 2 · Pick a day and time</p>${note ? `<p class="err" style="display:block">${note}</p>` : ''}<p class="fine">Loading open times…</p>`);
-    fetch(SHEET_URL + '?' + new URLSearchParams({action:'slots', kind:'showing', minutes:30})).then(r => r.json()).then(d => {
-      const days = {}; (d.slots || []).forEach(x => { const k = new Date(x).toLocaleDateString('en-US', {...tz, weekday:'long', month:'short', day:'numeric'}); (days[k] = days[k] || []).push(x); });
-      const keys = Object.keys(days).slice(0, 6);
-      openRaw('Request a showing', `<div class="steps"><i class="on"></i><i></i></div><p class="fine" style="margin:-8px 0 12px">Step 1 of 2 · Pick a day and time (Pacific time)</p>` + (note ? `<p class="err" style="display:block">${note}</p>` : '') +
-        keys.map(k => `<span class="lab">${k}</span><div class="chips" style="margin-bottom:12px">${days[k].map(x => `<button type="button" class="chip" data-slot="${x}">${new Date(x).toLocaleTimeString('en-US', {...tz, hour:'numeric', minute:'2-digit'})}</button>`).join('')}</div>`).join('') +
-        `<button type="button" class="pill ghost block" id="tbd" style="margin-top:6px">Not sure yet. I’ll set it after talking with Julián</button>`);
-      document.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => { st.slot = b.dataset.slot; st.label = new Date(st.slot).toLocaleString('en-US', {...tz, weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}); details(); });
-      $('tbd').onclick = () => { st.slot = ''; st.label = ''; details(); };
-      if (!keys.length) { st.slot = ''; details('No open times showed up, so Julián will set one with you.'); }
-    }).catch(() => details('Times didn’t load, so Julián will set one with you.'));
-  }
-  function details(note){
-    openRaw('Request a showing', `<div class="steps"><i class="on"></i><i class="on"></i></div><p class="fine" style="margin:-8px 0 12px">Step 2 of 2 · ${st.slot ? 'Your time: <b>' + st.label + '</b> <a href="#" id="chg">change</a>' : 'Time: to be set with Julián <a href="#" id="chg">pick one</a>'}</p>
-      ${note ? `<p class="err" style="display:block">${note}</p>` : ''}
+  const st = {prop: prefill || '', pre: '', agent: ''};
+  function details(){
+    openRaw('Request a showing', ggSteps(1) + `<p class="gg-h">The home</p>
       <div class="field"><label for="sProp">Property address or MLS # (optional)</label><input id="sProp" autocomplete="street-address" placeholder="Not sure yet? Leave blank" value="${st.prop.replace(/"/g,'&quot;')}"></div>
       <div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="spre" data-opts="Yes|Not yet|Paying cash"></div></div>
       <div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="sagent" data-opts="No|Yes, with a signed agreement|Yes, informally"></div></div>
-      ${contactFields}
-      <p class="fine" style="margin:-4px 0 14px">Before any tour, Nevada buyers sign a short written agreement. Julián’s is non-exclusive and covers only the one home you tour, so you’re free to work with anyone else. You’ll get it by email to look over right away.</p>
-      <p class="err" id="fErr">Add your first name, phone and email.</p>
-      <button class="pill block" id="go">${st.slot ? 'Request this showing' : 'Send my request'}</button>`);
-    $('chg').onclick = e => { e.preventDefault(); st.prop = $('sProp').value.trim(); times(); };
+      <button class="pill block" id="go">Next: pick a day</button>`);
     $('go').onclick = () => {
-      const prop = $('sProp').value.trim(); st.prop = prop;
-      const okContact = requireContact() && /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(($('fEmail') ? $('fEmail').value : '').trim());
-      $('fErr').style.display = okContact ? 'none' : 'block'; if (!okContact) return;
-      const agent = chipVal(sheet,'sagent'), signed = /signed/.test(agent || '');
-      sendLead({tab:'Website Leads', type:'Showing request', ...contactVals(), property:prop, timeline: st.slot ? st.label : 'To be set with Julián', source:'juliancrider.com',
-        notes: joinNotes([prop ? '' : 'Property: none yet (wants help choosing homes)', 'Requested time: ' + (st.slot ? st.label + ' (Pacific)' : 'to be set after talking with Julián'), 'Pre-approved: '+chipVal(sheet,'spre'), 'Working with agent: '+agent])});
-      if (signed) { $('sheetBody').innerHTML = doneHTML('Thank you','Since you have a signed agreement with another agent, they should schedule this tour for you. Julián is happy to answer questions anytime.'); return; }
-      if (!st.slot) { $('sheetBody').innerHTML = doneHTML('Request sent', 'Julián will reach out to set the day and time' + (prop ? '' : ' and line up the homes worth seeing') + '. The buyer agreement is in your email to look over.'); return; }
-      $('sheetBody').innerHTML = `<p class="fine">Booking…</p>`;
-      fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'book', slot: st.slot, kind:'showing', property: prop || 'Home to be chosen with Julián', ...contactVals(), notes: 'Showing request: ' + (prop || 'home to be chosen') + ' | Pre-approved: ' + (chipVal(sheet,'spre') || '')})})
-        .then(r => r.json()).then(res => {
-          if (res.status === 'taken') return times(res.message || 'That time was just taken. Please pick another.');
-          $('sheetBody').innerHTML = res.status === 'success'
-            ? doneHTML('Showing booked', `${res.label} (Pacific time)${prop ? ' at ' + prop : ''}. Julián will text you to confirm${prop ? '' : ' the home'}, and a reminder 15 minutes before. The buyer agreement is in your email.`)
-            : doneHTML('Showing requested', 'Julián will confirm your time shortly. The buyer agreement is in your email.');
-        }).catch(() => { $('sheetBody').innerHTML = doneHTML('Showing requested', 'Julián will confirm your time shortly.'); });
+      st.prop = $('sProp').value.trim(); st.pre = chipVal(sheet,'spre'); st.agent = chipVal(sheet,'sagent');
+      if (/signed/.test(st.agent || '')) { $('sheetBody').innerHTML = doneHTML('Thank you','Since you have a signed agreement with another agent, they should schedule this tour for you. Julián is happy to answer questions anytime.'); return; }
+      const prop = st.prop;
+      pickTime({kind:'showing', minutes:30, property: prop || 'Home to be chosen with Julián', what: 'Showing · ' + (prop || 'home to be chosen with Julián'), allowTbd: true, back: details,
+        notes: 'Showing request: ' + (prop || 'home to be chosen') + ' | Pre-approved: ' + (st.pre || ''),
+        lead: {type:'Showing request', property: prop, notes: joinNotes([prop ? '' : 'Property: none yet (wants help choosing homes)', 'Pre-approved: ' + st.pre, 'Working with agent: ' + st.agent])},
+        footNote: 'Before any tour, Nevada buyers sign a short written agreement. Julián’s is non-exclusive and covers only the one home you tour, so you’re free to work with anyone else. You’ll get it by email to look over right away.',
+        tbdDone: () => doneHTML('Request sent', 'Julián will reach out to set the day and time' + (prop ? '' : ' and line up the homes worth seeing') + '. The buyer agreement is in your email to look over.')});
     };
   }
-  times();
+  details();
 }
 
-// After the screening questions, people pick an open time from Julián's Google Calendar (the Apps Script serves
-// free slots and books them). If times can't load, the request still goes in and Julián confirms by reply.
+// Booking like GlossGenius (Nov 19, Julián's screenshots): ① details (the flow's own questions) → ② pick a DAY on a month
+// calendar, then a TIME → ③ your information last (name, email, phone, optional text opt-in). Open days/times come from
+// his Google Calendar (Apps Script ?action=slots); the lead is saved and the slot booked only at the last step. If times
+// can't load (or the visitor picks "not sure yet"), the request still goes in and Julián confirms by text.
+const GG_ICONS = ['<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>'];
+function ggSteps(n){ return `<div class="gg" aria-label="Step ${n} of 3">${[1,2,3].map(i => (i > 1 ? `<i class="${i <= n ? 'ok' : ''}"></i>` : '') +
+  `<span class="${i === n ? 'on' : i < n ? 'ok' : ''}">${GG_ICONS[i-1]}</span>`).join('')}</div>`; }
 function pickTime(c, note){
-  const showing = c.kind === 'showing';
-  const tz = {timeZone:'America/Los_Angeles'}, requested = () => { $('sheetBody').innerHTML = showing
-    ? doneHTML('Showing requested','Julián will confirm a time and text you the one-home agreement to sign before the tour.')
-    : doneHTML('Consultation requested','Julián will confirm a time within one business day.'); };
-  openRaw('Pick a time', `<p class="fine">Loading open times…</p>`);
-  const q = new URLSearchParams({action:'slots', kind: c.kind || 'consult', minutes: c.minutes || 30, holes: c.holes || 18});
-  fetch(SHEET_URL + '?' + q).then(r => r.json()).then(d => {
-    const days = {}; (d.slots || []).forEach(s => { const k = new Date(s).toLocaleDateString('en-US', {...tz, weekday:'long', month:'short', day:'numeric'}); (days[k] = days[k] || []).push(s); });
-    const keys = Object.keys(days).slice(0, c.kind === 'golf' ? 8 : 5); if (!keys.length) return requested();
-    const len = c.kind === 'golf' ? (String(c.holes) === '9' ? '9 holes, about 2½ hours' : '18 holes, about 5 hours') + '. Tee times' : (c.minutes || 30) + ' minutes';
-    openRaw(showing ? 'Pick a showing time' : 'Pick a time', (note ? `<p class="err" style="display:block">${note}</p>` : '') + `<p class="fine" style="margin:0 0 12px">${showing ? 'Showing at ' + c.property + '. ' : ''}${len}, Pacific time.</p>` +
-      keys.map(k => `<span class="lab">${k}</span><div class="chips" style="margin-bottom:12px">${days[k].map(s => `<button type="button" class="chip" data-slot="${s}">${new Date(s).toLocaleTimeString('en-US', {...tz, hour:'numeric', minute:'2-digit'})}</button>`).join('')}</div>`).join(''));
-    document.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => {
+  const tz = {timeZone:'America/Los_Angeles'}, showing = c.kind === 'showing', golf = c.kind === 'golf';
+  const title = c.title || (showing ? 'Request a showing' : golf ? 'Golf with Julián ⛳' : c.kind === 'listing' ? 'Book a listing appointment' : 'Book a consultation');
+  const mins = golf ? (String(c.holes) === '9' ? 150 : 300) : (c.minutes || 30);
+  const what = c.what || (showing ? 'Showing' + (c.property ? ' · ' + c.property : '') : golf ? (String(c.holes) === '9' ? '9' : '18') + ' holes of golf'
+    : c.kind === 'listing' ? 'Listing appointment · ' + c.property : c.kind === 'video' ? mins + '-minute video call' : mins + '-minute phone call');
+  const st = {slots: [], day: '', slot: '', month: null};
+  const ymd = d => new Date(d).toLocaleDateString('en-CA', tz);   // 2026-12-09 in Las Vegas time
+  const tm = d => new Date(d).toLocaleTimeString('en-US', {...tz, hour:'numeric', minute:'2-digit'});
+  const longDay = k => new Date(k + 'T12:00:00Z').toLocaleDateString('en-US', {timeZone:'UTC', weekday:'long', month:'long', day:'numeric'});
+  const det = () => `<div class="gg-det"><small>Details</small>${[st.day && longDay(st.day) + (st.slot ? ' at ' + tm(st.slot) : ''), what].filter(Boolean).join(' • ')}</div>`;
+  const tbd = c.allowTbd ? `<button type="button" class="pill ghost block" id="ggTbd" style="margin-top:8px">Not sure yet. I’ll set it after talking with Julián</button>` : '';
+  function day(msg){
+    const days = [...new Set(st.slots.map(ymd))];
+    if (!days.length) return info(msg || note || 'No open times showed up online, so Julián will text you to set one.');
+    if (!st.month) st.month = (st.day || days[0]).slice(0, 7);
+    const [y, m] = st.month.split('-').map(Number), first = new Date(Date.UTC(y, m - 1, 1)), n = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const months = [...new Set(days.map(d => d.slice(0, 7)))], mi = months.indexOf(st.month);
+    let cells = ''; for (let i = 0; i < first.getUTCDay(); i++) cells += '<span></span>';
+    for (let d = 1; d <= n; d++) { const k = `${st.month}-${String(d).padStart(2, '0')}`;
+      cells += `<button type="button" data-day="${k}" class="${k === st.day ? 'on' : ''}" ${days.includes(k) ? '' : 'disabled'} aria-label="${longDay(k)}">${d}</button>`; }
+    openRaw(title, ggSteps(2) + `<p class="gg-h">Select a day</p>` + (msg || note ? `<p class="err" style="display:block">${msg || note}</p>` : '') +
+      `<div class="gg-cal"><div class="mh"><button type="button" id="ggPrev" aria-label="Previous month" ${mi > 0 ? '' : 'disabled'}>‹</button>
+      <b>${first.toLocaleDateString('en-US', {timeZone:'UTC', month:'long', year:'numeric'})}</b>
+      <button type="button" id="ggNext" aria-label="Next month" ${mi > -1 && mi < months.length - 1 ? '' : 'disabled'}>›</button></div>
+      <div class="grid">${'SMTWTFS'.split('').map(x => `<span class="dw">${x}</span>`).join('')}${cells}</div></div>
+      <p class="err" id="ggErr">Pick a day to continue.</p>
+      <button class="pill block" id="ggGo" style="margin-top:14px">Next</button>${tbd}${det()}`);
+    document.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { st.day = b.dataset.day; st.slot = ''; day(); });
+    $('ggPrev').onclick = () => { st.month = months[mi - 1]; day(); };
+    $('ggNext').onclick = () => { st.month = months[mi + 1]; day(); };
+    $('ggGo').onclick = () => { if (!st.day) { $('ggErr').style.display = 'block'; return; } time(); };
+    if ($('ggTbd')) $('ggTbd').onclick = () => { st.day = ''; st.slot = ''; info(); };
+  }
+  function time(){
+    const list = st.slots.filter(x => ymd(x) === st.day);
+    openRaw(title, ggSteps(2) + `<p class="gg-h">Select a time</p><p class="fine" style="text-align:center;margin:-6px 0 10px">${longDay(st.day)} · Pacific time</p>
+      <div class="gg-times">${list.map(x => `<button type="button" data-slot="${x}" class="${x === st.slot ? 'on' : ''}">${golf ? tm(x) + ' tee time' : tm(x) + ' – ' + tm(new Date(x).getTime() + mins * 6e4)}</button>`).join('')}</div>
+      ${list.length > 5 ? '<p class="fine" style="text-align:center;margin-top:4px">Scroll for more times</p>' : ''}
+      <p class="err" id="ggErr">Pick a time to continue.</p>
+      <div class="duo" style="margin-top:12px"><button class="pill ghost" id="ggBack">Back</button><button class="pill" id="ggGo">Next</button></div>${det()}`);
+    document.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => { st.slot = b.dataset.slot;
+      document.querySelectorAll('[data-slot]').forEach(x => x.classList.toggle('on', x === b)); $('sheetBody').querySelector('.gg-det').outerHTML = det(); });
+    $('ggBack').onclick = () => day();
+    $('ggGo').onclick = () => { if (!st.slot) { $('ggErr').style.display = 'block'; return; } info(); };
+  }
+  function info(msg){
+    const keep = contactVals();
+    openRaw(title, ggSteps(3) + `<p class="gg-h">Your information</p>` + (msg ? `<p class="err" style="display:block">${msg}</p>` : '') +
+      `<div class="duo"><div class="field"><label for="fFirst">First name</label><input id="fFirst" autocomplete="given-name"></div>
+      <div class="field"><label for="fLast">Last name</label><input id="fLast" autocomplete="family-name"></div></div>
+      <div class="field"><label for="fEmail">Email</label><input id="fEmail" type="email" autocomplete="email"></div>
+      <div class="field"><label for="fPhone">Phone</label><input id="fPhone" type="tel" autocomplete="tel"></div>
+      ${c.askNote ? `<div class="field"><label for="fNote">${c.askNote}</label><textarea id="fNote" rows="3"></textarea></div>` : ''}
+      <label class="gg-ok"><input type="checkbox" id="fTextOk"><span><b style="color:var(--ink)">Text me helpful updates from Julián</b><br>By checking the box, you agree to get texts from Julián J. Crider at this number, including homes, market updates and offers. Consent is not a condition of anything. Reply STOP to stop, HELP for help. Msg frequency varies. Msg &amp; data rates may apply.</span></label>
+      <p class="fine" style="margin:-4px 0 12px">${st.slot ? 'Julián will text this number to confirm your appointment and remind you before it.' : 'Julián will reach out by phone, text or email about this request.'}</p>
+      ${c.footNote ? `<p class="fine" style="margin:-4px 0 12px">${c.footNote}</p>` : ''}
+      <p class="err" id="fErr">Add your first name, phone and email.</p>
+      <div class="duo"><button class="pill ghost" id="ggBack">Back</button><button class="pill" id="ggGo">${st.slot ? 'Book it' : 'Send my request'}</button></div>${det()}`);
+    const nm = (keep.name || '').split(' '); if (nm[0]) $('fFirst').value = nm[0]; if (nm[1]) $('fLast').value = nm.slice(1).join(' ');
+    if (keep.phone) $('fPhone').value = keep.phone; if (keep.email) $('fEmail').value = keep.email;
+    $('ggBack').onclick = () => st.slots.length ? (st.slot ? time() : day()) : (c.back ? c.back() : closeSheet());
+    $('ggGo').onclick = () => {
+      const v = contactVals(), ok = v.name && v.phone.replace(/\D/g, '').length >= 10 && /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v.email);
+      $('fErr').style.display = ok ? 'none' : 'block'; if (!ok) return;
+      const textOk = $('fTextOk').checked ? 'Yes' : 'No', extra = $('fNote') ? $('fNote').value.trim() : '';
+      const when = st.slot ? new Date(st.slot).toLocaleString('en-US', {...tz, weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) + ' (Pacific)' : 'to be set with Julián';
+      if (c.lead) sendLead({tab:'Website Leads', source:'juliancrider.com', property:'', timeline:'', ...c.lead, ...v,
+        notes: joinNotes([c.lead.notes || '', 'Requested time: ' + when, 'Text OK: ' + textOk, extra && 'Note: ' + extra])});
+      if (!st.slot) { $('sheetBody').innerHTML = c.tbdDone ? c.tbdDone() : doneHTML('Request sent', 'Julián will text you to set a time.'); return; }
       $('sheetBody').innerHTML = `<p class="fine">Booking…</p>`;
-      fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'book', slot:b.dataset.slot, ...c})})
+      const body = {action:'book', slot: st.slot, ...c, ...v, textOk, notes: [c.notes, extra && 'Note: ' + extra, 'Text OK: ' + textOk].filter(Boolean).join(' · ')};
+      ['lead','back','tbdDone','what','title','askNote','footNote','allowTbd'].forEach(k => delete body[k]);
+      const requested = () => { $('sheetBody').innerHTML = doneHTML(showing ? 'Showing requested' : 'Request sent', 'Julián will text you shortly to confirm your time.'); };
+      fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)})
         .then(r => r.json()).then(res => {
-          if (res.status === 'taken') return pickTime(c, res.message);
+          if (res.status === 'taken') { st.slots = st.slots.filter(x => x !== st.slot); st.slot = ''; return st.slots.some(x => ymd(x) === st.day) ? time() : day(res.message); }
           if (res.status !== 'success') return requested();
           $('sheetBody').innerHTML = showing
-            ? doneHTML('Showing booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you there and text you a reminder 15 minutes before.`)
-            : c.kind === 'golf' ? doneHTML('We’re on ⛳', `${res.label} (Pacific time), ${c.holes || 18} holes${c.course ? ' at ' + c.course : ''}. Julián will text you to confirm the tee time.`)
-            : c.kind === 'listing' ? doneHTML('You’re booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you at the home and text you a reminder 15 minutes before.`)
-            : c.kind === 'video' ? doneHTML('You’re booked', `${res.label} (Pacific time).${res.link ? ' Video link: <a href="' + res.link + '" target="_blank" rel="noopener">' + res.link + '</a>.' : ''}${c.email ? ' A calendar invite is on its way.' : ''}`)
-            : doneHTML('You’re booked', `${res.label} (Pacific time).${c.email ? ' A calendar invite is on its way.' : ''} Julián will call you at ${c.phone}.`);
+            ? doneHTML('Showing booked', `${res.label} (Pacific time)${c.property ? ' at ' + c.property : ''}. Julián will text you to confirm${c.property ? '' : ' the home'}, and a reminder before. The buyer agreement is in your email.`)
+            : golf ? doneHTML('We’re on ⛳', `${res.label} (Pacific time), ${c.holes || 18} holes${c.course ? ' at ' + c.course : ''}. Julián will text you to confirm the tee time.`)
+            : c.kind === 'listing' ? doneHTML('You’re booked', `${res.label} (Pacific time) at ${c.property}. Julián will meet you at the home and text you a reminder before.`)
+            : c.kind === 'video' ? doneHTML('You’re booked', `${res.label} (Pacific time).${res.link ? ' Video link: <a href="' + res.link + '" target="_blank" rel="noopener">' + res.link + '</a>.' : ''} A calendar invite is on its way.`)
+            : doneHTML('You’re booked', `${res.label} (Pacific time). A calendar invite is on its way. Julián will call you at ${v.phone}.`);
         }).catch(requested);
-    });
-  }).catch(requested);
+    };
+  }
+  openRaw(title, ggSteps(2) + `<p class="gg-h">Select a day</p><p class="fine" style="text-align:center">Loading open days…</p>`);
+  fetch(SHEET_URL + '?' + new URLSearchParams({action:'slots', kind: c.kind || 'consult', minutes: c.minutes || 30, holes: c.holes || 18}))
+    .then(r => r.json()).then(d => { st.slots = d.slots || []; day(); })
+    .catch(() => info('Open times didn’t load, so Julián will text you to set one.'));
 }
 // Client pages (Nov 13, juliancrider.com/?client=<private id>): buyers see the homes Julián picked and tap Love / Pass /
 // Tour (it goes straight to him); sellers see showing feedback, market updates and notes. Filled by texting Shawna.
@@ -2687,47 +2754,44 @@ function sellPresentation(){
 // Listing appointment (Nov 13, juliancrider.com/?listing): sellers pick a 1-hour walkthrough at the home (or a video call
 // first) from Julián's open times. Someone already listed with another agent gets a polite no.
 function listingFlow(){
-  openRaw('Book a listing appointment', `<p class="fine" style="margin:0 0 14px">About an hour. I’ll walk through the home, then we’ll talk price, prep and timing. No obligation.</p>
+  openRaw('Book a listing appointment', ggSteps(1) + `<p class="gg-h">Your home</p><p class="fine" style="margin:-6px 0 14px;text-align:center">About an hour. I’ll walk through the home, then we’ll talk price, prep and timing. No obligation.</p>
     <div class="field"><label for="lAddr">Property address</label><input id="lAddr" autocomplete="street-address"></div>
     <div class="field"><span class="lab">When are you thinking of selling?</span><div class="chips" data-chips="ltl" data-opts="Within 3 months|3–6 months|6–12 months|Not sure yet"></div></div>
     <div class="field"><span class="lab">Is it listed with an agent right now?</span><div class="chips" data-chips="lag" data-opts="No|Yes, it’s listed now|It was, the listing ended"></div></div>
     <div class="field"><span class="lab">Where should we meet?</span><div class="chips" data-chips="lhow" data-opts="At the home|Video call first"></div></div>
-    ${contactFields}
     <div class="field"><label for="lNote">What matters most to you about this sale?</label><textarea id="lNote" rows="3"></textarea></div>
-    <p class="err" id="fErr">Add the address, your first name and phone.</p><button class="pill block" id="lNext">Pick a time</button>`);
+    <p class="err" id="fErr">Add the property address.</p><button class="pill block" id="lNext">Next: pick a day</button>`);
   $('lNext').onclick = () => {
-    const addr = $('lAddr').value.trim(); if (!requireContact() || !addr) { $('fErr').style.display = 'block'; return; }
+    const addr = $('lAddr').value.trim(); if (!addr) { $('fErr').style.display = 'block'; return; }
     const ag = chipVal(sheet,'lag') || '', tl = chipVal(sheet,'ltl') || '', video = /Video/.test(chipVal(sheet,'lhow') || ''), note = $('lNote').value.trim();
-    sendLead({tab:'Website Leads', type:'Listing appointment', ...contactVals(), property: addr, timeline: tl, source:'juliancrider.com',
-      notes: joinNotes(['Listed now: ' + ag, 'Meet: ' + (video ? 'Video call first' : 'At the home'), 'What matters: ' + note])});
     if (/listed now/.test(ag)) { $('sheetBody').innerHTML = doneHTML('Thank you','Since your home is listed with another agent right now, they’re the best person to help. If anything changes, I’m here.'); return; }
-    pickTime({...contactVals(), kind: video ? 'video' : 'listing', minutes: video ? 30 : 60, property: addr, type: 'Listing appointment',
+    pickTime({kind: video ? 'video' : 'listing', minutes: video ? 30 : 60, property: addr, type: 'Listing appointment', title: 'Book a listing appointment', back: listingFlow,
+      what: (video ? '30-minute video call' : 'Listing appointment') + ' · ' + addr,
+      lead: {type:'Listing appointment', property: addr, timeline: tl, notes: joinNotes(['Listed now: ' + ag, 'Meet: ' + (video ? 'Video call first' : 'At the home'), 'What matters: ' + note])},
       notes: ['Listing appointment', addr, tl && 'Timeline: ' + tl, ag && 'Listed now: ' + ag, note && 'What matters: ' + note].filter(Boolean).join(' · ')});
   };
 }
 function golfFlow(){
-  openRaw('Golf with Julián ⛳', `<p class="fine" style="margin:0 0 14px">Pick 9 or 18, tell me about the tee time, then choose a day.</p>` + contactFields + `
+  openRaw('Golf with Julián ⛳', ggSteps(1) + `<p class="gg-h">The round</p>
     <div class="field"><span class="lab">How many holes?</span><div class="chips" data-chips="holes" data-opts="9 holes|18 holes"></div></div>
     <div class="field"><span class="lab">Is the tee time booked?</span><div class="chips" data-chips="tee" data-opts="Yes, it’s booked|Not yet"></div></div>
     <div class="field"><label for="gCourse">Course (or where we can book)</label><input id="gCourse" placeholder="e.g. TPC Summerlin"></div>
-    <p class="err" id="fErr">Add your first name and phone.</p><button class="pill block" id="gNext">Pick a day</button>`);
-  $('gNext').onclick = () => { if (!requireContact()) return;
+    <button class="pill block" id="gNext">Next: pick a day</button>`);
+  $('gNext').onclick = () => {
     const holes = /^9/.test(chipVal(sheet,'holes')||'') ? 9 : 18;
-    pickTime({...contactVals(), kind:'golf', holes, teeBooked: chipVal(sheet,'tee') || 'Not yet', course: $('gCourse').value.trim(), notes: 'Golf'}); };
+    pickTime({kind:'golf', holes, teeBooked: chipVal(sheet,'tee') || 'Not yet', course: $('gCourse').value.trim(), notes: 'Golf', back: golfFlow}); };
 }
 function bookFlow(preset){
-  const st = {type:preset||'', step:1};
+  const st = {type:preset||''};
   const types = ['Buying a home','Selling or home value','New construction','Relocating to Las Vegas','Just a question'];
-  const bar = () => `<div class="steps">${[1,2,3].map(i=>`<i class="${i<=st.step?'on':''}"></i>`).join('')}</div><p class="fine" style="margin:-8px 0 14px">Step ${st.step} of 3</p>`;
   function s1(){
-    openRaw('Book a consultation', bar()+`<span class="lab">What can I help with?</span><div class="chips" id="types">${types.map(t=>`<button type="button" class="chip ${t===st.type?'on':''}">${t}</button>`).join('')}</div>
+    openRaw('Book a consultation', ggSteps(1)+`<p class="gg-h">What can I help with?</p><div class="chips" id="types">${types.map(t=>`<button type="button" class="chip ${t===st.type?'on':''}">${t}</button>`).join('')}</div>
       <p class="err" id="tErr">Choose one to continue.</p><button class="pill block" style="margin-top:18px" id="next1">Continue</button>`);
     document.querySelectorAll('#types .chip').forEach(c => c.onclick = () => { st.type=c.textContent; document.querySelectorAll('#types .chip').forEach(x=>x.classList.toggle('on',x===c)); });
-    $('next1').onclick = () => { if (!st.type){$('tErr').style.display='block';return;} st.step=2; s2(); };
+    $('next1').onclick = () => { if (!st.type){$('tErr').style.display='block';return;} s2(); };
   }
   function s2(){
-    openRaw('Book a consultation', bar()+`
-      <div class="field"><span class="lab">When works best?</span><div class="chips" data-chips="when" data-opts="This week|Next week|Weekend|Flexible"></div></div>
+    openRaw('Book a consultation', ggSteps(1)+`<p class="gg-h">A few quick questions</p>
       <div class="field"><span class="lab">How should we meet?</span><div class="chips" data-chips="how" data-opts="Phone call|Video call (Zoom or Google Meet)"></div></div>
       <div class="field"><span class="lab">If video, how long?</span><div class="chips" data-chips="len" data-opts="30 minutes|45 minutes"></div></div>
       <div class="field"><span class="lab">Timeline</span><div class="chips" data-chips="tl3" data-opts="Ready now|1–3 months|3–6 months|6–12 months|Just exploring"></div></div>
@@ -2736,21 +2800,18 @@ function bookFlow(preset){
       <div class="field"><span class="lab">Pre-approved for a loan?</span><div class="chips" data-chips="pa" data-opts="Yes|Not yet|Paying cash"></div></div>`:''}
       ${st.type!=='Just a question'?`<div class="field"><span class="lab">Working with another agent?</span><div class="chips" data-chips="ag" data-opts="No|Talking to a few|Yes, signed with one"></div></div>`:''}
       ${/Selling/.test(st.type)?`<div class="field"><label for="addr">Property address</label><input id="addr" autocomplete="street-address"></div>`:''}
-      <div class="duo"><button class="pill ghost" id="back2">Back</button><button class="pill" id="next2">Continue</button></div>`);
-    $('back2').onclick = () => { st.step=1; s1(); };
-    $('next2').onclick = () => { st.when=chipVal(sheet,'when'); st.how=chipVal(sheet,'how'); st.len=chipVal(sheet,'len'); st.tl=chipVal(sheet,'tl3'); st.pa=chipVal(sheet,'pa'); st.pr=chipVal(sheet,'pr'); st.from=chipVal(sheet,'from'); st.ag=chipVal(sheet,'ag'); st.addr=$('addr')?$('addr').value.trim():''; st.step=3; s3(); };
-  }
-  function s3(){
-    openRaw('Book a consultation', bar()+contactFields+`<div class="field"><label for="fNote">Anything I should know?</label><textarea id="fNote" rows="3"></textarea></div>
-      <p class="err" id="fErr">Add your first name and phone.</p><div class="duo"><button class="pill ghost" id="back3">Back</button><button class="pill" id="send">Request consultation</button></div>`);
-    $('back3').onclick = () => { st.step=2; s2(); };
-    $('send').onclick = () => { if (!requireContact()) return;
-      sendLead({tab:'Website Leads', type:'Consultation: '+st.type, ...contactVals(), property:st.addr||'', timeline:st.tl||'', source:'juliancrider.com',
-        notes: joinNotes(['When: '+(st.when||''), 'Meet by: '+(st.how||''), 'Price range: '+(st.pr||''), 'Lives in: '+(st.from||''), 'Pre-approved: '+(st.pa||''),
-          'Working with agent: '+(st.ag==='Yes, signed with one'?'Yes, with a signed agreement':(st.ag||'')), 'Note: '+$('fNote').value.trim()])});
+      <div class="duo"><button class="pill ghost" id="back2">Back</button><button class="pill" id="next2">Next: pick a day</button></div>`);
+    $('back2').onclick = s1;
+    $('next2').onclick = () => {
+      st.how=chipVal(sheet,'how'); st.len=chipVal(sheet,'len'); st.tl=chipVal(sheet,'tl3'); st.pa=chipVal(sheet,'pa'); st.pr=chipVal(sheet,'pr'); st.from=chipVal(sheet,'from'); st.ag=chipVal(sheet,'ag'); st.addr=$('addr')?$('addr').value.trim():'';
       if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
-      const video = /Video/.test(st.how||'');
-      pickTime({...contactVals(), kind: video ? 'video' : 'phone', minutes: video && /45/.test(st.len||'') ? 45 : 30, type: st.type, notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl, st.pa && 'Pre-approved: ' + st.pa].filter(Boolean).join(' · ')}); };
+      const video = /Video/.test(st.how||''), minutes = video && /45/.test(st.len||'') ? 45 : 30;
+      pickTime({kind: video ? 'video' : 'phone', minutes, type: st.type, title:'Book a consultation', back: s2, askNote: 'Anything I should know? (optional)',
+        what: `${minutes}-minute ${video ? 'video' : 'phone'} call · ${st.type}`,
+        lead: {type:'Consultation: '+st.type, property: st.addr||'', timeline: st.tl||'',
+          notes: joinNotes(['Meet by: '+(st.how||''), 'Price range: '+(st.pr||''), 'Lives in: '+(st.from||''), 'Pre-approved: '+(st.pa||''), 'Working with agent: '+(st.ag||'')])},
+        notes: [st.how && 'Meet by: ' + st.how, st.tl && 'Timeline: ' + st.tl, st.pa && 'Pre-approved: ' + st.pa].filter(Boolean).join(' · ')});
+    };
   }
   s1();
 }
