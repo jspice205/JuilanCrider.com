@@ -876,5 +876,7 @@ He's not renaming the Buyers stages for now.
    "Watch" card (YouTube: Julian Crider Estates, "Notify me") is a placeholder. When he says he's posting: show the channel's latest
    videos (YouTube RSS feeds/videos.xml?channel_id=… read by the Apps Script, so no API key), Subscribe button, each video → a
    "Book a call / Moving here? Start here" next step, and text the "Notify me" sign-ups that it's live. Metricool's YouTube is
-   UCDqgwRG3yjItvj8HG7D-xtg (Shorts cross-post there since Nov 18); confirm that's the channel he means.
+   UCDqgwRG3yjItvj8HG7D-xtg (Shorts cross-post there since Nov 18) = his real estate channel (confirmed Nov 19). His plan: Shorts
+   first, then a full-length video for the Shorts with the most views; the weekly social report ranks the Shorts by views so he
+   knows which ones to make full videos of.
 5. Later: agent network list, SIG/Apollo (after compliance), social posting, Meta audiences.
