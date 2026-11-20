@@ -850,6 +850,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   (c.lead → sendLead with "Requested time" + "Text OK") is sent only at step 3, then the slot is booked. Showing keeps "Not
   sure yet" (c.allowTbd); no slots / slots fail → straight to step 3 as a request. `ggSteps(n)` draws the circles (class ok,
   never .done: that's the success-screen class).
+  After booking (Nov 19, "they receive an email and a text"): text from the business line (confirmation + .ics bubble, as
+  before) AND an email from julianc@bcolv.com ("You're booked: <label>", what/where/how + .ics attached, FUB note "Email sent:").
+  The calendar event no longer adds the client as a guest, so Google never emails them from his personal Gmail.
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

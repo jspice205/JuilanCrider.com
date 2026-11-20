@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-booking';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-booking-email';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -251,7 +251,9 @@ function bookSlot(d) {
     `${m.label}: ${d.name}${d.type ? ' (' + d.type + ')' : ''}`;
   const desc = ['Booked on juliancrider.com', `Phone: ${d.phone}`, email && `Email: ${email}`,
     golf && `Holes: ${d.holes || 18}`, golf && `Tee time booked: ${d.teeBooked || 'not yet'}`, golf && d.course && `Course: ${d.course}`, d.notes].filter(Boolean).join('\n');
-  const link = createBookingEvent(title, slot, end, desc, showing || listing ? String(d.property) : golf ? (d.course || '') : '', email, video);
+  // Client emails only from julianc@bcolv.com (his rule, Nov 8): the calendar event gets no guests, so Google doesn't email an
+  // invite from his personal Gmail; the bcolv confirmation email below carries the .ics invite instead (Nov 19).
+  const link = createBookingEvent(title, slot, end, desc, showing || listing ? String(d.property) : golf ? (d.course || '') : '', '', video);
   try {  // Follow Up Boss: find or add the person, then appointment + note + task
     const phone = String(d.phone).replace(/\D/g, '');
     let found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
@@ -297,6 +299,22 @@ function bookSlot(d) {
         (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.'));
     } catch (e) { console.log('Calendar invite not sent: ' + e.message); }
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
+  if (email) { try {  // confirmation email from bcolv with the calendar invite attached (Nov 19, Julián: "they receive an email and a text")
+    const first = String(d.name).trim().split(/\s+/)[0], where = showing || listing ? String(d.property) : golf ? (d.course || '') : '';
+    const what = showing ? 'your showing at ' + where : listing ? 'your listing appointment at ' + where : golf ? `golf (${d.holes || 18} holes)${where ? ' at ' + where : ''}`
+      : video ? 'our video call' : 'our phone call';
+    const how = showing ? "I'll meet you at the home." : listing ? "I'll meet you at the home. It takes about an hour, and there's no obligation." : golf ? "I'll text you to confirm the tee time."
+      : video ? (link ? 'Join here: ' + link : "I'll send the video link before we meet.") : `I'll call you at ${d.phone}.`;
+    const invTitle = showing ? 'Showing with Julián: ' + where.split(',')[0] : listing ? 'Listing appointment with Julián' : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
+    const ics = icsInvite(invTitle, slot, end, where || link || 'Julián will call you', (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.');
+    const subj = `You're booked: ${label}`;
+    const r = sendFromBcolv(email, subj, `Hi ${first},\n\nYou're all set for ${what} on ${label} (Pacific time). ${how}\n\n` +
+      `The calendar invite is attached, so you can add it in one tap. I'll text you a reminder before we meet.\n\nIf anything changes, just reply here or text me at 702-498-2571.`,
+      [{name: 'Julian-Crider-appointment.ics', mimeType: 'text/calendar', base64: Utilities.base64Encode(ics.getBytes())}]);
+    const pid0 = ((fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) || [])[0];
+    if (r && r.ok && pid0) fubFetch('notes', {personId: pid0.id, subject: 'Email sent: ' + subj, body: 'Booking confirmation from julianc@bcolv.com with calendar invite.'});
+    if (!(r && r.ok)) console.log('Booking email not sent: ' + JSON.stringify(r));
+  } catch (e) { console.log('Booking email not sent: ' + e.message); } }
   try { notifyJulian('📅 Booked on your site: ' + String(d.name || '').trim(), m.label + ', ' + label + (d.property ? ' at ' + d.property : '') + '. ' + (d.phone || '') + '. It\'s on your calendar.', '', String(d.name || '').trim()); } catch (e) {}
   return {status: 'success', label: label, link: link};
 }
