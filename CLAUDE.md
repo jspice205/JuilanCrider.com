@@ -619,6 +619,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   with MailApp (GmailApp had mangled 🦃 into ������); main script strips subject emoji only while `mailerVersion()` < 6.
   Julián must paste the v6 mailer once (bcolv account → Shawna Mailer → paste → run setupMailer → Deploy → Manage deployments
   → edit → New version).
+- NEVER GUESS (Julián, Nov 20: Shawna told Kim Nguyen 308 "the other unit closed last week, it fetched a solid price", "2074 is slated
+  for Q2 2027" and promised a "final sheet", none of it known): SALES_RULES "NEVER GUESS WHAT YOU CAN'T VERIFY" (texts + Vapi):
+  sold/closed/listed status, sale prices, build/completion dates, documents only from the thread/notes/knowledge; else "Let me
+  find out for you" / "I'll check on that for you" (+ important → Julián alerted) or ask which property. referral_partner tag only
+  for agents/pros, not a client who knows someone interested (Kim's wrong Partner tags removed).
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
