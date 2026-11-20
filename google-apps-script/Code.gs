@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-subject-fix';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-contact-card';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7129,7 +7129,7 @@ const BLASTS = [
   // through Wed Nov 25; the email blast now goes only to people who can't be texted.
   {id: 'thanksgiving-2026-text', start: '2026-11-20T09:00:00-08:00', end: '2026-11-25T20:00:00-08:00', tags: ['Top 200', 'Tier A', 'Tier B', 'Hot', 'Warm', 'open house', 'Open House'],
     stages: ['Active Client', 'Pending', 'Under Contract'], textOnly: true, anyOpenHouse: true,
-    text: 'Hey {first}, happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/'},
+    text: 'Hey {first}, it\'s Julián Crider 👋🏾 Happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/'},
   {id: 'thanksgiving-2026', start: '2026-11-20T09:00:00-08:00', end: '2026-11-21T20:00:00-08:00', tags: ['Top 200'], skipTextable: true, anyOpenHouse: true,
     subject: 'Happy Thanksgiving, {first} (6 free things happening this week)',
     text: 'Hey {first}, happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/',
@@ -7200,8 +7200,10 @@ function sendTouch(p, text, subject, email, label, opts) {
     try {  // Nov 20: a text that can't go (texting Mac down) falls back to email instead of blocking the whole send
       const body = humanize(fill(text)) + (can === 'first' || can === 'greeting' ? FIRST_TEXT_OPTOUT : '');
       PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + phone, String(Date.now()));
-      bbSendParts(phone, body);
-      try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: body + '\n\n(' + label + ')'}); } catch (e) {}
+      // Nov 20 (Julián: "they may not know who sent the text"): a first text from him always brings his contact card.
+      const card = can === 'first' || can === 'greeting';
+      bbSendParts(phone, body + (card ? ' || [contact card]' : ''));
+      try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: body + (card ? '\n[contact card]' : '') + '\n\n(' + label + ')'}); } catch (e) {}
       if (can === 'first') markTextOk(p, label);
       return 'text';
     } catch (e) { textErr = String(e.message || e); }
@@ -7216,6 +7218,33 @@ function sendTouch(p, text, subject, email, label, opts) {
   }
   if (textErr) throw new Error('text: ' + textErr);
   return '';
+}
+// Nov 20 catch-up (Julián: "for the text that already went out can you add my contact card… they may not know who sent
+// the text"): people whose Thanksgiving text was their FIRST text from him (it had the STOP line, no "it's Julián") get one
+// short text saying who it is + his contact card. 9am-8pm, 15 per tick, once each (CARDCATCH_DONE). Ends Nov 25.
+function sendCardCatchup() {
+  const props = PropertiesService.getScriptProperties(), hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H'));
+  if (hour < 9 || hour >= 20 || Date.now() > new Date('2026-11-25T20:00:00-08:00').getTime() || props.getProperty('CARDCATCH') === 'off') return;
+  const st = JSON.parse(props.getProperty('BLAST_thanksgiving-2026-text') || '{"done":[]}'), done = JSON.parse(props.getProperty('CARDCATCH_DONE') || '[]');
+  let n = 0;
+  for (let i = 0; i < st.done.length && n < 15; i++) {
+    const id = st.done[i]; if (done.indexOf(id) >= 0) continue;
+    try {
+      const notes = fubFetch('notes?personId=' + id + '&limit=15&fields=id,subject,body,created', null, 'get').notes || [];
+      const tg = notes.filter(x => /^Text sent/.test(x.subject || '') && /\(thanksgiving-2026-text\)/.test(x.body || ''))[0];
+      if (tg && Date.now() - new Date(tg.created).getTime() < 3 * 6e4) continue;  // just sent: next tick
+      done.push(id); props.setProperty('CARDCATCH_DONE', JSON.stringify(done));
+      if (!tg || /it's Julián|\[contact card\]/.test(tg.body) || !/reply STOP/.test(tg.body)) continue;  // knew him already, or got the card
+      const p = fubFetch('people/' + id + '?fields=id,firstName,name,tags,phones', null, 'get');
+      if ((p.tags || []).indexOf('Text Opt-Out') >= 0) continue;
+      const phone = (p.phones || []).map(x => bbE164(x.value || '')).filter(Boolean)[0]; if (!phone) continue;
+      const msg = 'P.S. this is Julián Crider, Realtor with Boeckle & Co. 👋🏾 Here\'s my contact card so you know it\'s me.';
+      props.setProperty('AI_SENDING_' + phone, String(Date.now()));
+      bbSendParts(phone, msg + ' || [contact card]');
+      fubFetch('notes', {personId: id, subject: 'Text sent', body: msg + '\n[contact card]\n\n(thanksgiving contact card)'});
+      n++; Utilities.sleep(2000);
+    } catch (e) { console.log('Card catch-up ' + id + ': ' + e.message); }
+  }
 }
 function runBlasts() {
   const props = PropertiesService.getScriptProperties();
@@ -7285,6 +7314,7 @@ function remindUpcoming() {
   try { checkTextingMac(); } catch (e) { console.log('Mac check: ' + e.message); }
   try { checkRealScout(); } catch (e) { console.log('RealScout: ' + e.message); }
   try { runBlasts(); } catch (e) { console.log('Blasts: ' + e.message); }
+  try { sendCardCatchup(); } catch (e) { console.log('Card catch-up: ' + e.message); }
   try { runBirthdays(); } catch (e) { console.log('Birthdays: ' + e.message); }
   try { runOpenHouseOptIn(); } catch (e) { console.log('Open house texts: ' + e.message); }
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
@@ -7391,9 +7421,9 @@ function processTextQueue() {
 // (his rule), sent next day 11am. Skips mobile-less/landline, Has Agent, agents/partners, opted out, unsubscribed,
 // not interested, trash/closed, test. OH_OPTIN=off stops it.
 const OH_OPTIN = {perDay: 10, windowDays: 90,
-  text: 'Hey {first}, it\'s Julián Crider, the Realtor from the open house 👋🏾 Every so often I\'ll text you a quick note on homes and the Vegas market. If you\'d rather I didn\'t, just reply STOP and you won\'t hear from me here again. Is a move still on your radar, or has that changed?',
-  general: 'Hey {first}, it\'s Julián Crider 👋🏾 Every so often I\'ll text you a quick note on homes and the Vegas market. If you\'d rather I didn\'t, just reply STOP and you won\'t hear from me here again. Is a move still on your radar, or has that changed?',
-  deal: 'Hey {first}, it\'s Julián 👋🏾 Quick heads up: I\'ll send your updates here by text too, so nothing gets missed. If you\'d rather keep it to email, just reply STOP.'};
+  text: 'Hey {first}, it\'s Julián Crider, the Realtor from the open house 👋🏾 Every so often I\'ll text you a quick note on homes and the Vegas market. If you\'d rather I didn\'t, just reply STOP and you won\'t hear from me here again. Is a move still on your radar, or has that changed? || [contact card]',
+  general: 'Hey {first}, it\'s Julián Crider 👋🏾 Every so often I\'ll text you a quick note on homes and the Vegas market. If you\'d rather I didn\'t, just reply STOP and you won\'t hear from me here again. Is a move still on your radar, or has that changed? || [contact card]',
+  deal: 'Hey {first}, it\'s Julián 👋🏾 Quick heads up: I\'ll send your updates here by text too, so nothing gets missed. If you\'d rather keep it to email, just reply STOP. || [contact card]'};
 function runOpenHouseOptIn() {
   const props = PropertiesService.getScriptProperties(), tz = 'America/Los_Angeles';
   if (props.getProperty('OH_OPTIN') === 'off') return;
@@ -7425,7 +7455,7 @@ function runOpenHouseOptIn() {
   });
   ensureTextQueueTrigger();
   try { bossTextSafe('🏠 Heads up: tomorrow (' + Utilities.formatDate(at, tz, 'EEE, MMM d') + ') at 11am, ' + names.length + (names.length === 1 ? ' person gets' : ' people get') + ' their first text from you (open house, Hot/Warm or in a deal):\n\n' +
-    names.join('\n') + '\n\nLike: "' + OH_OPTIN.text.replace(/\{first\}/g, '<name>') + '"\n\nIf they don\'t reply STOP, they\'re on your texting list. Say "hold" to stop them.'); } catch (e) {}
+    names.join('\n') + '\n\nLike: "' + OH_OPTIN.text.replace(/\{first\}/g, '<name>').replace(' || [contact card]', '') + '" (plus your contact card)\n\nIf they don\'t reply STOP, they\'re on your texting list. Say "hold" to stop them.'); } catch (e) {}
   // (Hot/Warm/deal people get the same first text; the wording fits them too.)
 }
 

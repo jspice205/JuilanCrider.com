@@ -583,6 +583,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Nov 25) + the email blast now skips textable people (skipTextable). His one-time call "for today, anyone that was at the open
   house, excluding agents, gets the Thanksgiving text": anyOpenHouse → older open-house visitors get that greeting with the STOP
   line ('greeting') but are NOT tagged Text OK.
+  Contact card (Nov 20, Julián: "they may not know who sent the text… for future texts add the contact card"): every FIRST text
+  ('first'/'greeting' in sendTouch, OH_OPTIN texts) ends with " || [contact card]"; the Thanksgiving text now opens "it's Julián
+  Crider". `sendCardCatchup` (remindUpcoming, until Nov 25; CARDCATCH_DONE; CARDCATCH=off) texts the first-timers who already
+  got the old Thanksgiving text "P.S. this is Julián Crider, Realtor with Boeckle & Co. 👋🏾 Here's my contact card…" + card.
+  Email subjects never carry emoji (sendFromBcolv strips them; the 🦃 showed as ������).
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
