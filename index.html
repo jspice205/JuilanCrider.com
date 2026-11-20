@@ -892,7 +892,7 @@ img{max-width:100%;display:block}
       <form id="valForm" novalidate>
         <div class="field"><span class="lab">Neighborhood</span><div class="chips" data-chips="hood" data-opts="Summerlin|Las Vegas|Henderson|MacDonald Highlands|Other"></div></div>
         <div class="field"><label for="vAddr">Property address</label><input id="vAddr" autocomplete="street-address"></div>
-        <div class="field"><span class="lab">When might you sell?</span><div class="chips" data-chips="vwhen" data-opts="Just curious|Within 3 months|3–6 months|Not sure yet"></div></div>
+        <div class="field"><span class="lab">When might you sell?</span><div class="chips" data-chips="vwhen" data-opts="Now|This month|1–3 months|3–6 months|Just curious|Not sure yet"></div></div>
         <div class="duo"><div class="field"><label for="vName">Name</label><input id="vName" autocomplete="name"></div>
         <div class="field"><label for="vPhone">Phone</label><input id="vPhone" type="tel" autocomplete="tel"></div></div>
         <p class="err" id="vErr">Add the address, your name and phone.</p>
@@ -2756,7 +2756,7 @@ function sellPresentation(){
 function listingFlow(){
   openRaw('Book a listing appointment', ggSteps(1) + `<p class="gg-h">Your home</p><p class="fine" style="margin:-6px 0 14px;text-align:center">About an hour. I’ll walk through the home, then we’ll talk price, prep and timing. No obligation.</p>
     <div class="field"><label for="lAddr">Property address</label><input id="lAddr" autocomplete="street-address"></div>
-    <div class="field"><span class="lab">When are you thinking of selling?</span><div class="chips" data-chips="ltl" data-opts="Within 3 months|3–6 months|6–12 months|Not sure yet"></div></div>
+    <div class="field"><span class="lab">When are you thinking of selling?</span><div class="chips" data-chips="ltl" data-opts="Now|This month|1–3 months|3–6 months|6–12 months|Not sure yet"></div></div>
     <div class="field"><span class="lab">Is it listed with an agent right now?</span><div class="chips" data-chips="lag" data-opts="No|Yes, it’s listed now|It was, the listing ended"></div></div>
     <div class="field"><span class="lab">Where should we meet?</span><div class="chips" data-chips="lhow" data-opts="At the home|Video call first"></div></div>
     <div class="field"><label for="lNote">What matters most to you about this sale?</label><textarea id="lNote" rows="3"></textarea></div>

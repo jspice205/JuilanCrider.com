@@ -727,7 +727,7 @@ function scoreLead(tabName, d) {
   const notes = String(d.notes || ''), type = String(d.type || '').toLowerCase(), tl = String(d.timeline || '');
   if (/Working with agent: Yes, with a signed/.test(notes)) return ['Intake Tier C', 'Tier C', 'Has Agent'];
   const tags = [];
-  let pts = ({'ASAP / Already looking': 30, 'Already looking': 30, 'Ready now': 30, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
+  let pts = ({'ASAP / Already looking': 30, 'Already looking': 30, 'Ready now': 30, 'Now': 30, 'This month': 30, 'Within 3 months': 25, '1–3 months': 25, '3–6 months': 15, '6–12 months': 8}[tl] || 0);
   const interest = Number(d.score) || 0;
   pts += interest >= 8 ? 20 : interest >= 6 ? 10 : interest ? 3 : 0;
   if (/Pre-approved: Yes|Pre-approved: Paying cash|Paying cash/.test(notes)) pts += 10;
