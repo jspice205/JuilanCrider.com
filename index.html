@@ -922,20 +922,6 @@ img{max-width:100%;display:block}
     </div>
 
     <div class="pane on" id="h-new">
-      <form class="nsearch" id="nhForm" action="https://www.showingnew.com/juliancrider/home/redirecttoresultspage" method="post" target="_blank" enctype="multipart/form-data">
-        <h3>Search every new home in the valley</h3>
-        <div class="tog chips"><label class="chip on"><input type="radio" name="QuickMoveIn" value="0" checked hidden>All new homes</label><label class="chip"><input type="radio" name="QuickMoveIn" value="1" hidden>Move-in ready</label></div>
-        <div class="field"><label for="nhText">City, ZIP, school district or community</label><input id="nhText" name="SearchText" value="Las Vegas, NV Area" maxlength="100"></div>
-        <div class="cgrid">
-          <div class="field"><label>Min price</label><select name="PriceLow"><option value="">No min</option><option value="100000">$100,000</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="400000">$400,000</option><option value="500000">$500,000</option><option value="600000">$600,000</option><option value="700000">$700,000</option><option value="800000">$800,000</option><option value="900000">$900,000</option><option value="1000000">$1,000,000</option><option value="1250000">$1,250,000</option><option value="1500000">$1,500,000</option><option value="2000000">$2,000,000</option><option value="2500000">$2,500,000</option><option value="3000000">$3,000,000</option><option value="4000000">$4,000,000</option><option value="5000000">$5,000,000</option><option value="7500000">$7,500,000</option><option value="10000000">$10,000,000</option></select></div>
-          <div class="field"><label>Max price</label><select name="PriceHigh"><option value="">No max</option><option value="100000">$100,000</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="400000">$400,000</option><option value="500000">$500,000</option><option value="600000">$600,000</option><option value="700000">$700,000</option><option value="800000">$800,000</option><option value="900000">$900,000</option><option value="1000000">$1,000,000</option><option value="1250000">$1,250,000</option><option value="1500000">$1,500,000</option><option value="2000000">$2,000,000</option><option value="2500000">$2,500,000</option><option value="3000000">$3,000,000</option><option value="4000000">$4,000,000</option><option value="5000000">$5,000,000</option><option value="7500000">$7,500,000</option><option value="10000000">$10,000,000</option></select></div>
-          <div class="field"><label>Beds</label><select name="BedRooms"><option value="-1">Any</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5+</option></select></div>
-          <div class="field"><label>Baths</label><select name="Bathrooms"><option value="-1">Any</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option></select></div>
-        </div>
-        <input type="hidden" name="SqFtLow" value="0">
-        <button class="pill block" type="submit" style="margin-top:14px">Find new homes</button>
-        <a class="link" href="https://www.showingnew.com/juliancrider/new-homes-today" target="_blank" rel="noopener">See what’s new today</a>
-      </form>
       <h4 style="font-size:13px;font-weight:600;color:var(--muted);margin:0 4px 8px">Master-planned communities building now</h4>
       <div class="hscroll" style="padding:0 0 12px" id="nhComms"></div>
       <div class="feature">
@@ -954,6 +940,20 @@ img{max-width:100%;display:block}
         <p style="color:var(--ink2);font-size:15px;margin-bottom:12px">Most builders require your agent to register you on your first visit to the sales office. Tell me where you’re touring and I’ll handle it, so you keep your representation through the build.</p>
         <button class="pill block" data-open="book" data-type="New construction">Register my visit</button>
       </div>
+      <form class="nsearch" id="nhForm" style="margin-top:16px" action="https://www.showingnew.com/juliancrider/home/redirecttoresultspage" method="post" target="_blank" enctype="multipart/form-data">
+        <h3>Search every new home in the valley</h3>
+        <div class="tog chips"><label class="chip on"><input type="radio" name="QuickMoveIn" value="0" checked hidden>All new homes</label><label class="chip"><input type="radio" name="QuickMoveIn" value="1" hidden>Move-in ready</label></div>
+        <div class="field"><label for="nhText">City, ZIP, school district or community</label><input id="nhText" name="SearchText" value="Las Vegas, NV Area" maxlength="100"></div>
+        <div class="cgrid">
+          <div class="field"><label>Min price</label><select name="PriceLow"><option value="">No min</option><option value="100000">$100,000</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="400000">$400,000</option><option value="500000">$500,000</option><option value="600000">$600,000</option><option value="700000">$700,000</option><option value="800000">$800,000</option><option value="900000">$900,000</option><option value="1000000">$1,000,000</option><option value="1250000">$1,250,000</option><option value="1500000">$1,500,000</option><option value="2000000">$2,000,000</option><option value="2500000">$2,500,000</option><option value="3000000">$3,000,000</option><option value="4000000">$4,000,000</option><option value="5000000">$5,000,000</option><option value="7500000">$7,500,000</option><option value="10000000">$10,000,000</option></select></div>
+          <div class="field"><label>Max price</label><select name="PriceHigh"><option value="">No max</option><option value="100000">$100,000</option><option value="200000">$200,000</option><option value="300000">$300,000</option><option value="400000">$400,000</option><option value="500000">$500,000</option><option value="600000">$600,000</option><option value="700000">$700,000</option><option value="800000">$800,000</option><option value="900000">$900,000</option><option value="1000000">$1,000,000</option><option value="1250000">$1,250,000</option><option value="1500000">$1,500,000</option><option value="2000000">$2,000,000</option><option value="2500000">$2,500,000</option><option value="3000000">$3,000,000</option><option value="4000000">$4,000,000</option><option value="5000000">$5,000,000</option><option value="7500000">$7,500,000</option><option value="10000000">$10,000,000</option></select></div>
+          <div class="field"><label>Beds</label><select name="BedRooms"><option value="-1">Any</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option><option value="5">5+</option></select></div>
+          <div class="field"><label>Baths</label><select name="Bathrooms"><option value="-1">Any</option><option value="2">2+</option><option value="3">3+</option><option value="4">4+</option></select></div>
+        </div>
+        <input type="hidden" name="SqFtLow" value="0">
+        <button class="pill block" type="submit" style="margin-top:14px">Find new homes</button>
+        <a class="link" href="https://www.showingnew.com/juliancrider/new-homes-today" target="_blank" rel="noopener">See what’s new today</a>
+      </form>
     </div>
 
     <div class="pane" id="h-soon">
