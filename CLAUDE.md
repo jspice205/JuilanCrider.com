@@ -598,6 +598,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   TEXT_PER_TICK (default 3) texts in any 5 min (GROUP_TEXTS timestamps), 20-45 s apart, shared
   by text blasts, the card catch-up (runs first each tick) and Text Queue group steps; emails unaffected. Apology texts with his card
   went to Michael Wesley, Pascal Laoirie, Israel Simmons via the outbox; the catch-up skips anyone who already got his card.
+  Blue/green (Nov 20, his ask): bbSendNow records the service (BB_LAST_SERVICE); every "Text sent" note subject is built by
+  `textSentSubject()` → "Text sent · 🔵 blue (iMessage)" / "Text sent · 🟢 green (SMS)" (green = what carriers see). Subjects still
+  start with "Text sent", so /^Text sent/ checks keep working; textStatusText shows the color.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 

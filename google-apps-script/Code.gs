@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-three-per-5min';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-blue-green';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3146,6 +3146,13 @@ function bbSend(phone, text) {
   cache.put(busyKey, '1', 12);
   try { return bbSendNow(phone, text); } finally { try { cache.remove(busyKey); } catch (e) {} }
 }
+// Blue or green (Nov 20, Julián: "add blue and green to each text"): the last send's service, shown on the FUB "Text sent"
+// note's subject: "Text sent · 🔵 blue (iMessage)" or "Text sent · 🟢 green (SMS)". Green texts are the ones carriers see.
+let BB_LAST_SERVICE = '';
+function textSentSubject(base) {
+  const b = base || 'Text sent';
+  return BB_LAST_SERVICE ? b + ' · ' + (/^SMS/i.test(BB_LAST_SERVICE) ? '🟢 green (SMS)' : '🔵 blue (iMessage)') : b;
+}
 function bbSendNow(phone, text) {
   // iPhone users sometimes text from their Apple ID email instead of their number: reply to that address too.
   const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
@@ -3158,6 +3165,7 @@ function bbSendNow(phone, text) {
   try { PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + to, String(Date.now())); } catch (e) {}
   // Existing conversation: send into it. New number: on this Mac's macOS (10.14) Messages can't address an unknown
   // "buddy", so start a new chat with the message instead. iMessage first, then green SMS (needs Text Message Forwarding).
+  BB_LAST_SERVICE = '';
   const known = PropertiesService.getScriptProperties().getProperty('BB_CHAT_' + to);
   const tries = (known ? [[known.split(';')[0] + ', the chat they texted from', () => bbApi('message/text', {chatGuid: known, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})]] : []).concat([
     ['iMessage, existing chat', () => bbApi('message/text', {chatGuid: 'iMessage;-;' + to, tempGuid: 'jc-' + Utilities.getUuid(), message: text, method: 'apple-script'})],
@@ -3173,6 +3181,7 @@ function bbSendNow(phone, text) {
       if (!known && /^iMessage/.test(label) && /^\+1/.test(to) && !bbDelivered(to)) { console.log(label + ' not delivered: trying SMS'); last = new Error('iMessage not delivered'); continue; }
       if (!known && /^\+1/.test(to)) PropertiesService.getScriptProperties().setProperty('BB_CHAT_' + to, (label.split(',')[0] === 'SMS' ? 'SMS' : 'iMessage') + ';-;' + to);
       console.log('Texted ' + to + ' (' + label + ').');
+      BB_LAST_SERVICE = label.split(/[,;]/)[0].trim();
       return {service: label.split(',')[0], result: r};
     }
     catch (err) { last = err; console.log(label + ' failed: ' + String(err.message).slice(0, 300)); }
@@ -3205,7 +3214,7 @@ function bbTextPerson(personId, text, opts) {
   });
   try { fubFetch('textMessages', {personId: p.id, message: msg, toNumber: phone, fromNumber: TEXTING.myNumber, isIncoming: false}); }
   catch (err) {  // FUB only takes textMessages when its own texting is on; save it as a note instead
-    try { fubFetch('notes', {personId: p.id, subject: 'Text sent to ' + (p.firstName || 'contact'), body: msg}); }
+    try { fubFetch('notes', {personId: p.id, subject: textSentSubject('Text sent to ' + (p.firstName || 'contact')), body: msg}); }
     catch (e2) { console.log('Sent, but could not log the text in Follow Up Boss: ' + e2.message); }
   }
   return 'sent';
@@ -3776,7 +3785,7 @@ function assistantReply(person, from, text) {
   props.setProperty('AI_SENDING_' + from, String(Date.now()));
   bbSendParts(from, intro + reply);
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
-  fubFetch('notes', {personId: person.id, subject: 'Text sent', body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
+  fubFetch('notes', {personId: person.id, subject: textSentSubject(), body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
   return true;
 }
 
@@ -5143,7 +5152,7 @@ function processAssistantQueue() {
       stat('shawnaTexts');
       const cnt = 'AI_CNT_' + it.personId, used = (props.getProperty(cnt) || '').split('|');
       props.setProperty('AI_INTRO_' + it.personId, '1'); props.setProperty(cnt, today + '|' + ((used[0] === today ? Number(used[1]) : 0) + 1));
-      fubFetch('notes', {personId: it.personId, subject: 'Text sent', body: intro + it.reply + '\n\n(sent by ' + name + (it.paced ? ')' : ', you hadn\'t replied yet)') + (it.next ? '\nNext step: ' + it.next : '')});
+      fubFetch('notes', {personId: it.personId, subject: textSentSubject(), body: intro + it.reply + '\n\n(sent by ' + name + (it.paced ? ')' : ', you hadn\'t replied yet)') + (it.next ? '\nNext step: ' + it.next : '')});
       try {
         const who = (fubFetch('people/' + it.personId + '?fields=firstName', null, 'get').firstName) || 'them';
         textLog({who: who, text: '', reply: it.reply.slice(0, 200)});
@@ -5395,7 +5404,7 @@ function bossCommand(text, tries) {
     }
     props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
-    fubFetch('notes', {personId: pend.personId, subject: 'Text sent', body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+    fubFetch('notes', {personId: pend.personId, subject: textSentSubject(), body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
     if (pend.taskId) { try { fubFetch('tasks/' + pend.taskId, {isCompleted: true}, 'put'); } catch (e) {} }
     return say(name + ': sent to ' + pend.who + '. ✅');
   }
@@ -7203,7 +7212,7 @@ function sendTouch(p, text, subject, email, label, opts) {
       // Nov 20 (Julián: "they may not know who sent the text"): a first text from him always brings his contact card.
       const card = can === 'first' || can === 'greeting';
       bbSendParts(phone, body + (card ? ' || [contact card]' : ''));
-      try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: body + (card ? '\n[contact card]' : '') + '\n\n(' + label + ')'}); } catch (e) {}
+      try { fubFetch('notes', {personId: p.id, subject: textSentSubject(), body: body + (card ? '\n[contact card]' : '') + '\n\n(' + label + ')'}); } catch (e) {}
       if (can === 'first') markTextOk(p, label);
       return 'text';
     } catch (e) { textErr = String(e.message || e); }
@@ -7250,7 +7259,7 @@ function sendCardCatchupNow() {
       const msg = 'P.S. this is Julián Crider, Realtor with Boeckle & Co. 👋🏾 Here\'s my contact card so you know it\'s me.';
       props.setProperty('AI_SENDING_' + phone, String(Date.now()));
       bbSendParts(phone, msg + ' || [contact card]'); groupTextSent();
-      fubFetch('notes', {personId: id, subject: 'Text sent', body: msg + '\n[contact card]\n\n(thanksgiving contact card)'});
+      fubFetch('notes', {personId: id, subject: textSentSubject(), body: msg + '\n[contact card]\n\n(thanksgiving contact card)'});
       n++; if (n < maxN) Utilities.sleep(textGap());
     } catch (e) { console.log('Card catch-up ' + id + ': ' + e.message); }
   }
@@ -7385,7 +7394,7 @@ function remindUpcoming() {
       : `Hey ${first}, Julián here 👋🏾 Quick reminder about our ${time} today. See you soon!`;
     try {
       bbSend(phone, text);
-      if (person) fubFetch('notes', {personId: person.id, subject: 'Reminder text sent', body: text});
+      if (person) fubFetch('notes', {personId: person.id, subject: textSentSubject('Reminder text sent'), body: text});
     } catch (err) { console.log('Reminder not sent for "' + ev.getTitle() + '": ' + err.message); }
   });
 }
@@ -7398,7 +7407,7 @@ function sendApprovedText(personId, text) {
   if (!phone) return 'skipped: no mobile number';
   PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + phone, String(Date.now()));
   bbSendParts(phone, text);
-  try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: text + '\n\n(scheduled by Julián)'}); } catch (e) {}
+  try { fubFetch('notes', {personId: p.id, subject: textSentSubject(), body: text + '\n\n(scheduled by Julián)'}); } catch (e) {}
   return 'sent';
 }
 
@@ -7526,7 +7535,7 @@ function textStatusText(who) {
       .filter(n => /^text (sent|not sent)/i.test(n.subject || '') && now - new Date(n.created) < 14 * 864e5); } catch (e) {}
   }
   if (recent.length) out += recent.map(line).join('\n\n');
-  if (notes.length) out += (out ? '\n\n' : '') + 'Logged in Follow Up Boss:\n\n' + notes.slice(0, 5).map(n => (/not/i.test(n.subject) ? '⚠️ NOT sent ' : '✅ Sent ') + fmt(n.created) + '\n"' + String(n.body || '').split('\n\n(')[0].slice(0, 140) + '"').join('\n\n');
+  if (notes.length) out += (out ? '\n\n' : '') + 'Logged in Follow Up Boss:\n\n' + notes.slice(0, 5).map(n => (/not sent/i.test(n.subject) ? '⚠️ NOT sent ' : '✅ Sent ') + fmt(n.created) + (/green/.test(n.subject) ? ' 🟢 green' : /blue/.test(n.subject) ? ' 🔵 blue' : '') + '\n"' + String(n.body || '').split('\n\n(')[0].slice(0, 140) + '"').join('\n\n');
   if (out) return out;
   const near = rows.filter(r => r.due instanceof Date && r.due.getTime() > now - 3 * 864e5 && r.name.toLowerCase().indexOf(first) === 0).map(r => r.name)
     .filter((n, i, a) => a.indexOf(n) === i);
@@ -7766,7 +7775,7 @@ function processFubOutbox() {
       const phone = (p.phones || []).map(x => bbE164(x.value)).filter(Boolean)[0];
       if (!phone) throw new Error('no mobile number');
       bbSendParts(phone, String(n.body || '').trim());
-      fubFetch('notes', {personId: p.id, subject: 'Text sent', body: n.body});
+      fubFetch('notes', {personId: p.id, subject: textSentSubject(), body: n.body});
     } catch (err) {
       fubFetch('notes', {personId: n.personId, subject: 'Text NOT sent', body: err.message + '\n\n' + n.body});
     }
