@@ -939,7 +939,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Video / At my home (→ kind listing, 60 min, address required); New construction = Phone / Video / Meet at a model home (community
   field → kind `model`, MEETINGS.model 60 min 9-5 Mon-Sat; texts/email say don't visit the builder before, he must be there the
   first visit; task "register as their agent"); Relocating = Video / Phone; Just a question = Phone / Video. "How long?" shows only
-  for video. No coffee or golf on the public form (his Nov 2 rule). Seller timelines start "Now / This month".
+  for video. No coffee or golf on the public form (his Nov 2 rule).
+  Tour a home (Nov 20, his ask): picking it shows "Which home(s) would you like to tour?" (address/MLS inputs + "Add another home",
+  blank = Julián helps pick) → showingFlow(homes joined by "; ", {pre, agent, back}) skips the repeat questions and goes to day/time. Seller timelines start "Now / This month".
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to

@@ -2426,8 +2426,11 @@ function bindOpeners(scope){ scope.querySelectorAll('[data-open]').forEach(b => 
 // Request a showing (Julián, Nov 12; booking order Nov 19 like GlossGenius): ① the home + two questions → ② day and time
 // from his calendar (or "not sure yet, after talking with Julián") → ③ contact info. A picked time is booked on his calendar;
 // the one-home agreement and the Duties Owed form are emailed either way (as a review copy when there's no address yet).
-function showingFlow(prefill){
+function showingFlow(prefill, ask){
   const st = {prop: prefill || '', pre: '', agent: ''};
+  // From Book a consultation > Tour a home (Nov 20, Julián): the homes, pre-approval and agent were already asked there,
+  // so go straight to the day/time step (ask = {pre, agent, back}).
+  if (ask) { st.pre = ask.pre || ''; st.agent = ask.agent || ''; }
   function details(){
     openRaw('Request a showing', ggSteps(1) + `<p class="gg-h">The home</p>
       <div class="field"><label for="sProp">Property address or MLS # (optional)</label><input id="sProp" autocomplete="street-address" placeholder="Not sure yet? Leave blank" value="${st.prop.replace(/"/g,'&quot;')}"></div>
@@ -2437,15 +2440,18 @@ function showingFlow(prefill){
     $('go').onclick = () => {
       st.prop = $('sProp').value.trim(); st.pre = chipVal(sheet,'spre'); st.agent = chipVal(sheet,'sagent');
       if (/signed/.test(st.agent || '')) { $('sheetBody').innerHTML = doneHTML('Thank you','Since you have a signed agreement with another agent, they should schedule this tour for you. Julián is happy to answer questions anytime.'); return; }
+      pick(details);
+    };
+  }
+  function pick(back){
       const prop = st.prop;
-      pickTime({kind:'showing', minutes:30, property: prop || 'Home to be chosen with Julián', what: 'Showing · ' + (prop || 'home to be chosen with Julián'), allowTbd: true, back: details,
+      pickTime({kind:'showing', minutes:30, property: prop || 'Home to be chosen with Julián', what: 'Showing · ' + (prop || 'home to be chosen with Julián'), allowTbd: true, back,
         notes: 'Showing request: ' + (prop || 'home to be chosen') + ' | Pre-approved: ' + (st.pre || ''),
         lead: {type:'Showing request', property: prop, notes: joinNotes([prop ? '' : 'Property: none yet (wants help choosing homes)', 'Pre-approved: ' + st.pre, 'Working with agent: ' + st.agent])},
         footNote: 'Before any tour, Nevada buyers sign a short written agreement. Julián’s is non-exclusive and covers only the one home you tour, so you’re free to work with anyone else. You’ll get it by email to look over right away.',
         tbdDone: () => doneHTML('Request sent', 'Julián will reach out to set the day and time' + (prop ? '' : ' and line up the homes worth seeing') + '. The buyer agreement is in your email to look over.')});
-    };
   }
-  details();
+  if (ask) pick(ask.back || details); else details();
 }
 
 // Booking like GlossGenius (Nov 19, Julián's screenshots): ① details (the flow's own questions) → ② pick a DAY on a month
@@ -2899,6 +2905,10 @@ function bookFlow(preset){
     openRaw('Book a consultation', ggSteps(1)+`<p class="gg-h">A few quick questions</p>
       <div class="field"><span class="lab">How would you like to meet?</span><div class="chips" data-chips="how" data-opts="${meetOpts().join('|')}"></div></div>
       <div class="field" id="lenF" hidden><span class="lab">How long?</span><div class="chips" data-chips="len" data-opts="30 minutes|45 minutes"></div></div>
+      <div class="field" id="tourF" hidden><span class="lab">Which home(s) would you like to tour?</span>
+        <div id="tourList"><input class="tourAddr" autocomplete="street-address" placeholder="Address or MLS #" style="margin-bottom:8px"></div>
+        <button type="button" class="mini" id="tourAdd">+ Add another home</button>
+        <p class="fine" style="margin-top:6px">Not sure yet? Leave it blank and Julián will help you pick the homes worth seeing.</p></div>
       <div class="field" id="commF" hidden><label for="comm">Which community or builder?</label><input id="comm" placeholder="e.g. Cadence, Toll Brothers in Summerlin"></div>
       <div class="field"><span class="lab">Timeline</span><div class="chips" data-chips="tl3" data-opts="Ready now|1–3 months|3–6 months|6–12 months|Just exploring"></div></div>
       ${/Buying|New|Relocating/.test(st.type)?`<div class="field"><span class="lab">Price range</span><div class="chips" data-chips="pr" data-opts="Under $500K|$500K–$1M|$1M–$1.3M|$1.3M–$3.3M|$3.3M+"></div></div>
@@ -2909,12 +2919,17 @@ function bookFlow(preset){
       <div class="duo"><button class="pill ghost" id="back2">Back</button><button class="pill" id="next2">Next: pick a day</button></div>`);
     $('back2').onclick = s1;
     sheet.querySelector('[data-chips="how"]').addEventListener('click', () => { const h = chipVal(sheet,'how');
-      $('lenF').hidden = !/Video/.test(h); $('commF').hidden = !/model/.test(h); });
+      $('lenF').hidden = !/Video/.test(h); $('commF').hidden = !/model/.test(h); $('tourF').hidden = !/Tour/.test(h); });
+    $('tourAdd').onclick = () => { const i = document.createElement('input'); i.className = 'tourAddr'; i.placeholder = 'Address or MLS #';
+      i.setAttribute('autocomplete', 'street-address'); i.style.marginBottom = '8px'; $('tourList').appendChild(i); i.focus(); };
     $('next2').onclick = () => {
       st.how=chipVal(sheet,'how'); st.len=chipVal(sheet,'len'); st.tl=chipVal(sheet,'tl3'); st.pa=chipVal(sheet,'pa'); st.pr=chipVal(sheet,'pr'); st.from=chipVal(sheet,'from'); st.ag=chipVal(sheet,'ag'); st.addr=$('addr')?$('addr').value.trim():'';
       if (st.ag==='Yes, signed with one') { $('sheetBody').innerHTML = doneHTML('Thank you','Since you’re already working with an agent, they’re the best person to help you. If anything changes, I’m here.'); return; }
       const leadNotes = joinNotes(['Meet by: '+(st.how||''), 'Price range: '+(st.pr||''), 'Lives in: '+(st.from||''), 'Pre-approved: '+(st.pa||''), 'Working with agent: '+(st.ag||'')]);
-      if (/Tour a home/.test(st.how||'')) return showingFlow('');
+      if (/Tour a home/.test(st.how||'')) {
+        const homes = [...document.querySelectorAll('.tourAddr')].map(x => x.value.trim()).filter(Boolean);
+        return showingFlow(homes.join('; '), {pre: st.pa || '', agent: st.ag || '', back: s2});
+      }
       if (/At my home/.test(st.how||'')) {
         if (!st.addr) { alert('Add the property address so I know where to meet you.'); return; }
         return pickTime({kind:'listing', minutes:60, property: st.addr, type:'Listing appointment', title:'Book a consultation', back: s2, what: 'At your home · ' + st.addr,
