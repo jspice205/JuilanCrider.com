@@ -838,7 +838,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Fri Nov 20 9am through Sat 8pm. BLASTS=off stops all. `runBirthdays` (daily 10am-7pm, BDAY_<id>_<year>): FUB custom field
   customBirthday 3 days out, or tag "Bday <Month>" when the 1st is 3 days out, pool Top 200/VIP/past client/Text OK → early
   birthday note with freebl.co (sign up in the apps a few days ahead); heads-up text listing who got it; BIRTHDAYS=off stops it.
-  Few contacts have customBirthday filled yet. Article themes: blog/build.js THEMES (b.theme 'thanksgiving' = autumn colors,
+  Few contacts have customBirthday filled yet.
+  Outage recovery (Nov 20: the Thanksgiving send stalled after 22 emails at 9:08am; a text to a Text OK person threw while the
+  texting Mac was down and runBlasts retried that same person every tick): sendTouch falls back to email when the text fails;
+  a person who still fails is retried up to 6 ticks then skipped, and never blocks the people after them (st.fail); "finished"
+  only when everyone is done. processTextQueue: while BB_DOWN_SINCE is set, text rows wait without using tries (autoemail rows
+  still go); `requeueTextQueue(hours)` puts "failed: …" rows (never sent, due in the window) back to pending when the Mac comes
+  back (checkTextingMac recovery) and once on deploy (REQUEUE_20261120, 48 h). Article themes: blog/build.js THEMES (b.theme 'thanksgiving' = autumn colors,
   banner) on the static /blog/ page.
 
 - Booking like GlossGenius (Nov 19, his screenshots of Skin by Lily): every site booking (Book a consultation, Request a

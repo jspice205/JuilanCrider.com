@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-youtube';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-queue-recovery';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -6962,7 +6962,9 @@ function checkTextingMac() {
   props.setProperty('BB_FAILS', String(fails));
   if (ok) {
     if (props.getProperty('BB_DOWN_SINCE')) {
+      const downSince = Number(props.getProperty('BB_DOWN_SINCE'));
       props.deleteProperty('BB_DOWN_SINCE'); props.deleteProperty('BB_DOWN_ALERT');
+      try { requeueTextQueue(Math.max(24, (Date.now() - downSince) / 3600e3 + 6)); } catch (e) { console.log('Requeue: ' + e.message); }
       try { bbSend(bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO')), 'I\'m back online 👋🏾 The texting Mac reconnected. If you texted me while I was down, send it again.'); } catch (e) {}
     }
     return;
@@ -7055,11 +7057,14 @@ function sendTouch(p, text, subject, email, label) {
   let first = realFirst(p) || 'there'; if (/^(caller|unknown|no name|test)\b/i.test(first)) first = 'there';
   const fill = s => String(s).replace(/\{first\}/g, first);
   const phone = (p.phones || []).map(x => bbE164(x.value || '')).filter(Boolean)[0];
+  let textErr = '';
   if (text && phone && tags.indexOf('Text OK') >= 0 && !isOwnNumber(phone)) {
-    PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + phone, String(Date.now()));
-    bbSendParts(phone, humanize(fill(text)));
-    try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: humanize(fill(text)) + '\n\n(' + label + ')'}); } catch (e) {}
-    return 'text';
+    try {  // Nov 20: a text that can't go (texting Mac down) falls back to email instead of blocking the whole send
+      PropertiesService.getScriptProperties().setProperty('AI_SENDING_' + phone, String(Date.now()));
+      bbSendParts(phone, humanize(fill(text)));
+      try { fubFetch('notes', {personId: p.id, subject: 'Text sent', body: humanize(fill(text)) + '\n\n(' + label + ')'}); } catch (e) {}
+      return 'text';
+    } catch (e) { textErr = String(e.message || e); }
   }
   const addr = (p.emails || []).filter(e => e.status !== 'Invalid').map(e => e.value).filter(validEmail)[0];
   if (email && addr) {
@@ -7068,6 +7073,7 @@ function sendTouch(p, text, subject, email, label) {
     try { fubFetch('notes', {personId: p.id, subject: 'Email sent: ' + fill(subject), body: 'From julianc@bcolv.com to ' + addr + ':\n\n' + fill(email) + '\n\n(' + label + ')'}); } catch (e) {}
     return 'email';
   }
+  if (textErr) throw new Error('text: ' + textErr);
   return '';
 }
 function runBlasts() {
@@ -7084,12 +7090,20 @@ function runBlasts() {
     for (; i < people.length && n < max; i++) {
       const p = people[i];
       try { const how = sendTouch(p, b.text, b.subject, b.email, b.id); if (how) { st[how]++; n++; } else st.skip++; }
-      catch (e) { console.log('Blast ' + b.id + ': ' + e.message); stopped = true; break; }  // mailer trouble: stop this tick, retry next
+      catch (e) {
+        console.log('Blast ' + b.id + ': ' + e.message);
+        // Nov 20 (the Thanksgiving send stalled at 22): one person who can't be reached must never block everyone after them.
+        // Mailer trouble → stop this tick and retry; anything else → retry that person up to 6 ticks (~30 min), then skip.
+        st.fail = st.fail || {}; st.fail[p.id] = (st.fail[p.id] || 0) + 1; props.setProperty(k, JSON.stringify(st));
+        if (/^email to /.test(e.message) && st.fail[p.id] < 6) { stopped = true; break; }
+        if (st.fail[p.id] < 6) continue;
+        st.skip++;
+      }
       st.done.push(p.id);
       props.setProperty(k, JSON.stringify(st));
       Utilities.sleep(400);
     }
-    if (!stopped && i >= people.length) {
+    if (!stopped && i >= people.length && people.every(p => st.done.indexOf(p.id) >= 0)) {
       st.finished = true; props.setProperty(k, JSON.stringify(st));
       try { bossTextSafe('🦃 Done: your "' + b.id.replace(/-/g, ' ') + '" message went out. ' + st.email + ' emails from julianc@bcolv.com, ' + st.text + ' texts, ' + st.skip + ' skipped (no email/text consent, opted out, agents or test contacts).'); } catch (e) {}
     }
@@ -7189,12 +7203,17 @@ function processTextQueue() {
   const sheet = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
   if (!sheet || sheet.getLastRow() < 2) return;
   const props = PropertiesService.getScriptProperties();
+  // Texting Mac down (Nov 20): texts wait without using up their retries; emails still go. Once it's back, anything that
+  // failed during the outage goes back in line (requeueTextQueue), once per outage and once now for the Nov 19-20 outage.
+  const macDown = !!props.getProperty('BB_DOWN_SINCE');
+  if (!macDown && !props.getProperty('REQUEUE_20261120')) { props.setProperty('REQUEUE_20261120', '1'); requeueTextQueue(48); }
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, TEXT_QUEUE_TAB.headers.length).getValues();
   let sentNow = 0;
   rows.forEach((r, i) => {
     const [due, id, , step, status, tries, , text] = r;
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
     if (early && !/^call-(recap|thanks|followup)/.test(step)) return;
+    if (macDown && !/^autoemail-/.test(step)) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
     // Later steps are skipped once they've texted back: Julián is in the conversation now.
     if (!/^(oh-2h|pc-|call-recap|call-followup|call-thanks|scheduled|holiday|t21-|free-|bday-|auto-|autoemail-|memo-)/.test(step) && props.getProperty('BB_TASK_' + id)) return cell(5, 'skipped: they replied');
@@ -7214,6 +7233,22 @@ function processTextQueue() {
       if (n >= 24) cell(5, 'failed: ' + String(err.message).slice(0, 150));  // ~6 hours of retries
     }
   });
+}
+
+/** Texts that failed while the texting Mac was down go back in line: rows with status "failed: …", never sent, due in the
+ *  last `hours` → pending with 0 tries. Later steps still skip people who've replied. Returns how many. */
+function requeueTextQueue(hours) {
+  const sheet = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, TEXT_QUEUE_TAB.headers.length).getValues(), since = Date.now() - hours * 3600e3;
+  let n = 0;
+  rows.forEach((r, i) => {
+    if (/^failed:/.test(String(r[4])) && !r[6] && r[0] instanceof Date && r[0].getTime() >= since) {
+      sheet.getRange(i + 2, 5, 1, 2).setValues([['pending', 0]]); n++;
+    }
+  });
+  if (n) console.log('Requeued ' + n + ' texts after the outage');
+  return n;
 }
 
 /** Test: sends the first open-house message (greeting, voice note, question, contact card) now to TEST_TEXT_TO. */
