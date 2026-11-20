@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-stop-tier-c';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-stop-means-stop';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1111,7 +1111,7 @@ function scorePerson(p) {
   score = Math.max(0, score + act.pts); why.push(...act.why);
   let tier = score >= 50 ? 'Hot' : score >= 25 ? 'Warm' : score >= 10 ? 'Nurture' : 'Cold';
   // Nov 20 (Julián: "keep emails but move them to C"): someone who texted STOP stays on email but never above Tier C.
-  if (has('Text Opt-Out') && (tier === 'Hot' || tier === 'Warm')) { tier = 'Nurture'; why.push('replied STOP to texts'); }
+  if (has('Text Opt-Out') && (tier === 'Hot' || tier === 'Warm')) { tier = 'Nurture'; why.push('replied STOP to texts'); }  // (and they're unsubscribed)
   // Plans do the reaching out; Julián steps in when the lead does something.
   let next = {Hot: act.pts >= 25 ? 'They reached out: answer today' : 'Hot plan running: answer when they reply',
     Warm: 'Warm plan running: answer when they reply', Nurture: 'Monthly email', Cold: 'Newsletter only'}[tier];
@@ -3153,6 +3153,7 @@ function bbSend(phone, text) {
 let BB_LAST_SERVICE = '';
 function textSentSubject(base) {
   const b = base || 'Text sent';
+  if (BB_LAST_SERVICE === 'duplicate') return b.replace(/^Text sent/, 'Text NOT sent') + ' · duplicate blocked';
   return BB_LAST_SERVICE ? b + ' · ' + (/^SMS/i.test(BB_LAST_SERVICE) ? '🟢 green (SMS)' : '🔵 blue (iMessage)') : b;
 }
 function bbSendNow(phone, text) {
@@ -3160,6 +3161,12 @@ function bbSendNow(phone, text) {
   const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
   if (!to) throw new Error('Not a US mobile number: ' + phone);
   text = darkHands(text);
+  // Never double-send (Julián, Nov 20, after Emilee and 6 others got the Thanksgiving text twice): the same text to the same
+  // number within 6 hours is refused, whatever sent it (logged "Text NOT sent · duplicate blocked").
+  const dupKey = 'SENT_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, to + '|' + String(text).replace(/\s+/g, ' ').trim()));
+  const dupCache = CacheService.getScriptCache();
+  if (dupCache.get(dupKey)) { console.log('Not sent: the same text already went to ' + to + ' in the last 6 hours'); BB_LAST_SERVICE = 'duplicate'; return {service: 'skipped-duplicate', result: null}; }
+  dupCache.put(dupKey, '1', 21600);
   // Texts to clients (not Julián's own phones) get human spacing: no wall of text (Julián, Nov 14).
   try { const pr = PropertiesService.getScriptProperties(), boss = bbE164(pr.getProperty('ALERT_TEXT_TO') || pr.getProperty('TEST_TEXT_TO') || '');
     if (to !== boss && !isOwnNumber(to)) text = textParagraphs(text); } catch (e) {}
@@ -3463,6 +3470,9 @@ function bbWebhook(e) {
   if (/^\s*(stop|stopall|unsubscribe|end|quit|cancel|opt ?out|stop texting( me)?|remove me)\s*[.!]*\s*$/i.test(text)) {  // the whole text only
     const tags = (person.tags || []).filter(t => t !== 'Text OK').concat('Text Opt-Out');
     fubFetch('people/' + person.id, {tags: tags}, 'put');
+    // Nov 20 (Julián: "if they opt out of texting… cancel them from emails and everything; a STOP is like I don't wanna work
+    // with you"): a STOP takes them off emails and drips too (Unsubscribed + Do Not Email + Not Interested, plans paused).
+    try { unsubscribeContact(person, 'replying STOP to a text', text); } catch (e) { console.log('Unsubscribe after STOP: ' + e.message); }
     return json({status: 'ok'});
   }
   // "FREE" (Nov 13): they asked to join the Free in Vegas texts, which is their consent for those texts.
@@ -3713,6 +3723,10 @@ function assistantReply(person, from, text) {
   if (!key || mode === 'off') return false;
   // A tapback ("Liked “…”", "Loved “…”") is not a message: never answer it (Nov 14, Lisa's ❤️ got a full reply).
   if (/^\s*(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned|reacted [^ ]+ to|removed an? \w+ from)\s+[“"']/i.test(String(text || ''))) return true;
+  // Nov 20 (Julián: "always let a client end a conversation… an emoji, a like, a thumbs up or a heart is the end"): an
+  // emoji-only text ends it, and an "Edited to “…”" event is not a new message (Mckenna's edit got a 2nd Shawna reply).
+  if (/^\s*edited to\s+[“"']/i.test(String(text || ''))) return true;
+  if (!String(text || '').replace(/[\s\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f!.]/gu, '')) return true;
   const name = assistantName();
   const p = fubFetch('people/' + person.id + '?fields=id,firstName,lastName,tags,stage,price', null, 'get');
   const tags = p.tags || [];
