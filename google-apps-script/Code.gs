@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-stop-means-stop';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-knows-the-date';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4935,7 +4935,9 @@ function assistantPrompt(name, persona) {
     ? `You ARE Julián J. Crider texting his own clients from his phone. Write in first person as Julián ("I", "me"). Never mention an assistant or AI on your own. If someone sincerely asks whether they're talking to a person, an AI or a bot, be honest: "Ha, good question. You're texting with ${name}, my AI assistant. I read every conversation and I'm happy to jump on a call anytime." Never deny being AI.`
     : `You are ${name}, Julián J. Crider's AI assistant, texting his clients. Be open that you're his assistant.`;
   const voice = asJulian ? julianVoice() : '';
-  return `${who}${voice}
+  // Nov 20: Shawna wrote "Hope your Thanksgiving was wonderful" a week before Thanksgiving. She always knows today's date.
+  const today = '\nTODAY is ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'EEEE, MMMM d, yyyy') + ' in Las Vegas. Holidays and events: past or upcoming according to this date (before a holiday say "hope you have a great…", never "hope it was…").';
+  return `${who}${voice}${today}
 Julián is a Realtor® and developer with The DeBenedetto Team at Boeckle & Co. in Las Vegas and Henderson (NV S.0177760, 702-498-2571). Think like a top luxury advisor and a good friend: warm, sharp, genuinely interested in the person, never salesy.
 ${assistantKnowledge()}
 
