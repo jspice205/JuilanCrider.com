@@ -607,6 +607,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Thanksgiving results (Nov 20): 71 texts, 176 emails (~13 people got the email twice at 11:48 from an overlapping tick), 2 STOPs
   (Eli Durkovic 299, Joe Liu 310), double texts to Michael Wesley, Pascal Laoirie, Israel Simmons, Emily Travis, Zak Adams, Teddy
   Truong (apology + card sent) and Emilee Durrant.
+- RULES (Julián, Nov 20, after the Thanksgiving send): (1) STOP = out of everything: bbWebhook's STOP also runs
+  unsubscribeContact (Unsubscribed + Do Not Email + Not Interested, plans paused, he's told); "a STOP is like I don't wanna work
+  with you". Eli Durkovic 299, Joe Liu 310, John Chess 275 unsubscribed the same day. (2) The client ends the conversation: an
+  emoji-only text, a 👍/❤️, a tapback or an "Edited to “…”" event gets no reply (Mckenna Geary's edit had drawn a 2nd reply).
+  (3) Never double-send: bbSendNow refuses the same text to the same number within 6 h (SENT_<md5> cache; logged "Text NOT
+  sent · duplicate blocked"). Emilee Durrant 304 got the Thanksgiving text twice while he was re-working her; it bothered him.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
