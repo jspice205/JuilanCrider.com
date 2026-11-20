@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-booking-email';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-meet-options';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -185,6 +185,8 @@ const MEETINGS = {
   video: {label: 'Video call', minutes: 30, max: 45, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
   // Listing appointment (Nov 13): 1-hour walkthrough at the seller's home, booked from juliancrider.com/?listing.
   listing: {label: 'Listing appointment', minutes: 60, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
+  // Model home visit (Nov 19): new-construction buyers meet Julián at a community's models (he must be there on the first visit).
+  model: {label: 'Model home visit', minutes: 60, hours: {1: [9, 17], 2: [9, 17], 3: [9, 17], 4: [9, 17], 5: [9, 17], 6: [9, 17]}},
   showing: {label: 'Showing', minutes: 30, hours: {1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: [9, 18]}},
   golf: {label: 'Golf', minutes: 300, startsOnly: true, step: 60, days: 21, hours: {1: [8, 15], 2: [8, 15], 4: [11, 16], 5: [8, 15]}},
 };
@@ -247,13 +249,14 @@ function bookSlot(d) {
   const end = new Date(slot.getTime() + m.minutes * 6e4), email = validEmail(d.email) ? String(d.email).trim() : '';
   const label = Utilities.formatDate(slot, BOOKING.tz, "EEE, MMM d 'at' h:mm a");
   const showing = m.kind === 'showing' && d.property, golf = m.kind === 'golf', video = m.kind === 'video', listing = m.kind === 'listing' && d.property;
-  const title = showing ? `Showing: ${d.name}` : listing ? `Listing appointment: ${d.name}` : golf ? `Golf: ${d.name} (${d.holes || 18} holes)` :
+  const model = m.kind === 'model' && d.property;
+  const title = showing ? `Showing: ${d.name}` : listing ? `Listing appointment: ${d.name}` : model ? `Model home visit: ${d.name} (${d.property})` : golf ? `Golf: ${d.name} (${d.holes || 18} holes)` :
     `${m.label}: ${d.name}${d.type ? ' (' + d.type + ')' : ''}`;
   const desc = ['Booked on juliancrider.com', `Phone: ${d.phone}`, email && `Email: ${email}`,
     golf && `Holes: ${d.holes || 18}`, golf && `Tee time booked: ${d.teeBooked || 'not yet'}`, golf && d.course && `Course: ${d.course}`, d.notes].filter(Boolean).join('\n');
   // Client emails only from julianc@bcolv.com (his rule, Nov 8): the calendar event gets no guests, so Google doesn't email an
   // invite from his personal Gmail; the bcolv confirmation email below carries the .ics invite instead (Nov 19).
-  const link = createBookingEvent(title, slot, end, desc, showing || listing ? String(d.property) : golf ? (d.course || '') : '', '', video);
+  const link = createBookingEvent(title, slot, end, desc, showing || listing || model ? String(d.property) : golf ? (d.course || '') : '', '', video);
   try {  // Follow Up Boss: find or add the person, then appointment + note + task
     const phone = String(d.phone).replace(/\D/g, '');
     let found = (email && fubFetch('people?limit=1&email=' + encodeURIComponent(email), null, 'get').people) ||
@@ -267,7 +270,7 @@ function bookSlot(d) {
     if (found.length) {
       const pid = found[0].id;
       try { fubFetch('appointments', {title: title, description: desc, start: slot.toISOString(), end: end.toISOString(),
-        location: showing || listing ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
+        location: showing || listing || model ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
       if (listing) { try { fubFetch('people/' + pid + '?mergeTags=true', {tags: ['Likely Seller', 'Listing Appointment']}, 'put'); } catch (e) {} }
       // Text opt-in box on the booking form (Nov 19, unchecked by default): checked → Text OK + a consent note.
       if (d.textOk === 'Yes') { try { fubFetch('people/' + pid + '?mergeTags=true', {tags: ['Text OK']}, 'put');
@@ -281,31 +284,32 @@ function bookSlot(d) {
         if (listing && !openIn(2)) setDealStage(pid, 'seller_followup', {name: String(d.name).trim() + ' · ' + String(d.property).split(',')[0], why: 'Listing appointment booked on juliancrider.com ' + label});
         else if (!listing && !golf && buyerType && ready && !openIn(1)) setDealStage(pid, 'buyer_nurture', {why: 'Pre-approved buyer booked on juliancrider.com ' + label});
       } catch (e) { console.log('Auto deal card: ' + e.message); }
-      fubFetch('notes', {personId: pid, subject: 'Booked: ' + m.label, body: `${label} (${m.minutes} min)${showing || listing ? ' at ' + d.property : ''}${link ? '\nVideo: ' + link : ''}\n${desc}`});
-      if (!golf) createCallTask(pid, showing ? `showing ${label} at ${d.property}` : listing ? `listing appointment ${label} at ${d.property} (bring the CMA)` : `${m.label.toLowerCase()} ${label}`);
+      fubFetch('notes', {personId: pid, subject: 'Booked: ' + m.label, body: `${label} (${m.minutes} min)${showing || listing || model ? ' at ' + d.property : ''}${link ? '\nVideo: ' + link : ''}\n${desc}`});
+      if (!golf) createCallTask(pid, model ? `model home visit ${label} at ${d.property} (register as their agent)` : showing ? `showing ${label} at ${d.property}` : listing ? `listing appointment ${label} at ${d.property} (bring the CMA)` : `${m.label.toLowerCase()} ${label}`);
     }
   } catch (err) { console.error('Booking FUB: ' + err); }
   try {  // confirmation text (the 25-minute reminder comes from remindUpcoming)
     const first = String(d.name).trim().split(/\s+/)[0];
     const sent = bbSend(d.phone, showing ? `Hey ${first}, it's Julián 👋🏾 You're all set to see ${String(d.property).split(',')[0]} ${label}. I'll meet you there. If anything changes, just text me here.`
       : listing ? `Hey ${first}, it's Julián 👋🏾 You're all set: I'll see you at ${String(d.property).split(',')[0]} ${label}. Before then, here's how I sell homes: juliancrider.com/?sell`
+      : model ? `Hey ${first}, it's Julián 👋🏾 You're all set to tour the models at ${d.property} ${label}. I'll text you exactly where to meet. One favor: don't stop by the builder before then, since I need to be with you on the first visit.`
       : golf ? `Hey ${first}, it's Julián ⛳ We're on for ${d.holes || 18} holes ${label}${d.course ? ' at ' + d.course : ''}. Looking forward to it!`
       : video ? `Hey ${first}, it's Julián 👋🏾 You're all set for our video call ${label}.${link ? " Here's the link: " + link : " I'll send the link shortly."}`
       : `Hey ${first}, it's Julián 👋🏾 You're all set for ${label}. I'll call you then. If anything changes, just text me here.`);
     try {  // tap-to-add calendar invite right under the confirmation
       Utilities.sleep(1500);
-      const invTitle = showing ? 'Showing with Julián: ' + String(d.property).split(',')[0] : listing ? 'Listing appointment with Julián' : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
-      bbPostAttachment(d.phone, sent && sent.service, icsInvite(invTitle, slot, end, showing || listing ? String(d.property) : golf ? (d.course || '') : (link || 'Julián will call you'),
+      const invTitle = showing ? 'Showing with Julián: ' + String(d.property).split(',')[0] : listing ? 'Listing appointment with Julián' : model ? 'Model homes with Julián: ' + d.property : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
+      bbPostAttachment(d.phone, sent && sent.service, icsInvite(invTitle, slot, end, showing || listing || model ? String(d.property) : golf ? (d.course || '') : (link || 'Julián will call you'),
         (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.'));
     } catch (e) { console.log('Calendar invite not sent: ' + e.message); }
   } catch (err) { console.log('Booking confirmation text not sent: ' + err.message); }
   if (email) { try {  // confirmation email from bcolv with the calendar invite attached (Nov 19, Julián: "they receive an email and a text")
-    const first = String(d.name).trim().split(/\s+/)[0], where = showing || listing ? String(d.property) : golf ? (d.course || '') : '';
-    const what = showing ? 'your showing at ' + where : listing ? 'your listing appointment at ' + where : golf ? `golf (${d.holes || 18} holes)${where ? ' at ' + where : ''}`
+    const first = String(d.name).trim().split(/\s+/)[0], where = showing || listing || model ? String(d.property) : golf ? (d.course || '') : '';
+    const what = showing ? 'your showing at ' + where : listing ? 'your listing appointment at ' + where : model ? 'our model home visit at ' + where : golf ? `golf (${d.holes || 18} holes)${where ? ' at ' + where : ''}`
       : video ? 'our video call' : 'our phone call';
-    const how = showing ? "I'll meet you at the home." : listing ? "I'll meet you at the home. It takes about an hour, and there's no obligation." : golf ? "I'll text you to confirm the tee time."
+    const how = showing ? "I'll meet you at the home." : model ? "I'll text you exactly where to meet. Please don't stop by the builder before then: on the first visit I need to be with you so I can represent you." : listing ? "I'll meet you at the home. It takes about an hour, and there's no obligation." : golf ? "I'll text you to confirm the tee time."
       : video ? (link ? 'Join here: ' + link : "I'll send the video link before we meet.") : `I'll call you at ${d.phone}.`;
-    const invTitle = showing ? 'Showing with Julián: ' + where.split(',')[0] : listing ? 'Listing appointment with Julián' : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
+    const invTitle = showing ? 'Showing with Julián: ' + where.split(',')[0] : listing ? 'Listing appointment with Julián' : model ? 'Model homes with Julián: ' + where : golf ? 'Golf with Julián' : video ? 'Video call with Julián Crider' : 'Call with Julián Crider';
     const ics = icsInvite(invTitle, slot, end, where || link || 'Julián will call you', (link ? 'Join: ' + link + '\n' : '') + 'Questions or changes: text Julián at 702-498-2571.');
     const subj = `You're booked: ${label}`;
     const r = sendFromBcolv(email, subj, `Hi ${first},\n\nYou're all set for ${what} on ${label} (Pacific time). ${how}\n\n` +

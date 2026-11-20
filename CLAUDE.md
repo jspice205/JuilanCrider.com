@@ -853,6 +853,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   After booking (Nov 19, "they receive an email and a text"): text from the business line (confirmation + .ics bubble, as
   before) AND an email from julianc@bcolv.com ("You're booked: <label>", what/where/how + .ics attached, FUB note "Email sent:").
   The calendar event no longer adds the client as a guest, so Google never emails them from his personal Gmail.
+  How to meet (Nov 19, bookFlow `meetOpts`): Buying = Phone / Video / Tour a home (→ showingFlow, agreement first); Selling = Phone /
+  Video / At my home (→ kind listing, 60 min, address required); New construction = Phone / Video / Meet at a model home (community
+  field → kind `model`, MEETINGS.model 60 min 9-5 Mon-Sat; texts/email say don't visit the builder before, he must be there the
+  first visit; task "register as their agent"); Relocating = Video / Phone; Just a question = Phone / Video. "How long?" shows only
+  for video. No coffee or golf on the public form (his Nov 2 rule). Seller timelines start "Now / This month".
 
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
