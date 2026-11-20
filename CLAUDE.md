@@ -594,6 +594,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   No doubles (Nov 20: Michael Wesley 263, Pascal Laoirie 262, Israel Simmons 259 got the Thanksgiving text twice, 10 s apart: a
   tick sending 15 texts at ~15 s each ran past 5 min and the next tick overlapped): runBlasts/sendCardCatchup run one at a time
   (CacheService BLAST_RUN / CARD_RUN, 10 min) and each person is re-checked against the saved state right before sending.
+  One group text per 5 minutes (Julián, Nov 20 "please send every five minutes"): TEXT_PER_TICK default 1; LAST_GROUP_TEXT shared
+  by text blasts, the card catch-up (runs first each tick) and Text Queue group steps; emails unaffected. Apology texts with his card
+  went to Michael Wesley, Pascal Laoirie, Israel Simmons via the outbox; the catch-up skips anyone who already got his card.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
