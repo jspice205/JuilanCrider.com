@@ -856,7 +856,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   a person who still fails is retried up to 6 ticks then skipped, and never blocks the people after them (st.fail); "finished"
   only when everyone is done. processTextQueue: while BB_DOWN_SINCE is set, text rows wait without using tries (autoemail rows
   still go); `requeueTextQueue(hours)` puts "failed: …" rows (never sent, due in the window) back to pending when the Mac comes
-  back (checkTextingMac recovery) and once on deploy (REQUEUE_20261120, 48 h). Article themes: blog/build.js THEMES (b.theme 'thanksgiving' = autumn colors,
+  back (checkTextingMac recovery) and once on deploy (REQUEUE_20261120, 48 h).
+  Text status (Nov 20: asked "did Lily's text go out" and "what about the 21 day check in", Shawna mixed up Lilian Montenegro 1906
+  with Lily and invented texts "on 11/10", then said nothing was scheduled at 11am right after her own 21-day heads-up): boss fast
+  path → action `textstatus` → `textStatusText(who)`: records only (Text Queue last 3 days + next 7, FUB "Text sent"/"Text NOT
+  sent" notes 14 days), whole-first-name matching, near misses offered ("Did you mean Lilian Montenegro?"), never AI. The router
+  prompt says never answer those itself. Article themes: blog/build.js THEMES (b.theme 'thanksgiving' = autumn colors,
   banner) on the static /blog/ page.
 
 - Booking like GlossGenius (Nov 19, his screenshots of Skin by Lily): every site booking (Book a consultation, Request a

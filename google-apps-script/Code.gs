@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-client-pages';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-text-status';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5422,6 +5422,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - dealmove: he tells you a client's deal moved or should start ("Lisa is in escrow", "Dan's offer got accepted", "list Lisa's house", "Lisa's listing is live", "start a buyer deal for Dan", "Lisa closed", "Dan's offer fell through"). "who" = the client, "message" = his words, "when" = the closing date if he gave one (YYYY-MM-DD), "price" = price if he gave one, and "stage" = exactly one of: buyer_nurture, hot_buyer (actively looking / signed with him), buyer_offer, buyer_escrow (buyer under contract / in escrow / offer accepted), buyer_loan, buyer_closed, seller_followup (maybe listing later), construction, listing_prep (taking the listing / getting it ready), active_listing (live on MLS), seller_offer (offer on the listing), seller_escrow (listing under contract / in escrow), seller_appraisal, seller_closed, gifts, lost (listing expired or withdrawn). A buyer's deal that fell through goes back to hot_buyer; a seller's escrow that fell through goes back to active_listing. Buyer vs seller: selling their home / their listing = seller stages; buying = buyer stages.
 - pipeline: he wants to see where his deals or clients stand ("where are my deals", "show my pipeline", "who's in escrow", "who's closing", "who's under contract"). Put his words in "message".
 - freevegas: he gives a free thing to do in Las Vegas for his Free in Vegas list ("add to free in vegas: Bellagio holiday display, through Jan 5"). "message" = the thing, where, when and any link, in his words.
+- textstatus: did a text go out / what texts are scheduled or going out today / the 21-day check-ins ("did Lily's text go out", "what about the 21 day check in", "who's getting texts today"). "who" = the person if named. Never answer these yourself.
 - clientpage: a client's private page on juliancrider.com: make or send someone's page, add a home they're selling ("address for Charles: 123 Main St", "Charles is also selling 456 Oak Ave", "remove 456 Oak from Charles' page"), add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
 - listingpage: make or update a listing presentation page for an address ("listing page for 123 Desert Rose Ln", "make a listing link for the Summit house, 5 bed, price 3.2M"). "message" = his whole text.
@@ -5496,6 +5497,12 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏾🏾👍🏾🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
+  // "Did Lily's text go out?" / "what about the 21 day check in" / "who's getting texts today" (Nov 20: Shawna mixed up Lilian and
+  // Lily and invented a "21-day check-in on 11/10"): answered from the records only (Text Queue + FUB "Text sent" notes), never AI.
+  else if (/\b(did|has|have|was|were|is|are)\b[^?]{0,60}\b(texts?|messages?|check.?ins?)\b[^?]{0,40}\b(go|went|gone|sent|send|out|delivered)\b/i.test(text) ||
+    /\b(21|twenty[ -]?one|11)[ -]?day\b/i.test(text) || /\b(what|which|who)('?s| is| are)?\b[^?]{0,30}\b(texts?|check.?ins?)\b[^?]{0,30}\b(today|scheduled|queued|going out|waiting|in the queue)\b/i.test(text) ||
+    /\bwho else\b[^?]{0,40}\b(check.?in|reach ?out|text)/i.test(text))
+    a = {action: 'textstatus', who: ((text.match(/\b(?:[Dd]id|[Hh]as|[Ww]as|[Ii]s)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)(?:'s|’s)?\s+(?:text|message|check)/) || [])[1] || '')};
   else if (/^\s*(?:the\s+)?address(?:es)?\s+for\s+([A-Za-z][A-Za-z' .-]{1,40}?)\s*(?:is|are|:)/i.test(text)) a = {action: 'clientpage', who: text.match(/address(?:es)?\s+for\s+([A-Za-z][A-Za-z' .-]{1,40}?)\s*(?:is|are|:)/i)[1].replace(/'s$/i, ''), message: text};  // Nov 20: a client's home(s) for their private page
   else if (/^\s*(company|business|entity|llc)\s*(look ?up|search|info)?\s*[:\-]\s*\S/i.test(text) || /^\s*(company|business|llc)\s+(look ?up|search)\s+\S/i.test(text) || /^\s*(who('s| is) the\s+)?registered agent\s+(for|of|on)\s+\S/i.test(text) || /^\s*look up (the )?(company|business|llc)\s+\S/i.test(text)) a = {action: 'company', message: text};  // Nov 17
   else if (/^\s*(dev(elopment)?( leads?| projects?)?|projects?)\s*(list|update|status)?\s*[:?]?\s*$/i.test(text)) a = {action: 'devleads', message: ''};  // Nov 17
@@ -5833,6 +5840,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'devleads') return say(devLeadsCommand(a.message || ''));
     if (a.action === 'thanks') return say(['You got it 🙏🏾', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
+    if (a.action === 'textstatus') return say(textStatusText(a.who));
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
       const raw = String(a.message || text), role = /\btitle\b|escrow (officer|company)/i.test(raw) ? 'title' : 'tc', x = parseParty(raw);
@@ -7314,6 +7322,45 @@ function processTextQueue() {
       if (n >= 24) cell(5, 'failed: ' + String(err.message).slice(0, 150));  // ~6 hours of retries
     }
   });
+}
+
+/** What the records say about texts (Nov 20): the Text Queue (sent in the last 3 days, waiting in the next 7) and, for a named
+ *  person, their FUB "Text sent"/"Text NOT sent" notes from 14 days. Names match whole first names only (Lily ≠ Lilian); a near
+ *  miss is offered, never assumed. Nothing here is written by AI, so it can't invent a text. */
+function textStatusText(who) {
+  const tz = 'America/Los_Angeles', now = Date.now(), fmt = d => Utilities.formatDate(new Date(d), tz, 'EEE MMM d, h:mm a');
+  const stepName = st => /^t21-/.test(st) ? '21-day check-in' : /^holiday-/.test(st) ? 'holiday text' : /^auto-/.test(st) ? 'deal update' : /^autoemail-/.test(st) ? 'deal update (email)'
+    : /^oh-/.test(st) ? 'open house follow-up' : /^call-/.test(st) ? 'after their call' : st === 'scheduled' ? 'scheduled by you' : /^memo-/.test(st) ? 'market memo' : /^pc-/.test(st) ? 'past client' : st;
+  const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
+  const rows = sh && sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, TEXT_QUEUE_TAB.headers.length).getValues()
+    .map(r => ({due: r[0], id: r[1], name: String(r[2] || ''), step: String(r[3] || ''), status: String(r[4] || ''), sent: r[6], text: String(r[7] || '')})) : [];
+  const first = String(who || '').trim().split(/\s+/)[0].toLowerCase();
+  const nameHit = n => first && String(n).toLowerCase().split(/\s+/).indexOf(first) >= 0;
+  const recent = rows.filter(r => r.due instanceof Date && r.due.getTime() > now - 3 * 864e5 && r.due.getTime() < now + 7 * 864e5 && (!first || nameHit(r.name)))
+    .sort((x, y) => x.due - y.due);
+  const line = r => (r.status === 'sent' ? '✅ Sent ' + fmt(r.sent instanceof Date ? r.sent : r.due) : /^pending/.test(r.status) ? '⏳ Waiting, goes ' + fmt(r.due) : /^review/.test(r.status) ? '📝 Waiting for your OK' : '⚠️ ' + r.status) +
+    '\n' + r.name + ' · ' + stepName(r.step) + '\n"' + r.text.replace(/\s*\|\|\s*/g, ' ').slice(0, 140) + (r.text.length > 140 ? '…' : '') + '"';
+  if (!first) {
+    if (!recent.length) return 'Nothing in the text queue for the last 3 days or the next week.';
+    return '📱 Texts from the queue (last 3 days and next week):\n\n' + recent.map(line).join('\n\n');
+  }
+  let out = '', notes = [];
+  let fp = null;
+  try { const ppl = (fubFetch('people?limit=8&fields=id,name,firstName&q=' + encodeURIComponent(String(who).trim()), null, 'get').people || [])
+      .filter(x => String(x.name || '').toLowerCase().split(/\s+/).indexOf(first) >= 0);
+    fp = ppl.length === 1 ? ppl[0] : ppl.length > 1 ? {many: ppl} : null; } catch (e) {}
+  if (fp && !fp.many && fp.id) {
+    try { notes = (fubFetch('notes?personId=' + fp.id + '&limit=30&fields=id,created,subject,body', null, 'get').notes || [])
+      .filter(n => /^text (sent|not sent)/i.test(n.subject || '') && now - new Date(n.created) < 14 * 864e5); } catch (e) {}
+  }
+  if (recent.length) out += recent.map(line).join('\n\n');
+  if (notes.length) out += (out ? '\n\n' : '') + 'Logged in Follow Up Boss:\n\n' + notes.slice(0, 5).map(n => (/not/i.test(n.subject) ? '⚠️ NOT sent ' : '✅ Sent ') + fmt(n.created) + '\n"' + String(n.body || '').split('\n\n(')[0].slice(0, 140) + '"').join('\n\n');
+  if (out) return out;
+  const near = rows.filter(r => r.due instanceof Date && r.due.getTime() > now - 3 * 864e5 && r.name.toLowerCase().indexOf(first) === 0).map(r => r.name)
+    .filter((n, i, a) => a.indexOf(n) === i);
+  return 'I don\'t see any text to ' + who + ' in my records (the text queue or Follow Up Boss, last 2 weeks).' +
+    (!fp ? ' ' + who + ' isn\'t in Follow Up Boss under that name, so a text to them wouldn\'t be logged there; the business iPhone\'s Messages shows it.' : fp.many ? ' More than one ' + who + ' in Follow Up Boss: ' + fp.many.slice(0, 4).map(x => x.name).join(', ') + '.' : '') +
+    (near.length ? '\n\nDid you mean ' + near.join(' or ') + '? Ask me "did ' + near[0].split(' ')[0] + '\'s text go out".' : '');
 }
 
 /** Texts that failed while the texting Mac was down go back in line: rows with status "failed: …", never sent, due in the
