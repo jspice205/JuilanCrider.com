@@ -872,10 +872,11 @@ He's not renaming the Buyers stages for now.
    Likely Sellers, Under Contract, Past Clients & Sphere) and pause unused starter plans.
 4. Apps Script: make sure the latest Code.gs + manifest are pasted and redeployed; run
    setupFubInbox, setupWeeklyDigest, previewAgreement.
-5. YouTube funnel (Julián, Nov 19: "once I start posting YouTube videos, open that funnel in the YouTube section"): the Julián tab
-   "Watch" card (YouTube: Julian Crider Estates, "Notify me") is a placeholder. When he says he's posting: show the channel's latest
-   videos (YouTube RSS feeds/videos.xml?channel_id=… read by the Apps Script, so no API key), Subscribe button, each video → a
-   "Book a call / Moving here? Start here" next step, and text the "Notify me" sign-ups that it's live. Metricool's YouTube is
+5. YouTube section is OPEN (Nov 19, his ask: "open even for Shorts and full videos"): Julián tab > Watch: Subscribe
+   (?sub_confirmation=1) + `loadYouTube` (GET ?action=youtube → `youtubeVideos`: channel RSS, no key, cached 30 min; Shorts = /shorts/
+   link) → Shorts row (9:16 tiles) + Videos (16:9 cards); tap plays in a sheet (youtube-nocookie) with Book a free call / Moving to
+   Vegas / Subscribe. No videos yet → "New videos show up here…". YOUTUBE_CHANNEL setting overrides the id. Still to do when his
+   first full video posts: tell the old "Notify me" sign-ups (Website Leads "Account / guide request" mentioning YouTube). Channel:
    UCDqgwRG3yjItvj8HG7D-xtg (Shorts cross-post there since Nov 18) = his real estate channel (confirmed Nov 19). His plan: Shorts
    first, then a full-length video for the Shorts with the most views; the weekly social report ranks the Shorts by views so he
    knows which ones to make full videos of.
