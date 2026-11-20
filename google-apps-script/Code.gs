@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-queue-recovery';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-client-pages';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1502,13 +1502,54 @@ function clientRows(token) {
     .map((r, i) => ({row: i + 2, page: String(r[0]), personId: r[1], client: r[2], kind: r[3], when: r[4], title: r[5], link: r[6], photo: r[7], details: r[8], reaction: r[9]}))
     .filter(r => r.page === token);
 }
-/** Public data for the page (first name only; nothing but what Julián put on it). */
+/** Public data for the page (first name only; nothing but what Julián put on it).
+ *  Nov 20 (Julián: "the most extensive data-driven private page… they might be selling more than one"): every address on
+ *  the page (kind 'property' rows; the old head address counts too) gets Clark County public-record facts (beds, baths,
+ *  sq ft, year, lot, pool, subdivision, last sale, taxable value, parcel; never the owner), filled once and retried every
+ *  6 h while missing; plus where the deal is (FUB deal card: stage, days in it, price, projected close) and whether the
+ *  Duties Owed form is signed. Cached 10 min. */
 function clientPageData(token) {
   if (!/^[a-f0-9]{12,}$/.test(token)) return {status: 'error'};
-  const rows = clientRows(token), head = rows.filter(r => r.kind === 'page')[0];
+  const cache = CacheService.getScriptCache(), hit = cache.get('CPD_' + token);
+  if (hit) return JSON.parse(hit);
+  let rows = clientRows(token), head = rows.filter(r => r.kind === 'page')[0];
   if (!head) return {status: 'error'};
-  return {status: 'ok', first: String(head.client || '').split(/\s+/)[0], role: head.details || 'buyer', address: head.title || '',
-    items: rows.filter(r => r.kind !== 'page').map(r => ({id: r.row, kind: r.kind, when: r.when ? new Date(r.when).toISOString() : '', title: r.title, link: r.link, photo: r.photo, details: r.details, reaction: r.reaction}))};
+  const sh = ensureTab(getSS(), CLIENT_TAB);
+  if (head.title && /\d/.test(head.title) && !rows.some(r => r.kind === 'property' && sameAddr(r.title, head.title))) {  // older pages
+    sh.appendRow([token, head.personId, cell(head.client), 'property', new Date(), cell(head.title), '', '', '', '']);
+    rows = clientRows(token);
+  }
+  rows.filter(r => r.kind === 'property').forEach(r => {
+    let f = {}; try { f = JSON.parse(r.details || '{}'); } catch (e) {}
+    if ((!f.record || !f.sqft) && Date.now() - Number(f.tried || 0) > 6 * 3600e3) {
+      try { f = Object.assign(f, propertyFactsFor(r.title)); } catch (e) { console.log('Client page facts: ' + e.message); }
+      f.tried = Date.now(); sh.getRange(r.row, 9).setValue(JSON.stringify(f)); r.details = JSON.stringify(f);
+    }
+  });
+  const out = {status: 'ok', first: String(head.client || '').split(/\s+/)[0], role: head.details || 'buyer', address: head.title || '',
+    properties: rows.filter(r => r.kind === 'property').map(r => { let f = {}; try { f = JSON.parse(r.details || '{}'); } catch (e) {} delete f.tried; delete f.owner;
+      return {id: r.row, address: r.title, facts: f}; }),
+    items: rows.filter(r => r.kind !== 'page' && r.kind !== 'property').map(r => ({id: r.row, kind: r.kind, when: r.when ? new Date(r.when).toISOString() : '', title: r.title, link: r.link, photo: r.photo, details: r.details, reaction: r.reaction}))};
+  try {
+    const deals = (fubFetch('deals?personId=' + head.personId + '&limit=20', null, 'get').deals || []).filter(d => !/^deleted$/i.test(String(d.status || '')));
+    out.deals = deals.map(d => {
+      const key = Object.keys(DEAL_STAGES).filter(k => DEAL_STAGES[k].id === Number(d.stageId))[0] || '';
+      return {name: String(d.name || '').replace(/^[^·]*·\s*/, ''), pipeline: Number(d.pipelineId) === 2 ? 'seller' : 'buyer', stage: key, stageName: d.stageName || '',
+        since: d.enteredStageAt || d.createdAt || '', price: d.price || 0, close: d.projectedCloseDate || ''};
+    }).filter(d => d.stage && !/^(gifts|construction)$/.test(d.stage));
+  } catch (e) { out.deals = []; }
+  try { const pt = fubFetch('people/' + head.personId + '?fields=id,tags', null, 'get'); out.dutiesSigned = (pt.tags || []).indexOf('Duties Owed signed') >= 0; } catch (e) {}
+  cache.put('CPD_' + token, JSON.stringify(out), 600);
+  return out;
+}
+function sameAddr(a, b) { const k = x => String(x || '').toLowerCase().split(',')[0].replace(/[^a-z0-9]/g, ''); return k(a) && k(a) === k(b); }
+/** Public-record facts for an address (Clark County Assessor), never the owner. {} when it can't be found. */
+function propertyFactsFor(address) {
+  const w = parcelForAddress(address);
+  if (!w || w.error || !w.apn) return {notFound: true};
+  const f = parcelFacts(parcelRecord(w.apn));
+  f.parcelAddress = w.address; if (w.subdivision && !f.subdivision) f.subdivision = w.subdivision;
+  return f;
 }
 function clientReact(d) {
   const token = String(d.id || ''), rows = clientRows(token), it = rows.filter(r => r.row === Number(d.item) && r.kind === 'home')[0];
@@ -1537,7 +1578,7 @@ function clientPageCommand(a, text) {
   if (p.many) return 'which one? ' + p.many.slice(0, 4).map(x => x.name).join(', ');
   const tags = (fubFetch('people/' + p.id + '?fields=id,name,firstName,lastName,tags,phones,emails,addresses', null, 'get') || {});
   p = Object.assign({}, p, tags);
-  let isSeller = /\bsell|seller|listing|feedback|market update\b/i.test(raw) || (p.tags || []).some(t => /likely seller|listing appointment/i.test(t));
+  let isSeller = /\bsell|seller|listing|feedback|market update|address\b/i.test(raw) || (p.tags || []).some(t => /likely seller|listing appointment/i.test(t));
   const addr = ((p.addresses || [])[0] || {}).street || '';
   const pg = clientPageFor(p, isSeller ? 'seller' : 'buyer', isSeller ? addr : '');
   if (!pg.isNew) { const head = clientRows(pg.token).filter(r => r.kind === 'page')[0]; if (head) isSeller = head.details === 'seller'; }
@@ -1548,6 +1589,26 @@ function clientPageCommand(a, text) {
     return 'added ' + links.length + ' home' + (links.length > 1 ? 's' : '') + ' to ' + who + '\'s page: ' + url + (pg.isNew ? '\n\nWant me to text them the link?' : '');
   }
   const after = (raw.split(/:\s*/).slice(1).join(': ') || '').trim();
+  // Addresses (Nov 20): "address for Charles: 123 Main St" / "Charles is also selling 456 Oak Ave" → a property on the page,
+  // with county records filled right away. Several are fine (people sell more than one home). "remove 123 Main from Charles' page".
+  const addrM = raw.match(/\b(\d{2,6}\s+(?:[NSEW]\.?\s+)?[A-Za-z0-9'.\- ]+?\b(?:st|street|ave|avenue|dr|drive|ln|lane|rd|road|ct|court|cir|circle|way|pl|place|blvd|boulevard|pkwy|parkway|trl|trail|ter|terrace|loop|hwy|pt|point|run|path|cv|cove)\b\.?(?:[ ,]+(?:unit|apt|#)\s*\w+)?(?:,\s*[A-Za-z .]+)?(?:,?\s*(?:nv|nevada))?(?:\s+\d{5})?)/i);
+  if (addrM && /\b(address|selling|sell|property|properties|house|home|remove|delete)\b/i.test(raw) && !links.length) {
+    const address = addrM[1].replace(/\s+/g, ' ').trim(), rows = clientRows(pg.token), had = rows.filter(r => r.kind === 'property' && sameAddr(r.title, address))[0];
+    if (/\b(remove|delete|take off)\b/i.test(raw)) {
+      if (!had) return address + ' isn\'t on ' + who + '\'s page.';
+      sh.getRange(had.row, 4).setValue('property-removed'); CacheService.getScriptCache().remove('CPD_' + pg.token);
+      return 'took ' + address + ' off ' + who + '\'s page.';
+    }
+    if (had) return address + ' is already on ' + who + '\'s page: ' + url;
+    let f = {}; try { f = propertyFactsFor(address); } catch (e) {}
+    f.tried = Date.now();
+    sh.appendRow([pg.token, p.id, cell(who), 'property', new Date(), cell(address), '', '', JSON.stringify(f), '']);
+    const head = rows.filter(r => r.kind === 'page')[0];
+    if (head && !head.title) sh.getRange(head.row, 6).setValue(cell(address));
+    CacheService.getScriptCache().remove('CPD_' + pg.token);
+    const facts = [f.beds && f.beds + ' bd', f.baths && f.baths + ' ba', f.sqft && f.sqft + ' sq ft', f.year && 'built ' + f.year, f.record && f.record.lastSale && 'last sold ' + f.record.lastSale + ' (' + f.record.lastSaleDate + ')'].filter(Boolean).join(' · ');
+    return 'added ' + address + ' to ' + who + '\'s page' + (facts ? ' with the county records: ' + facts : ' (I couldn\'t find it in the county records, so it shows the address only; check the spelling)') + '.\n\n' + url + '\n\nWant me to send ' + realFirst(p) + ' the link?';
+  }
   if (/feedback/i.test(raw) && after) { sh.appendRow([pg.token, p.id, cell(who), 'feedback', new Date(), 'Showing feedback', '', '', cell(after), '']); return 'added the showing feedback to ' + who + '\'s page: ' + url; }
   if (/market|update/i.test(raw) && after) { sh.appendRow([pg.token, p.id, cell(who), 'update', new Date(), 'Market update', '', '', cell(after), '']); return 'added the market update to ' + who + '\'s page: ' + url; }
   if (/\bnote\b/i.test(raw) && after) { sh.appendRow([pg.token, p.id, cell(who), 'note', new Date(), 'From Julián', '', '', cell(after), '']); return 'added your note to ' + who + '\'s page: ' + url; }
@@ -2362,19 +2423,38 @@ function runListingFlow(people) {
     let msg = pcFill(tpl, p, {duties: dutiesLink});
     if (cpage && /^l[ab]-w/.test(due.id)) msg += (textOk ? ' Everything is on your page: ' : '\n\nEverything is on your page: ') + clientPageUrl(cpage);
     // Client pages start themselves (Nov 13): a buyer's page when the card hits HOT BUYERS, a seller's at Listing Prep/Active.
-    if (/^(lb-0|lp-0|la-0)$/.test(due.id) && !cpage) { try {
-      const addr = String(d.name || '').split('·').slice(-1)[0].trim(), pg = clientPageFor(p, stage === 'buyer' ? 'buyer' : 'seller', stage !== 'buyer' && /\d/.test(addr) ? addr : '');
+    // Nov 20 (Julián: "there was no address so the private page shouldn't have went out"): a seller page is made and linked
+    // only once the home's address is known (deal name "… · 123 Main St" or the contact's address); otherwise Julián is asked.
+    let needAddr = '';
+    if (/^(lp-0|la-0)$/.test(due.id) && !cpage) {
+      const fromDeal = String(d.name || '').split('·').slice(-1)[0].trim();
+      let addrOnFile = ''; try { const pa = fubFetch('people/' + p.id + '?fields=id,addresses', null, 'get'); addrOnFile = ((pa.addresses || [])[0] || {}).street || ''; } catch (e) {}
+      if (!/^\d+\s+\S+/.test(fromDeal) && !/^\d+\s+\S+/.test(addrOnFile)) needAddr = realFirst(p);
+    }
+    if (/^(lb-0|lp-0|la-0)$/.test(due.id) && !cpage && !needAddr) { try {
+      const dealAddr = String(d.name || '').split('·').slice(-1)[0].trim();
+      let addr = /^\d+\s+\S+/.test(dealAddr) ? dealAddr : '';
+      if (!addr && stage !== 'buyer') { try { addr = ((fubFetch('people/' + p.id + '?fields=id,addresses', null, 'get').addresses || [])[0] || {}).street || ''; } catch (e) {} }
+      const pg = clientPageFor(p, stage === 'buyer' ? 'buyer' : 'seller', stage !== 'buyer' ? addr : '');
+      if (addr && stage !== 'buyer') { try { const f = propertyFactsFor(addr); f.tried = Date.now();
+        ensureTab(getSS(), CLIENT_TAB).appendRow([pg.token, p.id, cell(who), 'property', new Date(), cell(addr), '', '', JSON.stringify(f), '']); } catch (e) {} }
       msg += (textOk ? ' ' : '\n\n') + (stage === 'buyer' ? 'I made you a private page for the homes I send you. Tap Love, Pass or Tour on each one: ' : 'I made you a private page for your sale, with showing feedback and market updates: ') + clientPageUrl(pg.token);
     } catch (e) { console.log('Client page: ' + e.message); } }
     st.done.push(due.id); drafted++;
     if (autoMode()) {  // sends on its own after a heads-up; "hold <name>" stops it
-      const delay = Number(props.getProperty('AUTO_DELAY_H') || 2), at = new Date(now + delay * 36e5), stepId = (textOk ? 'auto-' : 'autoemail-') + due.id;
+      // Nov 20 (Julián: "something I should know about a day before so I can prepare, not day of"): deal-flow messages go
+      // out the NEXT day at 10am; today he gets the heads-up. AUTO_DELAY_H (hours) still overrides if he sets it.
+      const tz = 'America/Los_Angeles', dh = props.getProperty('AUTO_DELAY_H');
+      const at = dh ? new Date(now + Number(dh) * 36e5) : Utilities.parseDate(Utilities.formatDate(new Date(now + 864e5), tz, 'yyyy-MM-dd') + ' 10:00', tz, 'yyyy-MM-dd HH:mm');
+      const stepId = (textOk ? 'auto-' : 'autoemail-') + due.id;
       ensureTab(getSS(), TEXT_QUEUE_TAB).appendRow([at, p.id, cell(who), stepId, 'pending', 0, '', cell(textOk ? msg : 'Subject: ' + pcFill(due.subject, p) + '\n\n' + msg)]);
       autoNote(stepId, 'deal update', p.id, who);
       const lbl = {prep: 'listing prep', active: 'active listing, day ' + age, offers: 'offer stage', escrow: 'escrow, day ' + age, lost: 'off market, day ' + age,
         buyer: 'actively looking, day ' + age, boffer: 'offer submitted', bescrow: 'buyer escrow, day ' + age}[stage];
       if ((stage === 'escrow' || stage === 'bescrow') && due.day === 0) { try { draftPartyHeadsUp(p, who, d, 'opened escrow'); } catch (e) {} }
-      bossTextSafe('🏡 ' + who + ' (' + lbl + '). This ' + (textOk ? 'text' : 'email') + ' goes out at ' + Utilities.formatDate(at, 'America/Los_Angeles', 'h:mm a') + ':\n' + (textOk ? viaText(phone) : viaEmail(email)) + '\n\n"' + msg + '"\n\nSay "hold ' + realFirst(p) + '" to stop it.');
+      const whenTxt = (Utilities.formatDate(at, tz, 'yyyy-MM-dd') === Utilities.formatDate(new Date(now), tz, 'yyyy-MM-dd') ? 'today' : 'tomorrow (' + Utilities.formatDate(at, tz, 'EEE, MMM d') + ')') + ' at ' + Utilities.formatDate(at, tz, 'h:mm a');
+      bossTextSafe('🏡 Heads up for ' + who + ' (' + lbl + '). This ' + (textOk ? 'text' : 'email') + ' goes out ' + whenTxt + ', so you have time to prepare:\n' + (textOk ? viaText(phone) : viaEmail(email)) + '\n\n"' + msg + '"\n\nSay "hold ' + realFirst(p) + '" to stop it.' +
+        (needAddr ? '\n\n📍 What\'s the address of the home ' + needAddr + ' is selling? Text me "address for ' + needAddr + ': 123 Main St" and I\'ll build their private page with the county records. (If they\'re selling more than one, send each.) No page goes out until I have it.' : ''));
       sheet.appendRow([d.id, who, stage, new Date(st.since), st.done.join(','), new Date()]);
       return;
     }
@@ -5342,7 +5422,7 @@ About Julián: Realtor® and developer with The DeBenedetto Team at Boeckle & Co
 - dealmove: he tells you a client's deal moved or should start ("Lisa is in escrow", "Dan's offer got accepted", "list Lisa's house", "Lisa's listing is live", "start a buyer deal for Dan", "Lisa closed", "Dan's offer fell through"). "who" = the client, "message" = his words, "when" = the closing date if he gave one (YYYY-MM-DD), "price" = price if he gave one, and "stage" = exactly one of: buyer_nurture, hot_buyer (actively looking / signed with him), buyer_offer, buyer_escrow (buyer under contract / in escrow / offer accepted), buyer_loan, buyer_closed, seller_followup (maybe listing later), construction, listing_prep (taking the listing / getting it ready), active_listing (live on MLS), seller_offer (offer on the listing), seller_escrow (listing under contract / in escrow), seller_appraisal, seller_closed, gifts, lost (listing expired or withdrawn). A buyer's deal that fell through goes back to hot_buyer; a seller's escrow that fell through goes back to active_listing. Buyer vs seller: selling their home / their listing = seller stages; buying = buyer stages.
 - pipeline: he wants to see where his deals or clients stand ("where are my deals", "show my pipeline", "who's in escrow", "who's closing", "who's under contract"). Put his words in "message".
 - freevegas: he gives a free thing to do in Las Vegas for his Free in Vegas list ("add to free in vegas: Bellagio holiday display, through Jan 5"). "message" = the thing, where, when and any link, in his words.
-- clientpage: a client's private page on juliancrider.com: make or send someone's page, add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
+- clientpage: a client's private page on juliancrider.com: make or send someone's page, add a home they're selling ("address for Charles: 123 Main St", "Charles is also selling 456 Oak Ave", "remove 456 Oak from Charles' page"), add home links to a buyer's page, add showing feedback or a market update to a seller's page ("make Lisa a client page", "add <link> to Dan's page", "feedback for Lisa's house: loved the kitchen, price feels high", "market update for Lisa: 2 new listings nearby…", "send Dan his page"). "who" = the client, "message" = his full text, links included.
 - dealparty: he names the transaction coordinator (TC) or title/escrow company for a client's deal ("TC for Lisa's deal is Jane Doe jane@x.com 702…", "title for Lisa is First American, Maria Lopez maria@…", "default TC is …"). "who" = the client, "message" = his full text.
 - listingpage: make or update a listing presentation page for an address ("listing page for 123 Desert Rose Ln", "make a listing link for the Summit house, 5 bed, price 3.2M"). "message" = his whole text.
 - property: look up a property in Clark County public records (owner, last sale, value, size, year built): "look up 123 Desert Rose Ln", "who owns 456 Summit Club Dr", "pull the records on Lisa's house". "message" = the street address or parcel number exactly as he wrote it; "who" = the client if he wants it saved to their file.
@@ -5416,6 +5496,7 @@ Examples (all mean the same as the action shown):
   // "Thank you" after she did something is just thanks (Nov 14: it made a second Lisa draft). Never a new action.
   else if (/^\s*(thanks?|thank you|thank u|thx|ty|tysm|appreciate (it|you|ya)|much appreciated|🙏\S*)(\s+(so much|again|shawna|a lot|girl|lady))*\s*[.!🙏🏾🏾👍🏾🏾❤️💯]*\s*$/i.test(text)) a = {action: 'thanks'};
   else if (/^\s*(make|build|create|start)?\s*(me\s+)?(a\s+|the\s+)?listing (page|link|presentation)\b/i.test(text)) a = {action: 'listingpage', message: text};
+  else if (/^\s*(?:the\s+)?address(?:es)?\s+for\s+([A-Za-z][A-Za-z' .-]{1,40}?)\s*(?:is|are|:)/i.test(text)) a = {action: 'clientpage', who: text.match(/address(?:es)?\s+for\s+([A-Za-z][A-Za-z' .-]{1,40}?)\s*(?:is|are|:)/i)[1].replace(/'s$/i, ''), message: text};  // Nov 20: a client's home(s) for their private page
   else if (/^\s*(company|business|entity|llc)\s*(look ?up|search|info)?\s*[:\-]\s*\S/i.test(text) || /^\s*(company|business|llc)\s+(look ?up|search)\s+\S/i.test(text) || /^\s*(who('s| is) the\s+)?registered agent\s+(for|of|on)\s+\S/i.test(text) || /^\s*look up (the )?(company|business|llc)\s+\S/i.test(text)) a = {action: 'company', message: text};  // Nov 17
   else if (/^\s*(dev(elopment)?( leads?| projects?)?|projects?)\s*(list|update|status)?\s*[:?]?\s*$/i.test(text)) a = {action: 'devleads', message: ''};  // Nov 17
   else if (/^\s*dev(elopment)?( lead| project)?\s*[:\-]\s*\S/i.test(text)) a = {action: 'devleads', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};

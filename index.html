@@ -575,6 +575,29 @@ img{max-width:100%;display:block}
 .steps i{flex:1;height:4px;border-radius:2px;background:var(--hair)}
 .steps i.on{background:var(--ink)}
 .err{color:var(--red);font-size:13px;margin:-4px 0 10px;display:none}
+/* Client pages (Nov 20) */
+.cp h2 .cp-count{font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);border-radius:999px;padding:2px 8px;vertical-align:middle}
+.cp-path{display:flex;margin:6px 0 14px}
+.cp-path div{flex:1;text-align:center;position:relative;font-size:12px;color:var(--muted)}
+.cp-path div::before{content:"";position:absolute;top:8px;left:-50%;width:100%;height:2px;background:var(--hair)}
+.cp-path div:first-child::before{display:none}
+.cp-path div.ok::before,.cp-path div.on::before{background:var(--ink)}
+.cp-path i{display:block;width:18px;height:18px;border-radius:50%;margin:0 auto 6px;background:var(--bg);border:2px solid var(--hair);position:relative;z-index:1}
+.cp-path .ok i{background:var(--ink);border-color:var(--ink)}
+.cp-path .on i{border-color:var(--ink);box-shadow:0 0 0 4px var(--surface);background:var(--red)}
+.cp-path .on span{color:var(--ink);font-weight:700}
+.cp-rows{border-top:1px solid var(--hair);margin-bottom:10px}
+.cp-rows div{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--hair);font-size:14px}
+.cp-rows span{color:var(--ink2)}.cp-rows b{text-align:right}
+.cp-home{background:var(--surface);border-radius:18px;overflow:hidden;margin-bottom:16px}
+.cp-map{aspect-ratio:16/9;background:var(--hair)}.cp-map iframe{width:100%;height:100%;border:0;display:block}
+.cp-lab{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:18px 0 6px}
+.cp-in{padding:14px 16px 16px}.cp-in h3{font-size:18px;margin:0 0 2px}
+.cp-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.cp-tiles div{background:var(--bg);border-radius:12px;padding:10px 6px;text-align:center}
+.cp-tiles b{display:block;font-size:16px}.cp-tiles span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.cp-check label{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--hair);font-size:15px}
+.cp-check input{width:20px;height:20px;flex:0 0 auto;accent-color:var(--ink);margin-top:1px}
 /* Booking (Nov 19, Julián: "follow the booking flow of GlossGenius"): details → day → time → your information */
 .gg{display:flex;align-items:center;justify-content:center;margin:2px 0 6px}
 .gg span{width:46px;height:46px;border-radius:50%;border:1.5px solid var(--hair);display:grid;place-items:center;color:var(--muted);background:var(--bg);flex:0 0 auto}
@@ -2527,17 +2550,72 @@ function pickTime(c, note){
     .then(r => r.json()).then(d => { st.slots = d.slots || []; day(); })
     .catch(() => info('Open times didn’t load, so Julián will text you to set one.'));
 }
-// Client pages (Nov 13, juliancrider.com/?client=<private id>): buyers see the homes Julián picked and tap Love / Pass /
-// Tour (it goes straight to him); sellers see showing feedback, market updates and notes. Filled by texting Shawna.
+// Client pages (Nov 13, juliancrider.com/?client=<private id>). Nov 20 (Julián: "the most extensive data-driven private
+// page… they might be selling more than one"): where the deal stands (FUB deal card: stage, days, price, projected close),
+// every home on the page with Clark County public records (facts, last sale, taxable value, parcel, map) and figures worked
+// out from those real numbers only, the seller prep checklist, documents, showing feedback, market updates and notes.
+// Buyers: the homes Julián picked (Love / Pass / Tour go straight to him) and today's mortgage rates.
 function clientPage(id){
   const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const day = t => t ? new Date(t).toLocaleDateString('en-US', {timeZone:'America/Los_Angeles', month:'short', day:'numeric'}) : '';
+  const tz = {timeZone:'America/Los_Angeles'};
+  const day = t => t ? new Date(t).toLocaleDateString('en-US', {...tz, month:'short', day:'numeric'}) : '';
+  const num = v => Number(String(v == null ? '' : v).replace(/[^\d.]/g, '')) || 0;
+  const usd = v => '$' + Math.round(num(v)).toLocaleString('en-US');
   sheet.classList.add('full'); scrim.classList.add('full');
-  openRaw('', `<p class="fine">Loading your page…</p>`);
+  openRaw('', `<article class="reader"><div class="h2-skel line" aria-label="Loading your page" style="margin-left:0"></div><div class="h2-skel line" style="margin-left:0"></div><div class="h2-skel line" style="margin-left:0;max-width:50%"></div></article>`);
   fetch(SHEET_URL + '?' + new URLSearchParams({action:'client', id})).then(r => r.json()).then(d => {
     if (d.status !== 'ok') { $('sheetBody').innerHTML = doneHTML('Page not found','This link may have changed. Text Julián at 702-498-2571 and he’ll send you a fresh one.'); return; }
-    const items = (d.items || []).slice().reverse(), seller = d.role === 'seller';
+    const items = (d.items || []).slice().reverse(), seller = d.role === 'seller', props = d.properties || [];
     const homes = items.filter(x => x.kind === 'home'), fb = items.filter(x => x.kind === 'feedback'), up = items.filter(x => x.kind === 'update'), notes = items.filter(x => x.kind === 'note');
+    const deals = d.deals || [], deal = deals.filter(x => x.pipeline === (seller ? 'seller' : 'buyer'))[0] || deals[0];
+    // ---- where we are
+    const PATH = {seller: [['Getting ready', /seller_followup|listing_prep/], ['On the market', /active_listing/], ['Offers', /seller_offer/], ['In escrow', /seller_escrow|seller_appraisal/], ['Closed', /seller_closed/]],
+      buyer: [['Getting started', /buyer_nurture/], ['Searching', /hot_buyer/], ['Offer', /buyer_offer/], ['In escrow', /buyer_escrow|buyer_loan/], ['Closed', /buyer_closed/]]};
+    let journey = '';
+    if (deal && PATH[deal.pipeline]) {
+      const steps = PATH[deal.pipeline], at = steps.findIndex(x => x[1].test(deal.stage));
+      const days = deal.since ? Math.max(0, Math.floor((Date.now() - new Date(deal.since)) / 864e5)) : null;
+      const toClose = deal.close ? Math.ceil((new Date(deal.close) - Date.now()) / 864e5) : null;
+      const facts = [days != null && at >= 0 && at < steps.length - 1 ? ['Time in this step', days === 0 ? 'Started today' : days + ' day' + (days === 1 ? '' : 's')] : null,
+        deal.price ? [deal.pipeline === 'seller' ? (at >= 3 ? 'Sale price' : at <= 0 ? 'Planned list price' : 'List price') : 'Price', usd(deal.price)] : null,
+        deal.close ? ['Projected closing', new Date(deal.close).toLocaleDateString('en-US', {timeZone:'UTC', month:'long', day:'numeric', year:'numeric'}) + (toClose > 0 ? ' · ' + toClose + ' days' : '')] : null].filter(Boolean);
+      journey = `<h2>Where we are</h2><div class="cp-path">${steps.map((x, k) => `<div class="${k < at ? 'ok' : k === at ? 'on' : ''}"><i></i><span>${x[0]}</span></div>`).join('')}</div>
+        ${facts.length ? `<div class="cp-rows">${facts.map(f => `<div><span>${f[0]}</span><b>${e(f[1])}</b></div>`).join('')}</div>` : ''}`;
+    }
+    // ---- each home, with the county's public record and what those numbers say
+    const homeCard = (h, k) => {
+      const f = h.facts || {}, r = f.record || {}, sq = num(f.sqft);
+      const tiles = [['Beds', f.beds], ['Baths', f.baths], ['Sq ft', f.sqft], ['Built', f.year], ['Lot', f.lot], ['Garage', f.garage], ['Pool', f.pool && 'Yes'], ['Style', f.style]].filter(x => x[1]);
+      const saleYear = Number((String(r.lastSaleDate || '').match(/\d{4}/) || [])[0]), held = saleYear ? new Date().getFullYear() - saleYear : 0;
+      const sale = num(r.lastSale), list = deal && deal.pipeline === 'seller' && props.length === 1 ? num(deal.price) : 0;
+      const insights = [sale && sq ? ['Price per sq ft at last sale', usd(sale / sq)] : null,
+        held > 0 ? ['Owned since', r.lastSaleDate + ' (about ' + held + ' year' + (held === 1 ? '' : 's') + ')'] : null,
+        list && sq ? ['List price per sq ft', usd(list / sq)] : null,
+        list && sale ? ['List price vs. last sale', (list >= sale ? '+' : '') + Math.round((list - sale) / sale * 100) + '%'] : null].filter(Boolean);
+      const rec = [['Subdivision', r.subdivision || f.subdivision], ['Last sale', r.lastSale && r.lastSale + (r.lastSaleDate ? ' · ' + r.lastSaleDate : '')], ['Recorded', !r.lastSale && r.recorded],
+        ['Taxable value', r.taxable && r.taxable + (r.taxYear ? ' (' + r.taxYear + ')' : '')], ['Land use', r.landUse], ['Construction', r.construction], ['Roof', r.roof],
+        ['Fireplaces', r.fireplace], ['Spa', r.spa && 'Yes'], ['Garage size', r.garageSqft && r.garageSqft + ' sq ft'], ['Parcel', r.apn]].filter(x => x[1]);
+      const where = h.address + (/\b(las vegas|henderson|nv)\b/i.test(h.address) ? '' : ', ' + (f.city || 'Las Vegas') + ', NV');
+      return `<div class="cp-home">
+        <div class="cp-map"><iframe loading="lazy" title="Map of ${e(h.address)}" src="https://maps.google.com/maps?q=${encodeURIComponent(where)}&z=16&output=embed"></iframe></div>
+        <div class="cp-in"><h3>${e(h.address)}</h3><a class="link" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(where)}" target="_blank" rel="noopener">Open in Maps ›</a>
+        ${tiles.length ? `<div class="cp-tiles">${tiles.map(t => `<div><b>${e(t[1])}</b><span>${t[0]}</span></div>`).join('')}</div>` : (f.notFound ? '<p class="fine">Julián is pulling the county records for this home.</p>' : '<p class="fine">County records are loading. Check back shortly.</p>')}
+        ${insights.length ? `<div class="cp-lab">What the numbers say</div><div class="cp-rows">${insights.map(x => `<div><span>${x[0]}</span><b>${e(x[1])}</b></div>`).join('')}</div>` : ''}
+        ${rec.length ? `<div class="cp-lab">Public record</div><div class="cp-rows">${rec.map(x => `<div><span>${x[0]}</span><b>${e(x[1])}</b></div>`).join('')}</div>
+          <p class="fine">From Clark County Assessor records. Taxable value is the county’s number for property tax, not what the home would sell for today.</p>` : ''}</div></div>`;
+    };
+    const homesHTML = props.length ? `<h2>${seller ? (props.length > 1 ? 'Your homes' : 'Your home') : (props.length > 1 ? 'Homes you own' : 'The home you own')}</h2>
+      ${props.length > 1 ? `<div class="chips" style="margin-bottom:12px">${props.map((h, k) => `<button type="button" class="chip${k ? '' : ' on'}" data-cph="${k}">${e(String(h.address).split(',')[0])}</button>`).join('')}</div>` : ''}
+      ${props.map((h, k) => `<div data-cphome="${k}" ${k ? 'hidden' : ''}>${homeCard(h, k)}</div>`).join('')}` : (seller ? `<h2>Your home</h2><p style="color:var(--ink2)">Julián is adding your home’s details and county records here.</p>` : '');
+    // ---- seller prep checklist (ticks are saved on this device only)
+    const PREP = ['Declutter counters and surfaces', 'Fresh light bulbs, the same color in every room', 'Touch up paint and small repairs', 'Backyard and pool sparkling, front entry swept', 'Put away personal photos and valuables'];
+    let ticks = {}; try { ticks = JSON.parse(localStorage.getItem('cp_prep_' + id) || '{}'); } catch (x) {}
+    const prepHTML = seller && (!deal || /seller_followup|listing_prep|active_listing/.test(deal.stage)) ? `<h2>Before photos</h2><p style="color:var(--ink2)">The five things that make the biggest difference on camera. Tick them off as you go.</p>
+      <div class="cp-check">${PREP.map((t, k) => `<label><input type="checkbox" data-prep="${k}" ${ticks[k] ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>
+      <p class="fine" data-prepcount>${Object.values(ticks).filter(Boolean).length} of ${PREP.length} done</p>` : '';
+    // ---- documents
+    const docs = seller || deal ? `<h2>Documents</h2><div class="cp-rows"><div><span>Nevada Duties Owed (Form 525)</span><b>${d.dutiesSigned ? '✓ Signed' : 'Waiting for your signature (check your email)'}</b></div></div>` : '';
+    // ---- buyer homes
     const card = x => `<div class="textcard" style="padding:0;overflow:hidden;margin-bottom:14px">
       ${x.photo ? `<img src="${e(x.photo)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:100%;aspect-ratio:3/2;object-fit:cover;display:block" onerror="this.remove()">` : ''}
       <div style="padding:14px 16px 16px"><b style="display:block;font-size:16px;margin-bottom:4px">${e(x.title || 'Home')}</b>
@@ -2546,17 +2624,27 @@ function clientPage(id){
       <div class="chips" style="margin-top:12px" data-home="${x.id}">${[['love','❤️ Love it'],['pass','👎 Pass'],['tour','🗓 Tour it']].map(([k,l]) => `<button type="button" class="chip ${String(x.reaction||'').startsWith(l.slice(3)) ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
       <div data-noteb="${x.id}" hidden class="field" style="margin:10px 0 0"><input aria-label="Note to Julián" placeholder="Anything to tell Julián? (optional)"><button type="button" class="mini" style="margin-top:8px">Send note</button></div>
       <p class="fine" data-ok="${x.id}" hidden style="margin:8px 0 0">Got it. Julián will see this right away.</p></div></div>`;
+    const rc = k => homes.filter(x => String(x.reaction || '').startsWith(k)).length;
+    const buyerHTML = seller ? '' : `<h2>Homes I picked for you</h2>${homes.length ? `<div class="cp-tiles" style="margin-bottom:14px"><div><b>${homes.length}</b><span>Picked</span></div><div><b>${rc('Love')}</b><span>Loved</span></div><div><b>${rc('Tour')}</b><span>Tours asked</span></div><div><b>${rc('Pass')}</b><span>Passed</span></div></div>` + homes.map(card).join('') : '<p style="color:var(--ink2)">Julián is pulling homes for you now. Check back soon.</p>'}
+      <h2>Today’s mortgage rates</h2><div id="cpRates">${ratesCard()}</div>`;
     const entry = x => `<div style="border-left:3px solid var(--hair);padding:2px 0 2px 12px;margin:0 0 14px"><span class="fine" style="margin:0">${day(x.when)}</span><p style="margin:2px 0 0;white-space:pre-line">${e(x.details)}</p></div>`;
-    const sec = (h, list, empty) => `<h2>${h}</h2>` + (list.length ? list.map(entry).join('') : `<p style="color:var(--ink2)">${empty}</p>`);
-    $('sheetBody').innerHTML = `<article class="reader"><div class="kick">Private page from Julián</div>
-      <h1>${seller ? (d.address ? e(d.address) : 'Your home') : 'Homes for you, ' + e(d.first)}</h1>
-      <p>${seller ? `Hi ${e(d.first)}. Everything about your sale in one place: what buyers are saying after showings, how the market around you is moving, and notes from me.` : `Hi ${e(d.first)}. These are homes I picked for you. Tap <b>Love it</b>, <b>Pass</b> or <b>Tour it</b> on each one and I’ll take it from there. Passing on a home helps me just as much.`}</p>
+    const sec = (h, list, empty) => `<h2>${h}${list.length ? ` <small class="cp-count">${list.length}</small>` : ''}</h2>` + (list.length ? list.map(entry).join('') : `<p style="color:var(--ink2)">${empty}</p>`);
+    const title = seller ? (props.length === 1 ? e(String(props[0].address).split(',')[0]) : props.length > 1 ? 'Your ' + props.length + ' homes' : 'Your sale') : 'Your home search';
+    $('sheetBody').innerHTML = `<article class="reader cp"><div class="kick">Private page from Julián · updated ${day(new Date())}</div>
+      <h1>${title}</h1>
+      <p>${seller ? `Hi ${e(d.first)}. Everything about your sale in one place: where we are, your home’s public records, what buyers say after showings, how the market around you is moving, and notes from me.` : `Hi ${e(d.first)}. These are homes I picked for you. Tap <b>Love it</b>, <b>Pass</b> or <b>Tour it</b> on each one and I’ll take it from there. Passing on a home helps me just as much.`}</p>
       ${notes.length ? sec('From Julián', notes, '') : ''}
-      ${seller ? sec('Showing feedback', fb, 'Feedback from showings will show up here.') + sec('Market updates', up, 'Market updates for your area will show up here.')
-        : (homes.length ? homes.map(card).join('') : '<p style="color:var(--ink2)">Julián is pulling homes for you now. Check back soon.</p>') + (fb.length ? sec('Showing notes', fb, '') : '') + (up.length ? sec('Market updates', up, '') : '')}
-      <button class="pill block" id="cpBook" style="margin-top:8px">Book a call with Julián</button>
+      ${journey}${homesHTML}${prepHTML}
+      ${seller ? sec('Showing feedback', fb, 'What buyers say after each showing will show up here.') + sec('Market updates', up, 'Updates on homes listing and selling around you will show up here.') : buyerHTML + (fb.length ? sec('Showing notes', fb, '') : '') + (up.length ? sec('Market updates', up, '') : '')}
+      ${docs}
+      <div class="duo" style="margin-top:18px"><button class="pill" id="cpBook">Book a call</button><a class="pill ghost" style="text-align:center;text-decoration:none" href="tel:+17024982571">Call Julián</a></div>
       <p class="fine" style="margin-top:14px">This page is private to you. Please don’t share the link.</p></article>`;
+    if ($('cpRates')) loadRates($('cpRates'));
     $('cpBook').onclick = () => { sheet.classList.remove('full'); scrim.classList.remove('full'); openSheet('book', {type: seller ? 'Selling or home value' : 'Buying a home'}); };
+    document.querySelectorAll('[data-cph]').forEach(b => b.onclick = () => { document.querySelectorAll('[data-cph]').forEach(x => x.classList.toggle('on', x === b));
+      document.querySelectorAll('[data-cphome]').forEach(x => x.hidden = x.dataset.cphome !== b.dataset.cph); });
+    document.querySelectorAll('[data-prep]').forEach(c => c.onchange = () => { ticks[c.dataset.prep] = c.checked; try { localStorage.setItem('cp_prep_' + id, JSON.stringify(ticks)); } catch (x) {}
+      const pc = document.querySelector('[data-prepcount]'); if (pc) pc.textContent = Object.values(ticks).filter(Boolean).length + ' of ' + PREP.length + ' done'; });
     const send = (item, r, note) => fetch(SHEET_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({action:'clientReact', id, item, reaction: r, note: note || ''})});
     document.querySelectorAll('[data-home]').forEach(box => box.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
       const item = box.dataset.home; box.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
