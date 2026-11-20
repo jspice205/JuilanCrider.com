@@ -588,6 +588,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Crider". `sendCardCatchup` (remindUpcoming, until Nov 25; CARDCATCH_DONE; CARDCATCH=off) texts the first-timers who already
   got the old Thanksgiving text "P.S. this is Julián Crider, Realtor with Boeckle & Co. 👋🏾 Here's my contact card…" + card.
   Email subjects never carry emoji (sendFromBcolv strips them; the 🦃 showed as ������).
+  Text pacing (Nov 20, Julián: "space the text messages out so I don't get flagged as spam by AT&T"): group texts never burst.
+  Text blasts and the card catch-up send TEXT_PER_TICK (default 4) per 5-min tick with `textGap()` 20-45 s random gaps (~40/h);
+  Text Queue group steps (ohopt/t21/holiday/memo/free/bday) max 4 per 15-min run, same gaps. Emails keep BLAST_PER_TICK.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 

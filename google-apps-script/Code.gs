@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-contact-card';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-text-pacing';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7227,7 +7227,8 @@ function sendCardCatchup() {
   if (hour < 9 || hour >= 20 || Date.now() > new Date('2026-11-25T20:00:00-08:00').getTime() || props.getProperty('CARDCATCH') === 'off') return;
   const st = JSON.parse(props.getProperty('BLAST_thanksgiving-2026-text') || '{"done":[]}'), done = JSON.parse(props.getProperty('CARDCATCH_DONE') || '[]');
   let n = 0;
-  for (let i = 0; i < st.done.length && n < 15; i++) {
+  const maxN = Number(props.getProperty('TEXT_PER_TICK') || 4);
+  for (let i = 0; i < st.done.length && n < maxN; i++) {
     const id = st.done[i]; if (done.indexOf(id) >= 0) continue;
     try {
       const notes = fubFetch('notes?personId=' + id + '&limit=15&fields=id,subject,body,created', null, 'get').notes || [];
@@ -7242,10 +7243,12 @@ function sendCardCatchup() {
       props.setProperty('AI_SENDING_' + phone, String(Date.now()));
       bbSendParts(phone, msg + ' || [contact card]');
       fubFetch('notes', {personId: id, subject: 'Text sent', body: msg + '\n[contact card]\n\n(thanksgiving contact card)'});
-      n++; Utilities.sleep(2000);
+      n++; if (n < maxN) Utilities.sleep(textGap());
     } catch (e) { console.log('Card catch-up ' + id + ': ' + e.message); }
   }
 }
+/** A human-looking pause between texts in a group send (carriers flag bursts): 20-45 s. */
+function textGap() { return 20000 + Math.floor(Math.random() * 25000); }
 function runBlasts() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('BLASTS') === 'off') return;
@@ -7256,7 +7259,9 @@ function runBlasts() {
     const k = 'BLAST_' + b.id, st = JSON.parse(props.getProperty(k) || '{"done":[],"text":0,"email":0,"skip":0}');
     if (st.finished) return;
     const people = blastPeople(b.tags, b.stages).filter(p => st.done.indexOf(p.id) < 0);
-    let n = 0, i = 0, max = Number(props.getProperty('BLAST_PER_TICK') || 15), stopped = false;
+    // Nov 20 (Julián: "space the text messages out so I don't get flagged as spam by AT&T"): text sends go a few per 5-minute
+    // tick with 20-45 s random gaps (about 40 an hour); emails keep BLAST_PER_TICK.
+    let n = 0, i = 0, max = b.textOnly ? Number(props.getProperty('TEXT_PER_TICK') || 4) : Number(props.getProperty('BLAST_PER_TICK') || 15), stopped = false;
     for (; i < people.length && n < max; i++) {
       const p = people[i];
       try { const how = sendTouch(p, b.text, b.subject, b.email, b.id, {textOnly: b.textOnly, skipTextable: b.skipTextable, anyOpenHouse: b.anyOpenHouse}); if (how) { st[how]++; n++; } else st.skip++; }
@@ -7271,7 +7276,7 @@ function runBlasts() {
       }
       st.done.push(p.id);
       props.setProperty(k, JSON.stringify(st));
-      Utilities.sleep(400);
+      Utilities.sleep(b.textOnly && n ? textGap() : 400);
     }
     if (!stopped && i >= people.length && people.every(p => st.done.indexOf(p.id) >= 0)) {
       st.finished = true; props.setProperty(k, JSON.stringify(st));
@@ -7381,10 +7386,12 @@ function processTextQueue() {
   const macDown = !!props.getProperty('BB_DOWN_SINCE');
   if (!macDown && !props.getProperty('REQUEUE_20261120')) { props.setProperty('REQUEUE_20261120', '1'); requeueTextQueue(48); }
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, TEXT_QUEUE_TAB.headers.length).getValues();
-  let sentNow = 0;
+  let sentNow = 0, groupNow = 0;
   rows.forEach((r, i) => {
     const [due, id, , step, status, tries, , text] = r;
     if (status !== 'pending' || !(due instanceof Date) || due > new Date() || sentNow >= 20) return;
+    const group = /^(ohopt|t21|holiday|memo|free|bday)-/.test(step);  // Nov 20: group texts go 4 per 15-min run, spaced out
+    if (group && groupNow >= 4) return;
     if (early && !/^call-(recap|thanks|followup)/.test(step)) return;
     if (macDown && !/^autoemail-/.test(step)) return;
     const cell = (col, v) => sheet.getRange(i + 2, col).setValue(v);
@@ -7403,7 +7410,7 @@ function processTextQueue() {
       if (res === 'sent' && /^ohopt-/.test(step)) { try {  // open-house first text went (with the opt-out line): they're textable now
         fubFetch('people/' + id + '?mergeTags=true', {tags: ['Text OK']}, 'put');
         fubFetch('notes', {personId: id, subject: 'Text consent', body: 'Open house visitor. First text sent ' + new Date().toISOString().slice(0, 10) + ' with "reply STOP" opt-out (Julián\'s open-house texting rule, Nov 20). STOP → Text Opt-Out.'}); } catch (e) {} }
-      cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; Utilities.sleep(3000); }
+      cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; if (group) groupNow++; Utilities.sleep(group ? textGap() : 3000); }
     } catch (err) {
       const n = (Number(tries) || 0) + 1;
       cell(6, n);
