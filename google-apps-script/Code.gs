@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-knows-the-date';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-test-first';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3985,6 +3985,7 @@ function addPending(item) {
 }
 function pendingLabel(x) {
   if (!x.who || /^(undefined|unknown|null)$/i.test(String(x.who))) x = Object.assign({}, x, {who: x.phone ? String(x.phone).replace(/^\+1/, '') : 'someone'});
+  if (x.kind === 'blast') return 'group send "' + x.label + '"';
   return x.kind === 'email' ? 'email to ' + x.who + (x.email ? ' (' + x.email + ')' : '') : x.kind === 'voice' ? 'voice memo to ' + x.who : x.kind === 'deal' ? 'move ' + x.who + '\'s deal to ' + x.stageName
     : x.kind === 'holiday' ? x.label + ' texts to ' + x.count + ' people' : x.kind === 'freepicks' ? x.count + ' ' + x.label : x.kind === 'event' ? 'add ' + x.title + ' to your calendar' : x.kind === 'invite' ? 'calendar invite (by text) to ' + x.who : 'text to ' + x.who + (x.phone ? ' (' + prettyPhone(x.phone) + ')' : '');
 }
@@ -5358,8 +5359,9 @@ function bossCommand(text, tries) {
   if (picked && !pend) return say('I don\'t have a #' + picked + ' waiting. ' + (queue.length ? 'Waiting now: ' + queue.map(x => '#' + x.n + ' ' + pendingLabel(x)).join(', ') : 'Nothing is waiting for your OK.'));
   if (pend && pend.kind !== 'schedule' && ym) {
     dropPend(pend);
-    if (Date.now() - pend.at > (/^(email|deal|event|invite|holiday|freepicks)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
+    if (Date.now() - pend.at > (/^(email|deal|event|invite|holiday|freepicks|blast)$/.test(pend.kind || '') || pend.long ? 6 * 36e5 : 30 * 6e4)) return say(name + ': that one expired. Ask me again.');
     stat('approved');
+    if (pend.kind === 'blast') { props.setProperty('BLAST_OK_' + pend.blastId, String(Date.now())); return say('approved ✅ "' + pend.label + '" starts going out now, 3 texts every 5 minutes, emails in batches. I\'ll text you when it\'s done.'); }
     if (pend.kind === 'freepicks') {  // picks Shawna found on his sources: mark them verified
       const sh = freeTab(); let n = 0;
       (pend.rows || []).forEach(x => { try { if (String(sh.getRange(x.row, 2).getValue()) === x.what) { sh.getRange(x.row, 4).setValue('Y'); n++; } } catch (e) {} });
@@ -6492,6 +6494,14 @@ function macContact(who) {
 }
 
 /** Calls the "Shawna Mailer" web app running inside julianc@bcolv.com (email + business calendar). */
+/** The bcolv mailer's version (cached 6 h); 0 when it can't be read. */
+function mailerVersion() {
+  const c = CacheService.getScriptCache(), hit = c.get('MAILER_V');
+  if (hit) return Number(hit);
+  let v = 0; try { v = Number((bcolvCall({action: 'version'}) || {}).version) || 0; } catch (e) {}
+  c.put('MAILER_V', String(v), 21600);
+  return v;
+}
 function bcolvCall(payload) {
   const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
   if (!url) return {ok: false, error: 'bcolv mailer not set up'};
@@ -6510,7 +6520,8 @@ function testBusinessCalendar() {
 function sendFromBcolv(to, subject, text, attachments, plain) {
   // Nov 20: the 🦃 in the Thanksgiving subject arrived as "������" (emoji outside the basic plane break in Gmail subjects).
   // Subjects never carry emoji; the body keeps them.
-  subject = String(subject || '').replace(/[\u{10000}-\u{10FFFF}\u2600-\u27BF\uFE0F\u200D]/gu, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').trim();
+  // Mailer v6+ (MailApp) sends emoji subjects correctly; older mailers still get them stripped.
+  if (mailerVersion() < 6) subject = String(subject || '').replace(/[\u{10000}-\u{10FFFF}\u2600-\u27BF\uFE0F\u200D]/gu, '').replace(/\s{2,}/g, ' ').replace(/\s+([,.)])/g, '$1').trim();
   const props = PropertiesService.getScriptProperties(), url = props.getProperty('BCOLV_MAILER_URL');
   if (!url) return {ok: false, error: 'bcolv mailer not set up'};
   const html = String(text).split(/\n{2,}/).map(par => '<p style="margin:0 0 12px">' + par.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>') + '</p>').join('') +
@@ -7154,10 +7165,10 @@ function checkRealScout() {
 const BLASTS = [
   // Nov 20 (Julián: "send everyone the Thanksgiving text"): everyone who can be texted (TEXT_GROUPS rules below) gets the text,
   // through Wed Nov 25; the email blast now goes only to people who can't be texted.
-  {id: 'thanksgiving-2026-text', start: '2026-11-20T09:00:00-08:00', end: '2026-11-25T20:00:00-08:00', tags: ['Top 200', 'Tier A', 'Tier B', 'Hot', 'Warm', 'open house', 'Open House'],
+  {id: 'thanksgiving-2026-text', noTest: true, start: '2026-11-20T09:00:00-08:00', end: '2026-11-25T20:00:00-08:00', tags: ['Top 200', 'Tier A', 'Tier B', 'Hot', 'Warm', 'open house', 'Open House'],
     stages: ['Active Client', 'Pending', 'Under Contract'], textOnly: true, anyOpenHouse: true,
     text: 'Hey {first}, it\'s Julián Crider 👋🏾 Happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/'},
-  {id: 'thanksgiving-2026', start: '2026-11-20T09:00:00-08:00', end: '2026-11-21T20:00:00-08:00', tags: ['Top 200'], skipTextable: true, anyOpenHouse: true,
+  {id: 'thanksgiving-2026', noTest: true, start: '2026-11-20T09:00:00-08:00', end: '2026-11-21T20:00:00-08:00', tags: ['Top 200'], skipTextable: true, anyOpenHouse: true,
     subject: 'Happy Thanksgiving, {first} (6 free things happening this week)',
     text: 'Hey {first}, happy early Thanksgiving! 🦃 I put together a quick list of free things happening this week in Vegas, including a turkey hotline you can text and a free holiday display for after dinner. Thought you might like it: juliancrider.com/blog/thanksgiving-week-las-vegas-free/',
     email: 'Hi {first},\n\nI just wanted to say thank you. This time of year I think about the people who make my work feel like more than work, and you\'re one of them.\n\n' +
@@ -7306,6 +7317,18 @@ function runBlasts() {
   cache.put('BLAST_RUN', '1', 600);
   try { runBlastsNow(props); } finally { cache.remove('BLAST_RUN'); }
 }
+function blastTest(b, props) {
+  if (props.getProperty('BLAST_TEST_' + b.id)) return;  // test already sent, waiting for his yes
+  props.setProperty('BLAST_TEST_' + b.id, String(Date.now()));
+  const me = {firstName: 'Julián'}, fill = s => String(s || '').replace(/\{first\}/g, 'Julián');
+  const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
+  try { if (b.text && boss) { bbSendParts(boss, '🧪 TEST of your group text "' + b.id.replace(/-/g, ' ') + '". This is exactly what they get:'); Utilities.sleep(1500);
+    bbSendParts(boss, humanize(fill(b.text)) + FIRST_TEXT_OPTOUT + ' || [contact card]'); } } catch (e) { console.log('Blast test text: ' + e.message); }
+  let emailNote = '';
+  try { if (b.email && b.subject) { const r = sendFromBcolv(NOTIFY_EMAIL, fill(b.subject), fill(b.email)); emailNote = r && r.ok !== false ? '\n\n✉️ The test email is in your julianc@bcolv.com inbox now. Check the subject line on your phone.' : '\n\n⚠️ The test email didn\'t send: ' + ((r && r.error) || 'unknown'); } } catch (e) { emailNote = '\n\n⚠️ The test email didn\'t send: ' + e.message; }
+  const n = addPending({kind: 'blast', blastId: b.id, label: b.id.replace(/-/g, ' '), who: 'group send', at: Date.now()});
+  bossTextSafe('🧪 Before "' + b.id.replace(/-/g, ' ') + '" goes to anyone, here\'s your test.' + (b.text ? '\n\n📱 The text just came to your phone (first-timers also get the STOP line and your card).' : '') + emailNote + '\n\nLook right? Say yes and it goes out (3 texts every 5 minutes). ' + yesHint(n));
+}
 function runBlastsNow(props) {
   const hour = Number(Utilities.formatDate(new Date(), 'America/Los_Angeles', 'H')), now = Date.now();
   if (hour < 9 || hour >= 20) return;
@@ -7313,6 +7336,9 @@ function runBlastsNow(props) {
     if (now < new Date(b.start).getTime() || now > new Date(b.end).getTime()) return;
     const k = 'BLAST_' + b.id, st = JSON.parse(props.getProperty(k) || '{"done":[],"text":0,"email":0,"skip":0}');
     if (st.finished) return;
+    // TEST FIRST (Julián, Nov 20: "do the test first moving forward"): before any group send, he gets the exact text (with his
+    // card) and the exact email, then one approval. Nothing goes to clients until he says yes. Old sends already approved skip it.
+    if (!b.noTest && !props.getProperty('BLAST_OK_' + b.id)) { blastTest(b, props); return; }
     if (b.textOnly && !groupTextsLeft()) return;  // this 5-minute window's texts are used up
     const people = blastPeople(b.tags, b.stages).filter(p => st.done.indexOf(p.id) < 0);
     // Nov 20 (Julián: "space the text messages out so I don't get flagged as spam by AT&T"): text sends go a few per 5-minute
