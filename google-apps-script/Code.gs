@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-19-blasts';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-19-booking';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -267,6 +267,9 @@ function bookSlot(d) {
       try { fubFetch('appointments', {title: title, description: desc, start: slot.toISOString(), end: end.toISOString(),
         location: showing || listing ? String(d.property) : link || (golf ? d.course || '' : ''), invitees: [{personId: pid}]}); } catch (e) { console.log('FUB appointment: ' + e.message); }
       if (listing) { try { fubFetch('people/' + pid + '?mergeTags=true', {tags: ['Likely Seller', 'Listing Appointment']}, 'put'); } catch (e) {} }
+      // Text opt-in box on the booking form (Nov 19, unchecked by default): checked → Text OK + a consent note.
+      if (d.textOk === 'Yes') { try { fubFetch('people/' + pid + '?mergeTags=true', {tags: ['Text OK']}, 'put');
+        fubFetch('notes', {personId: pid, subject: 'Text consent', body: 'Checked "Text me helpful updates from Julián" when booking on juliancrider.com (' + new Date().toISOString() + ').'}); } catch (e) {} }
       // Deal cards start themselves (Nov 13): a listing appointment opens a Sellers card; a pre-approved (or cash) buyer who
       // books a consult or a showing opens a Buyers card in NURTURE. Never a second open card.
       try {
