@@ -441,6 +441,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   bounced 267/422/427) the re-intro on Nov 3 and their paused plans resume at email 2 after 4 days (start() resumes a
   paused plan for the stage instead of restarting). Legacy after re-intro uses plan 33 (Legacy 2-4).
   `juliancrider.com/?showing` opens Request a showing.
+  Short links (Nov 20, Shawna sent a page that didn't exist): folders consultation/ book/ call/ showing/ tour/ value/ home-value/
+  sell/ listing/ relocate/ relocation/ signin/ openhouse/ start/ redirect to the ?x screen; 404.html sends any other path to the
+  closest screen (consult/book→?book, tour→?showing, value→?value…) or home. SHAWNA_FACTS: only those links, never invent one.
   Farm – Best get "JC Neighbor Note" (31, template 185, emails/neighbor-note.html) first instead; plan 25 now starts at
   Farm Best 2 (template 177 retired). Open-house form asks "Do you live in this neighborhood?"; Yes → tags `Open House
   Neighbor` + `Likely Seller`, plan "JC Neighbor Welcome" (32, template 186, emails/welcome-neighbor.html) instead of 29,
