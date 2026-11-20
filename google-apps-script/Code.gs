@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-card-retry';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-20-card-skip-replies';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7285,7 +7285,10 @@ function sendCardCatchupNow() {
       if (!tg || /it's Julián|\[contact card\]/.test(tg.body) || !/reply STOP/.test(tg.body)) { markDone(); continue; }  // knew him already, or got the card
       if (notes.some(x => /contact card/i.test(x.body || '') && x.id !== tg.id)) { markDone(); continue; }  // already got his card another way (e.g. the apology text)
       const p = fubFetch('people/' + id + '?fields=id,firstName,name,tags,phones', null, 'get');
-      if ((p.tags || []).indexOf('Text Opt-Out') >= 0) { markDone(); continue; }
+      // Nov 20 (Lily Saxton 290 said "committed to a realtor", then got the card a minute later): no card for anyone tagged out
+      // (Has Agent, Not Interested, opt-out…) or who has texted back since the Thanksgiving text (they're in a conversation now).
+      if ((p.tags || []).some(t => NO_TEXT_TAGS.test(t))) { markDone(); continue; }
+      if (notes.some(x => /^Text from/.test(x.subject || '') && new Date(x.created) > new Date(tg.created))) { markDone(); continue; }
       const phone = (p.phones || []).map(x => bbE164(x.value || '')).filter(Boolean)[0]; if (!phone) { markDone(); continue; }
       const tries = Number(props.getProperty('CARDCATCH_TRY_' + id) || 0);
       if (tries >= 3) { markDone(); continue; }
