@@ -867,4 +867,9 @@ He's not renaming the Buyers stages for now.
    Likely Sellers, Under Contract, Past Clients & Sphere) and pause unused starter plans.
 4. Apps Script: make sure the latest Code.gs + manifest are pasted and redeployed; run
    setupFubInbox, setupWeeklyDigest, previewAgreement.
+5. YouTube funnel (Julián, Nov 19: "once I start posting YouTube videos, open that funnel in the YouTube section"): the Julián tab
+   "Watch" card (YouTube: Julian Crider Estates, "Notify me") is a placeholder. When he says he's posting: show the channel's latest
+   videos (YouTube RSS feeds/videos.xml?channel_id=… read by the Apps Script, so no API key), Subscribe button, each video → a
+   "Book a call / Moving here? Start here" next step, and text the "Notify me" sign-ups that it's live. Metricool's YouTube is
+   UCDqgwRG3yjItvj8HG7D-xtg (Shorts cross-post there since Nov 18); confirm that's the channel he means.
 5. Later: agent network list, SIG/Apollo (after compliance), social posting, Meta audiences.
