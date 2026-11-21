@@ -860,6 +860,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   The "what do I have today/this week" agenda now returns the same trimmed update (agendaText → morningUpdateText({week})),
   without the follow-up drafts.
 
+- Gold mine v2 (Nov 21, Julián: "opportunities should come from my Hot and Warm… say WHY I should call… a plain check-in is a text
+  Shawna sends as my AI assistant… send them individually"): findOpportunities pool = Tier A/B/Hot/Warm (allFields), ranked by
+  activityScore; activity pts ≥10 → "📞 Worth a call" text (why + Groq meaning + Chris Voss opener + number, no draft); otherwise a
+  Shawna check-in (Text OK only, discloses AI, one personal question, "reply here and I'll set it up", no family questions) queued
+  as an approval. Each pick is its own text via BOSS_REMINDERS, a minute apart after the 8am update. "Worth reaching out to" lines
+  now add what the signal likely means (equity email → possible seller; RealScout → possible buyer).
 - Hang-ups + recordings (Nov 18: 702-233-3301 called twice and said nothing → two "Someone called" alerts + two tasks, and
   "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
   summary) sends one "📞 Missed call from …, hung up before saying anything" + one call-back task per number per 15 min

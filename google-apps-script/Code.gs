@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-recaps';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-opportunities-v2';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4334,11 +4334,12 @@ function morningUpdateText(opts) {
     if (sh && sh.getLastRow() > 1) {
       const rows = sh.getRange(2, 1, Math.min(sh.getLastRow() - 1, 400), 8).getValues().filter(r => r[0] instanceof Date && now - r[0].getTime() < 24 * 36e5);
       rows.sort((x, y) => (y[3] === 'click') - (x[3] === 'click') || Number(y[5] || 0) - Number(x[5] || 0));
-      rows.forEach(r => add(r[7], (r[3] === 'click' ? 'clicked' : Number(r[5]) > 1 ? 'opened ' + r[5] + 'x' : 'opened') + ' "' + String(r[4]).replace(/^JC /, '').slice(0, 40) + '"'));
+      const meaning = t => /equity|value|worth|cma|sell/i.test(t) ? '\n(may be wondering what their home is worth: possible seller)' : /market|rate|buydown/i.test(t) ? '\n(watching the market: possible buyer)' : /re.?intro|been a while/i.test(t) ? '\n(reconnecting: good time for a personal hello)' : '';
+      rows.forEach(r => add(r[7], (r[3] === 'click' ? 'clicked' : Number(r[5]) > 1 ? 'opened ' + r[5] + 'x' : 'opened') + ' "' + String(r[4]).replace(/^JC /, '').slice(0, 40) + '"' + meaning(String(r[4]))));
     }
     try { const rs = {}; (fubFetch('events?limit=60&sort=-created', null, 'get').events || []).filter(e => /realscout/i.test(e.source || '') &&
         now - new Date(e.created).getTime() < 24 * 36e5 && !/realscout\.com\/agent\//i.test(e.pageUrl || '')).forEach(e => rs[e.personId] = (rs[e.personId] || 0) + 1);
-      Object.keys(rs).sort((a, b) => rs[b] - rs[a]).forEach(id => add(id, 'active on RealScout (' + rs[id] + ' action' + (rs[id] > 1 ? 's' : '') + ' in the last day)')); } catch (e) {}
+      Object.keys(rs).sort((a, b) => rs[b] - rs[a]).forEach(id => add(id, 'active on RealScout (' + rs[id] + ' action' + (rs[id] > 1 ? 's' : '') + ' in the last day)\n(shopping for homes: possible buyer)')); } catch (e) {}
     (fubFetch('people?limit=25&sort=-created&fields=id,created,source,contacted,assignedUserId', null, 'get').people || [])
       .filter(p => now - new Date(p.created).getTime() < 5 * 864e5 && !p.contacted).forEach(p => add(p.id, 'new ' + (p.source || 'lead') + ' lead, not contacted yet'));
     if (picks.length) parts.push('📈 worth reaching out to:\n\n' + picks.join('\n\n'));
@@ -4372,6 +4373,16 @@ function morningUpdateText(opts) {
 // email from bcolv. Nothing is sent without his YES; he can also ask for a voice memo instead. Each person is suggested
 // at most once every 14 days (OPP_SEEN). OPPORTUNITIES=off turns it off; OPPORTUNITIES_PER_DAY (default 3).
 function findOpportunities(max) {
+  // Nov 21 rework (Julián: "the opportunities should come from my Hot and Warm database… not just hey how's it going…
+  // Shawna should say WHY I should call them… if it's just a check-in, that's a text Shawna sends as my AI assistant, I
+  // shouldn't be doing all the work… send them individually so I can answer each one"):
+  //  • pool = his Tier A / Tier B / Hot / Warm contacts only;
+  //  • each gets real reasons from Follow Up Boss activity (activityScore: replies, inquiries, site/RealScout, email
+  //    opens/clicks, saved homes, home value checks) + interest tags;
+  //  • with a buying/selling signal → "📞 Worth a call" text to Julián: why, a Chris Voss opener, the number (no draft to approve);
+  //  • no signal (just a check-in) → Shawna writes it AS his AI assistant (discloses she's AI, one easy personal question,
+  //    "if you'd like to talk with Julián…") and it waits for his yes; Text OK only (no email check-ins from Shawna);
+  //  • every pick is its own text, a minute apart, after the morning update (BOSS_REMINDERS), so he can answer each one.
   const props = PropertiesService.getScriptProperties(), now = Date.now(), out = {ids: [], text: ''};
   if (props.getProperty('OPPORTUNITIES') === 'off') return out;
   max = Number(props.getProperty('OPPORTUNITIES_PER_DAY') || max || 3);
@@ -4379,77 +4390,74 @@ function findOpportunities(max) {
   const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
   const seenMap = JSON.parse(props.getProperty('OPP_SEEN') || '{}');
   Object.keys(seenMap).forEach(k => { if (now - seenMap[k] > 30 * 864e5) delete seenMap[k]; });
-  const fields = 'id,name,firstName,lastName,created,source,stage,tags,assignedUserId,phones,emails';
   const pool = {};
-  ['Open House', 'Phone Lead', 'Website Lead', 'Texted In', 'Instagram DM', 'Tier A', 'Tier B'].forEach(tag => {
-    try { (fubFetch('people?tags=' + encodeURIComponent(tag) + '&limit=60&sort=-created&fields=' + fields, null, 'get').people || []).forEach(p => pool[p.id] = p); } catch (e) {}
+  ['Tier A', 'Tier B', 'Hot', 'Warm'].forEach(tag => {
+    try { (fubFetch('people?tags=' + encodeURIComponent(tag) + '&limit=80&fields=allFields', null, 'get').people || []).forEach(p => pool[p.id] = p); } catch (e) {}
   });
   const has = (p, re) => (p.tags || []).some(t => re.test(t));
-  const score = p => (has(p, /^open house$/i) ? 5 : 0) + (has(p, /^Tier A$/) ? 4 : has(p, /^Tier B$/) ? 3 : 0) + (has(p, /^(Phone Lead|Website Lead|Texted In|Instagram DM)$/) ? 3 : 0) +
-    (has(p, /^Clicked Email$/) ? 3 : has(p, /^Opened Email$/) ? 2 : 0) + (has(p, /^(Likely Seller|Relocation|Luxury Buyer|Buyer)$/) ? 1 : 0) + (has(p, /^Text OK$/) ? 1 : 0);
   let queued = {};
   try { const sh = getSS().getSheetByName(TEXT_QUEUE_TAB.name);
     if (sh && sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach(r => { if (/^(pending|review|held)$/.test(r[4])) queued[r[1]] = 1; }); } catch (e) {}
   const cands = Object.keys(pool).map(k => pool[k]).filter(p => Number(p.assignedUserId) === Number(me) && !isTestPerson(p) && !seenMap[p.id] && !queued[p.id] &&
-    now - new Date(p.created).getTime() > 2 * 864e5 && /^(Lead|Prospect|Nurture|Active Client|Hot Prospect)?$/i.test(String(p.stage || 'Lead')) &&
+    /^(Lead|Prospect|Nurture|Hot Prospect)?$/i.test(String(p.stage || 'Lead')) &&
     !has(p, /^(Not Interested|Unsubscribed|Do Not Email|Has Agent|Deceased|Bad Email|Agent|Partner|Referral Partner|Not Now|No Shawna|Pause|Text Opt-Out)$/i))
-    .sort((a, b) => score(b) - score(a) || new Date(b.created) - new Date(a.created)).slice(0, 14);
+    .map(p => { const a = activityScore(p); return {p: p, act: a, pts: a.pts + (has(p, /^(Tier A|Hot)$/) ? 10 : 0)}; })
+    .sort((x, y) => y.pts - x.pts).slice(0, 15);
   const picks = [];
-  cands.forEach(p => {
+  cands.forEach(c => {
     if (picks.length >= max) return;
-    const phone = bbE164(((p.phones || [])[0] || {}).value || ''), email = (p.emails || []).map(e => e.value).filter(validEmail)[0];
-    const textOk = phone && has(p, /^Text OK$/) && !has(p, /^Not DNC checked$/);
-    if (!textOk && !email) return;
+    const p = c.p, phone = bbE164(((p.phones || [])[0] || {}).value || '');
     let notes = [], touched = 0;
     try { notes = fubFetch('notes?personId=' + p.id + '&limit=15&sort=-created&fields=subject,body,created', null, 'get').notes || []; } catch (e) {}
-    notes.forEach(n => { if (/^(Text sent|Text from Juli|Email sent|Voice memo|Call|Send (bcolv )?(text|email)|Shawna (draft|replied)|Call notes)/i.test(n.subject || '')) touched = Math.max(touched, new Date(n.created).getTime()); });
-    try { (fubFetch('calls?personId=' + p.id + '&limit=3', null, 'get').calls || []).forEach(c => touched = Math.max(touched, new Date(c.created).getTime())); } catch (e) {}
+    notes.forEach(n => { if (/^(Text sent|Text from Juli|Email sent|Voice memo|Call|Send (bcolv )?(text|email)|Shawna (draft|replied)|Call notes|Conversation recap)/i.test(n.subject || '')) touched = Math.max(touched, new Date(n.created).getTime()); });
+    try { (fubFetch('calls?personId=' + p.id + '&limit=3', null, 'get').calls || []).forEach(x => touched = Math.max(touched, new Date(x.created).getTime())); } catch (e) {}
     if (now - touched < 14 * 864e5) return;
-    const how = has(p, /^open house$/i) ? 'signed in at an open house' : has(p, /^Phone Lead$/) ? 'called in' : has(p, /^Texted In$/) ? 'texted in' :
-      has(p, /^Instagram DM$/) ? 'messaged on Instagram' : has(p, /^Website Lead$/) ? 'came in through juliancrider.com' : 'is in his database';
-    const ctx = notes.filter(n => !/^(Shawna tagged|Funnel|Tier)/i.test(n.subject || '')).slice(0, 4).map(n => (n.subject || '') + ': ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 220)).join(' | ');
-    let when = '';
-    const sm = notes.map(n => String(n.body || '')).join('\n').match(/Signed in:?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})/);
-    if (sm) { const d = /-/.test(sm[1]) ? new Date(sm[1] + 'T12:00:00') : new Date(sm[1]); if (!isNaN(d)) when = Utilities.formatDate(d, 'America/Los_Angeles', 'MMM d'); }
-    else if (new Date(p.created) > LIVE_SINCE) when = Utilities.formatDate(new Date(p.created), 'America/Los_Angeles', 'MMM d');
-    picks.push({p: p, phone: phone, email: email, textOk: textOk, how: how, touched: touched, ctx: ctx, when: when,
-      first: realFirst(p), who: [realFirst(p), p.lastName].join(' ').trim() || p.name,
-      interest: (p.tags || []).filter(t => /^(Buyer|Likely Seller|Relocation|Luxury Buyer|Open House Neighbor|Investor|Seller)$/i.test(t)).join(', ')});
+    const why = c.act.why.filter(w => !/^quiet/.test(w));
+    const interest = (p.tags || []).filter(t => /^(Buyer|Likely Seller|Relocation|Luxury Buyer|Open House Neighbor|Investor|Seller|Luxury Relocation 60 Days)$/i.test(t));
+    const call = c.act.pts >= 10;   // they did something themselves recently: worth Julián's time
+    const textOk = phone && has(p, /^Text OK$/) && !has(p, /^Not DNC checked$/);
+    if (!call && !textOk) return;   // a plain check-in only goes by text from Shawna
+    const ctx = notes.filter(n => !/^(Shawna tagged|Funnel|Tier)/i.test(n.subject || '')).slice(0, 4).map(n => (n.subject || '') + ': ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 200)).join(' | ');
+    picks.push({p: p, phone: phone, textOk: textOk, call: call, why: why, interest: interest, touched: touched, ctx: ctx,
+      first: realFirst(p), who: [realFirst(p), p.lastName].join(' ').trim() || p.name, tier: has(p, /^(Tier A|Hot)$/) ? 'Hot' : 'Warm'});
   });
   if (!picks.length) return out;
   let drafts = [];
   try {
-    const r = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-      {role: 'system', content: 'You write short personal follow-ups AS Julián (first person), a real estate agent, advisor and developer in Las Vegas and Henderson. ' +
-        'Each person came in some way and nobody has personally followed up in a while. Write like a real person checking in, not a drip email: warm, brief, ' +
-        'reference how they came in only from the facts given, one easy no-oriented or open question (Chris Voss style, e.g. "Would it be crazy to…", "Are you still…", "What would make…"). ' +
-        'Never invent facts, homes, addresses, prices, rates or market numbers. No deal numbers. Fair Housing safe. Texts: 1 to 3 sentences, at most one emoji, no links, no sign-off. ' +
-        'Notes are Julián\'s private records: never mention ratings, scores, interest levels, tiers, tags or form answers word for word (no "you rated", "interest level was 8"); ' +
-        'use them only to choose what to ask. Write time ranges with "to" (6 to 12 months), never a dash. ' +
-        'Only mention a date if one is given after "on"; otherwise say "recently" or "a while back", never guess a date. ' +
-        'Emails: a short plain subject and 3 to 5 sentences, signed "Julián". No dashes.' + julianVoice() +
-        '\nReturn JSON: {"drafts":[{"id":<person id>,"text":"...","subject":"... (emails only)"}]}'},
-      {role: 'user', content: picks.map(x => 'id ' + x.p.id + ': ' + x.who + ' (' + (x.textOk ? 'TEXT' : 'EMAIL') + '). They ' + x.how + (x.when ? ' on ' + x.when : '') + '. ' + (x.interest ? 'Tags: ' + x.interest + '. ' : '') +
+    drafts = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
+      {role: 'system', content: 'You help Julián, a real estate agent, advisor and developer in Las Vegas and Henderson, follow up with his Hot and Warm leads. For each person:\n' +
+        '- kind "call": write "meaning": one plain sentence on what their activity likely means for a deal or referral (e.g. "Opening your equity email five times usually means they\'re wondering what the house is worth"), and "opener": the first thing Julián could say on the call, Chris Voss style (a label or a no-oriented question), never pushy.\n' +
+        '- kind "shawna": write "text": a short text from Shawna, Julián\'s AI assistant, who says so plainly in the first sentence ("Hi Ruth, it\'s Shawna, Julián\'s AI assistant 👋🏾"). Warm, human, 2 or 3 sentences, ONE easy personal question about them (plans for the holidays, how the year is treating them, how the new place is), then "If you ever want to talk with Julián, just reply here and I\'ll set it up." No selling, no homes, no prices.\n' +
+        'Never invent facts, homes, prices or dates; use only what is given. Notes are private: never quote scores, tiers, tags or form answers. Fair Housing: never ask about family status, children, religion, age or who they live with. No dashes.\n' +
+        'Return JSON: {"items":[{"id":<person id>,"meaning":"...","opener":"...","text":"..."}]}'},
+      {role: 'user', content: picks.map(x => 'id ' + x.p.id + ' (' + x.who + ', ' + x.tier + ', kind ' + (x.call ? 'call' : 'shawna') + '). ' +
+        (x.why.length ? 'Recent activity: ' + x.why.join('; ') + '. ' : 'No recent activity. ') + (x.interest.length ? 'Interest: ' + x.interest.join(', ') + '. ' : '') +
         (x.touched ? 'Last personal touch ' + Math.floor((now - x.touched) / 864e5) + ' days ago. ' : 'No personal follow-up yet. ') + (x.ctx ? 'Notes: ' + x.ctx : '')).join('\n\n')}],
-      {maxTokens: 1400})).drafts || [];
-    drafts = r;
+      {maxTokens: 1400})).items || [];
   } catch (e) { console.log('Opportunity drafts: ' + e.message); return out; }
-  const lines = [];
+  const rs = JSON.parse(props.getProperty('BOSS_REMINDERS') || '[]');
+  let k = 0;
   picks.forEach(x => {
-    const d = drafts.filter(d => String(d.id) === String(x.p.id))[0];
-    if (!d || !d.text) return;
-    const msg = humanize(d.text);
-    if (greetMismatch && greetMismatch(msg, x.p)) return;
-    const n = x.textOk ? addPending({personId: x.p.id, who: x.who, phone: x.phone, message: msg, at: now, long: true})
-      : addPending({kind: 'email', personId: x.p.id, who: x.who, email: x.email, subject: humanize(d.subject || 'Checking in'), message: msg, at: now});
+    const d = drafts.filter(d => String(d.id) === String(x.p.id))[0] || {};
+    let msg;
+    if (x.call) {
+      msg = '📞 Worth a call: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
+        (d.meaning ? '\n' + humanize(d.meaning) : '') + (d.opener ? '\n\nOpener: "' + humanize(d.opener) + '"' : '') +
+        '\n\n' + (x.phone ? prettyPhone(x.phone) : 'no phone on file, email only') + (x.touched ? '\nLast personal touch: ' + Math.floor((now - x.touched) / 864e5) + ' days ago' : '\nNobody has followed up personally yet');
+    } else {
+      if (!d.text) return;
+      const t = humanize(d.text);
+      if (greetMismatch && greetMismatch(t, x.p)) return;
+      const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t, at: now, long: true, fromShawna: true});
+      msg = '💬 Check-in from me: ' + x.who + ' (' + x.tier + ')\nNo buying or selling signs lately, so this one doesn\'t need your time. I\'d text as your AI assistant:\n\n"' + t + '"\n\n' +
+        viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
+    }
+    rs.push({at: now + (++k) * 60 * 1000, msg: msg});
     seenMap[x.p.id] = now; out.ids.push(x.p.id);
-    const since = x.touched ? 'no personal touch in ' + Math.floor((now - x.touched) / 864e5) + ' days' : 'nobody has followed up yet';
-    lines.push('#' + n + ' ' + x.who + ': ' + x.how.replace(/ is in his database/, 'in your database').replace(/^/, '') + ', ' + since + '.\n' +
-      (x.textOk ? viaText(x.phone) : viaEmail(x.email)) + '\n"' + msg + '"');
   });
+  props.setProperty('BOSS_REMINDERS', JSON.stringify(rs));
   props.setProperty('OPP_SEEN', JSON.stringify(seenMap));
-  if (lines.length) out.text = '💎 follow-ups I wrote for you (people nobody has reached in a while):\n\n' + lines.join('\n\n') +
-    '\n\nWant me to send them? Say yes to all, or yes with the number. I can make any of them a voice memo from me instead.';
+  if (k) out.text = '💎 ' + k + ' follow-up' + (k > 1 ? 's' : '') + ' from your Hot and Warm list coming next, one text each.';
   return out;
 }
 
