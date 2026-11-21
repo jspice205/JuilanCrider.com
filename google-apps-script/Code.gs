@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-20-real-links';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-team-inventory';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3542,7 +3542,44 @@ function assistantKnowledge() {
     const sh = ss.getSheetByName('Shawna Knowledge') || ensureTab(ss, {name: 'Shawna Knowledge', color: '#6B4FBB', headers: ['One fact per row (Shawna reads these)']});
     if (sh.getLastRow() > 1) extra = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map(r => String(r[0]).trim()).filter(Boolean).join('\n');
   } catch (e) {}
-  return SHAWNA_FACTS + (extra ? '\nMore facts from Julián:\n' + extra : '');
+  return SHAWNA_FACTS + (extra ? '\nMore facts from Julián:\n' + extra : '') + teamInventoryText();
+}
+
+/** Team inventory (Nov 20, Julián: "is Shawna able to pull our inventory… thedebenedettoteamlv.com/#/portfolio"). The team site
+ *  keeps its listings in the page itself (HOMES = for sale + featured sold, CLOSED = recent closings with list/sale/DOM/side),
+ *  so this reads them straight from the page every 6 hours (TEAM_SITE_URL overrides). Shawna may state these facts; anything
+ *  not listed here is still "let me find out". Agent names are first names as the site has them. */
+function teamInventory() {
+  const cache = CacheService.getScriptCache(), props = PropertiesService.getScriptProperties();
+  const hit = cache.get('TEAM_INV'); if (hit) { try { return JSON.parse(hit); } catch (e) {} }
+  let inv = null;
+  try {
+    const url = props.getProperty('TEAM_SITE_URL') || 'https://thedebenedettoteamlv.com/';
+    const r = UrlFetchApp.fetch(url, {muteHttpExceptions: true, followRedirects: true});
+    if (r.getResponseCode() === 200) {
+      const h = r.getContentText().replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const block = name => { const a = h.indexOf(name + ' = ['); if (a < 0) return []; const b = h.indexOf('];', a);
+        return (h.slice(a, b).match(/\{[^{}]*\}/g) || []).map(o => { const x = {}; o.replace(/(\w+):\s*'((?:[^'\\]|\\.)*)'/g, (m, k, v) => { x[k] = v.replace(/\\'/g, "'"); return m; }); return x; })
+          .filter(x => x.address).map(x => { delete x.img; delete x.href; return x; }); };  // keep it small (stored in a 9 KB property)
+      inv = {homes: block('HOMES'), closed: block('CLOSED'), at: Date.now()};
+      while (JSON.stringify(inv).length > 8500 && inv.closed.length) inv.closed.pop();  // oldest closings go first
+      if (inv.homes.length || inv.closed.length) props.setProperty('TEAM_INV', JSON.stringify(inv)); else inv = null;
+    }
+  } catch (e) { console.log('Team inventory: ' + e.message); }
+  if (!inv) { try { inv = JSON.parse(props.getProperty('TEAM_INV') || 'null'); } catch (e) {} }
+  if (inv) cache.put('TEAM_INV', JSON.stringify(inv).slice(0, 90000), 6 * 3600);
+  return inv || {homes: [], closed: []};
+}
+function teamInventoryText() {
+  try {
+    const inv = teamInventory(); if (!inv.homes.length && !inv.closed.length) return '';
+    const who = a => ({joey: 'Joey', julian: 'Julián', tana: 'Tana', riley: 'Riley'}[String(a || '').toLowerCase()] || a || '');
+    const homes = inv.homes.map(x => `- ${x.status}: ${x.address}, ${x.location} · ${x.price}${x.meta ? ' · ' + x.meta : ''}${x.agent ? ' (' + who(x.agent) + ')' : ''}`);
+    const closed = inv.closed.slice(0, 15).map(x => `- Closed ${x.date}: ${x.address}, ${x.location} · sold ${x.price}${x.list ? ' (list ' + x.list + ', ' + (x.vs || '') + ')' : ''}${x.dom ? ', ' + x.dom + ' on market' : ''}${x.side ? ' · ' + x.side : ''}`);
+    return '\n\nTEAM INVENTORY (The DeBenedetto Team at Boeckle & Co., from thedebenedettoteamlv.com/#/portfolio, refreshed every few hours). These are verified: you may share them. A home not on this list is NOT known: say you\'ll check.\n' +
+      homes.join('\n') + (closed.length ? '\nRecent closings:\n' + closed.join('\n') : '') +
+      '\nFull portfolio: thedebenedettoteamlv.com/#/portfolio';
+  } catch (e) { return ''; }
 }
 
 /** Removes the dashes that make texts read like AI (keeps phone numbers and hyphenated words). */

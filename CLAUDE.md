@@ -627,6 +627,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   sold/closed/listed status, sale prices, build/completion dates, documents only from the thread/notes/knowledge; else "Let me
   find out for you" / "I'll check on that for you" (+ important → Julián alerted) or ask which property. referral_partner tag only
   for agents/pros, not a client who knows someone interested (Kim's wrong Partner tags removed).
+- Team inventory (Nov 21, Julián: "is Shawna able to pull our inventory"): `teamInventory()` reads thedebenedettoteamlv.com (TEAM_SITE_URL)
+  every 6 h: the page's HOMES (for sale + featured sold, agent) and CLOSED (date, sale/list, DOM, side) arrays → TEAM_INV property
+  (≤8.5 KB) + cache; `teamInventoryText()` (15 newest closings) is appended to assistantKnowledge → client texts + Vapi prompt.
+  Listed homes are verified facts; anything else stays "let me find out".
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
