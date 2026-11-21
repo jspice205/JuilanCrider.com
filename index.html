@@ -2675,7 +2675,8 @@ function clientPage(id){
       <a class="link" href="${e(x.link)}" target="_blank" rel="noopener">See the listing ›</a>
       <div class="chips" style="margin-top:12px" data-home="${x.id}">${[['love','❤️ Love it'],['pass','👎 Pass'],['tour','🗓 Tour it']].map(([k,l]) => `<button type="button" class="chip ${String(x.reaction||'').startsWith(l.slice(3)) ? 'on' : ''}" data-r="${k}">${l}</button>`).join('')}</div>
       <div data-noteb="${x.id}" hidden class="field" style="margin:10px 0 0"><input aria-label="Note to Julián" placeholder="Anything to tell Julián? (optional)"><button type="button" class="mini" style="margin-top:8px">Send note</button></div>
-      <p class="fine" data-ok="${x.id}" hidden style="margin:8px 0 0">Got it. Julián will see this right away.</p></div></div>`;
+      <p class="fine" data-ok="${x.id}" hidden style="margin:8px 0 0">Got it. Julián will see this right away.</p>
+      <button type="button" class="pill block" data-book="${x.id}" data-addr="${e(String(x.title || '').split(' · ')[0])}" hidden style="margin-top:10px">🗓 Pick a day and time to tour</button></div></div>`;
     const rc = k => homes.filter(x => String(x.reaction || '').startsWith(k)).length;
     const buyerHTML = seller ? '' : `<h2>Homes I picked for you</h2>${homes.length ? `<div class="cp-tiles" style="margin-bottom:14px"><div><b>${homes.length}</b><span>Picked</span></div><div><b>${rc('Love')}</b><span>Loved</span></div><div><b>${rc('Tour')}</b><span>Tours asked</span></div><div><b>${rc('Pass')}</b><span>Passed</span></div></div>` + homes.map(card).join('') : '<p style="color:var(--ink2)">Julián is pulling homes for you now. Check back soon.</p>'}
       <h2>Today’s mortgage rates</h2><div id="cpRates">${ratesCard()}</div>`;
@@ -2701,6 +2702,8 @@ function clientPage(id){
     document.querySelectorAll('[data-home]').forEach(box => box.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
       const item = box.dataset.home; box.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
       send(item, b.dataset.r).then(() => { document.querySelector(`[data-ok="${item}"]`).hidden = false; });
+      // Nov 21 (Julián: "clients save houses and book from the link"): Tour it → book a time right here (his calendar).
+      const bk = document.querySelector(`[data-book="${item}"]`); if (bk) { bk.hidden = b.dataset.r !== 'tour'; bk.onclick = () => showingFlow(bk.dataset.addr || ''); }
       const nb = document.querySelector(`[data-noteb="${item}"]`); nb.hidden = false;
       nb.querySelector('button').onclick = () => { const v = nb.querySelector('input').value.trim(); if (!v) return; send(item, b.dataset.r, v); nb.hidden = true; };
     }));

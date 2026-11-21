@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-search-report';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-search-top';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4648,7 +4648,7 @@ function homeSearchText(text) {
       (why.length ? '\nWhy: ' + why.join(', ') : '') + (check.length ? '\nVerify: ' + check.join(', ') : '');
   });
   let portal = '', report = '';
-  try { report = '📊 Full Search Report (private, aerial views + Clark County records): ' + searchReportCreate(head, c, fit.slice(0, 5), medPpsf); } catch (e) { report = '(Search Report failed: ' + e.message + ')'; }
+  try { report = '📊 Full Search Report (private, aerial views + Clark County records): ' + searchReportCreate(head, c, fit.slice(0, Math.min(10, Number(props.getProperty('SEARCH_TOP') || 5))), medPpsf); } catch (e) { report = '(Search Report failed: ' + e.message + ')'; }
   if (c.who && !aerial) { try { portal = portalFromSearch(c.who, fit.slice(0, 5), c); } catch (e) { portal = '(couldn\'t build the portal: ' + e.message + ')'; } }
   return '🏠 ' + head + '\nTop ' + lines.length + ' of ' + fit.length + ':\n\n' + lines.join('\n\n') + '\n\n' + report + (portal ? '\n\n' + portal : '') +
     '\n\n⚠️ From RentCast (can lag the MLS a day or so). Confirm the "Verify" items in the MLS before sending to a client.';
