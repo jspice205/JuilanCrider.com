@@ -2561,6 +2561,52 @@ function pickTime(c, note){
 // every home on the page with Clark County public records (facts, last sale, taxable value, parcel, map) and figures worked
 // out from those real numbers only, the seller prep checklist, documents, showing feedback, market updates and notes.
 // Buyers: the homes Julián picked (Love / Pass / Tour go straight to him) and today's mortgage rates.
+// Search Report (Nov 21): juliancrider.com/?search=<token>. Shawna's home search, enriched: aerial view of each lot, listing
+// numbers, Clark County public record cross-check, why it fits / verify, and a Zillow link for the real photos. Private link.
+function searchReport(id){
+  const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const usd = v => v ? '$' + Math.round(v).toLocaleString('en-US') : '';
+  const day = t => t ? new Date(t + 'T12:00:00Z').toLocaleDateString('en-US', {timeZone:'UTC', month:'short', day:'numeric', year:'numeric'}) : '';
+  sheet.classList.add('full'); scrim.classList.add('full');
+  openRaw('', `<article class="reader"><div class="h2-skel line" aria-label="Loading the report" style="margin-left:0"></div><div class="h2-skel line" style="margin-left:0"></div></article>`);
+  fetch(SHEET_URL + '?' + new URLSearchParams({action:'search', id})).then(r => r.json()).then(d => {
+    if (d.status !== 'ok') { $('sheetBody').innerHTML = doneHTML('Report not found','This link may have expired. Ask Julián for a fresh one.'); return; }
+    const css = `<style>.sr{max-width:760px;margin:0 auto;padding:4px 2px 40px}.sr-h{display:flex;align-items:center;gap:12px;margin:4px 0 6px}.sr-h img{width:40px;height:40px;border-radius:10px}
+      .sr-h b{font-size:15px}.sr-h small{display:block;color:var(--ink2);font-size:12px}.sr h1{font-size:24px;line-height:1.2;margin:14px 0 4px}.sr .sub{color:var(--ink2);font-size:13px;margin-bottom:18px}
+      .sr-card{background:var(--surface);border-radius:18px;overflow:hidden;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06)}.sr-map{position:relative;height:220px;background:#ddd}
+      .sr-map iframe{width:100%;height:100%;border:0}.sr-n{position:absolute;top:10px;left:10px;background:var(--ink);color:var(--bg);border-radius:20px;padding:3px 10px;font-size:12px;font-weight:700}
+      .sr-b{padding:14px 16px 16px}.sr-p{font-size:22px;font-weight:800}.sr-a{font-size:15px;margin:2px 0 8px}.sr-f{color:var(--ink2);font-size:13px}
+      .sr-t{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin:12px 0}.sr-t div{background:var(--bg);border-radius:12px;padding:8px 10px;font-size:12px;color:var(--ink2)}
+      .sr-t b{display:block;color:var(--ink);font-size:14px}.sr-l{margin:8px 0 0;padding:0;list-style:none;font-size:13px}.sr-l li{margin:3px 0}
+      .sr-sec{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);margin:14px 0 4px}.sr-flag{color:#c0392b}
+      .sr-foot{color:var(--ink2);font-size:11.5px;line-height:1.5;margin-top:22px}</style>`;
+    const card = (h, i) => {
+      const c = h.county || {}, ll = h.lat && h.lng ? h.lat + ',' + h.lng : h.addr;
+      const tiles = [['Price', usd(h.price)], ['Beds / baths', h.beds + ' / ' + h.baths], ['Sq ft', h.sqft ? h.sqft.toLocaleString('en-US') : ''], ['$/sq ft', h.ppsf ? '$' + h.ppsf : ''],
+        ['Year built', h.year], ['Lot', h.lot ? h.lot.toLocaleString('en-US') + ' sq ft' : c.lot], ['Days on market', h.dom != null ? h.dom : ''], ['HOA', h.hoa == null ? 'verify' : h.hoa ? '$' + h.hoa + '/mo' : 'none listed']]
+        .filter(t => t[1] !== '' && t[1] != null).map(t => `<div><b>${e(t[1])}</b>${e(t[0])}</div>`).join('');
+      const rec = [c.lastSale && ['Seller paid', c.lastSale + (c.lastSaleDate ? ' (' + c.lastSaleDate + ')' : '') + (c.gain != null ? ' · listed ' + (c.gain >= 0 ? '+' : '') + c.gain + '% vs. that' : '')],
+        c.taxable && ['Assessed value', c.taxable + (c.taxYear ? ' (' + c.taxYear + ')' : '')], c.subdivision && ['Subdivision', c.subdivision], c.style && ['Stories', c.style],
+        c.garage && ['Garage', c.garage], c.pool && ['Pool', 'yes'], (c.sqft || c.beds) && ['County size', [c.sqft && c.sqft + ' sq ft', c.beds && c.beds + ' bd', c.baths && c.baths + ' ba'].filter(Boolean).join(' · ')],
+        c.landUse && ['Land use', c.landUse], c.apn && ['Parcel', c.apn]].filter(Boolean).map(r => `<li><b>${e(r[0])}:</b> ${e(r[1])}</li>`).join('');
+      const hist = (h.history || []).map(x => `<li>${e(day(x.date))}: ${e(x.event || 'listing')} ${x.price ? usd(x.price) : ''}</li>`).join('');
+      return `<div class="sr-card"><div class="sr-map"><span class="sr-n">${i + 1}</span><iframe loading="lazy" title="Aerial view of ${e(h.addr)}" src="https://maps.google.com/maps?q=${encodeURIComponent(ll)}&t=k&z=19&output=embed"></iframe></div>
+        <div class="sr-b"><div class="sr-p">${usd(h.price)}</div><div class="sr-a">${e(h.addr)}</div><div class="sr-f">${e(h.type)}${h.mls ? ' · MLS ' + e(h.mls) : ''}${h.office ? ' · ' + e(h.office) : ''}</div>
+        <div class="sr-t">${tiles}</div>
+        ${h.why && h.why.length ? `<div class="sr-sec">Why it fits</div><ul class="sr-l">${h.why.map(w => `<li>✓ ${e(w)}</li>`).join('')}</ul>` : ''}
+        ${h.flags && h.flags.length ? `<div class="sr-sec">Heads up</div><ul class="sr-l">${h.flags.map(w => `<li class="sr-flag">⚠ ${e(w)}</li>`).join('')}</ul>` : ''}
+        ${h.verify && h.verify.length ? `<div class="sr-sec">Verify in the MLS</div><ul class="sr-l"><li>${h.verify.map(e).join(' · ')}</li></ul>` : ''}
+        ${rec ? `<div class="sr-sec">Clark County public record</div><ul class="sr-l">${rec}</ul>` : ''}
+        ${hist ? `<div class="sr-sec">Price history</div><ul class="sr-l">${hist}</ul>` : ''}
+        <a class="pill block" style="margin-top:14px" href="${e(h.zillow)}" target="_blank" rel="noopener">📷 See the listing photos</a></div></div>`;
+    };
+    const homes = d.homes || [];
+    $('sheetBody').innerHTML = css + `<div class="sr"><div class="sr-h"><img src="img/p/photo-324da7.png" alt=""><div><b>Julián J. Crider</b><small>Realtor® · Boeckle &amp; Co. · S.0177760 · 702-498-2571</small></div></div>
+      <h1>${e(d.who ? d.who + '’s home search' : 'Home search')}</h1><div class="sub">${e(d.title)} · ${homes.length} best match${homes.length === 1 ? '' : 'es'} · ${e(new Date(d.made).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}))}</div>
+      ${homes.map(card).join('') || '<p>No homes in this report.</p>'}
+      <div class="sr-foot">Listing data from RentCast and public records from the Clark County Assessor; aerial views from Google Maps. Information is deemed reliable but not guaranteed; verify in the MLS. Julián J. Crider, Realtor®, The DeBenedetto Team at Boeckle &amp; Co., 4775 W Teco Ave #220, Las Vegas, NV 89118.</div></div>`;
+  }).catch(() => { $('sheetBody').innerHTML = doneHTML('Couldn’t load the report','Check your connection and try again.'); });
+}
 function clientPage(id){
   const e = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const tz = {timeZone:'America/Los_Angeles'};
@@ -3041,6 +3087,8 @@ function askIntent(){
   if (/[?&]golf\b/.test(location.search)) { setTimeout(golfFlow, 300); return; }
   if (/[?&]book\b/.test(location.search)) { setTimeout(() => openSheet('book'), 300); return; }
   // juliancrider.com/?client=<id> opens that client's private page.
+  const srm = location.search.match(/[?&]search=([a-f0-9]{12,})/);
+  if (srm) { setTimeout(() => searchReport(srm[1]), 200); return; }
   const cpm = location.search.match(/[?&]client=([a-f0-9]{12,})/);
   if (cpm) { setTimeout(() => clientPage(cpm[1]), 200); return; }
   // juliancrider.com/?home=<id> opens a listing page (Shawna builds it from Julián's texts and photos).
