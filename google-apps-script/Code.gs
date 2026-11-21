@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-opportunities-v2';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-rentcast';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4461,6 +4461,69 @@ function findOpportunities(max) {
   return out;
 }
 
+// ---------- RentCast: home search + comps (Nov 21) ----------
+// Julián: "agents shouldn't have to manually search for properties". RentCast (rentcast.io) sells nationwide property data:
+// active for-sale listings, value estimates with comparable sales. Key: RENTCAST_API_KEY via the Settings tab. Free plan =
+// 50 requests a month (then $0.20 each); every search or comps report is ONE request. Data can lag the MLS by a day or more
+// and HOA / garage / stories are often missing, so results say "confirm in the MLS". Never used to price a client's deal by
+// text (SALES_RULES): comps go to Julián only.
+function rentcastGet(path, params) {
+  const key = PropertiesService.getScriptProperties().getProperty('RENTCAST_API_KEY');
+  if (!key) return {code: 0, error: 'no key'};
+  const q = Object.keys(params || {}).filter(k => params[k] !== '' && params[k] != null).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+  const r = UrlFetchApp.fetch('https://api.rentcast.io/v1/' + path + (q ? '?' + q : ''), {headers: {'X-Api-Key': key, accept: 'application/json'}, muteHttpExceptions: true});
+  stat('rentcast');
+  let data = null; try { data = JSON.parse(r.getContentText()); } catch (e) {}
+  try { const ss = getSS(), sh = ss.getSheetByName('RentCast Log') || ensureTab(ss, {name: 'RentCast Log', color: '#2e7d32', headers: ['When', 'Request', 'Status', 'Results', 'Sample (first result)']});
+    sh.appendRow([new Date(), path + '?' + q, r.getResponseCode(), Array.isArray(data) ? data.length : (data && data.comparables ? data.comparables.length + ' comps' : ''), JSON.stringify(Array.isArray(data) ? data[0] : data || '').slice(0, 2000)]); } catch (e) {}
+  return {code: r.getResponseCode(), data: data, error: r.getResponseCode() >= 300 ? String(r.getContentText()).slice(0, 200) : ''};
+}
+function rcNoKey() { return '🔑 RentCast isn\'t connected yet. Sign up free at rentcast.io, copy your API key, and put RENTCAST_API_KEY in column A of the Settings tab and the key in column B.'; }
+function rcMoney(n) { n = Number(n); return n ? '$' + (n >= 1e6 ? (Math.round(n / 1e4) / 100) + 'M' : Math.round(n).toLocaleString('en-US')) : ''; }
+function rcHoa(x) { const f = x && x.hoa && (x.hoa.fee != null ? x.hoa.fee : x.hoa); return f === 0 || f === '0' ? 'none listed' : Number(f) > 0 ? '$' + Math.round(Number(f)) + '/mo' : ''; }
+function homeSearchText(text) {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('RENTCAST_API_KEY')) return rcNoKey();
+  let c = {};
+  try { c = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+    {role: 'system', content: 'Pull a home search out of a Realtor\'s text. JSON only: {"who": "client name if given", "city": "one city, default Las Vegas", "zip": "", "minPrice": number or null, "maxPrice": number or null, "beds": number or null (minimum), "baths": number or null (minimum), "type": "Single Family|Condo|Townhouse|Manufactured|Multi-Family or empty", "noHoa": true|false, "singleStory": true|false, "garage": true|false, "notes": "other wishes, short"}. "180 to 250" or "180k-250k" = 180000 to 250000. Never guess what he did not say.'},
+    {role: 'user', content: text}], {maxTokens: 400})); } catch (e) { return 'I couldn\'t read that search. Try: "find homes for George, Las Vegas, $180K to $250K, 2 bed, no HOA".'; }
+  const params = {city: c.city || 'Las Vegas', state: 'NV', zipCode: c.zip || '', status: 'Active', propertyType: c.type || '', limit: 500};
+  const r = rentcastGet('listings/sale', params);
+  if (r.code === 401 || r.code === 403) return '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.';
+  if (!Array.isArray(r.data)) return 'RentCast didn\'t answer (' + (r.code || '') + ' ' + (r.error || '') + '). I\'ll try again later if you ask.';
+  let list = r.data.filter(x => (!c.minPrice || Number(x.price) >= c.minPrice) && (!c.maxPrice || Number(x.price) <= c.maxPrice) &&
+    (!c.beds || Number(x.bedrooms) >= c.beds) && (!c.baths || Number(x.bathrooms) >= c.baths));
+  const hoaKnown = x => x && x.hoa && (x.hoa.fee != null || typeof x.hoa === 'number');
+  if (c.noHoa) list = list.filter(x => !(hoaKnown(x) && Number(x.hoa.fee != null ? x.hoa.fee : x.hoa) > 0));
+  list.sort((x, y) => (hoaKnown(y) ? 1 : 0) - (hoaKnown(x) ? 1 : 0) || Number(x.price) - Number(y.price));
+  const head = '🏠 ' + list.length + ' active match' + (list.length === 1 ? '' : 'es') + ' in ' + params.city + (c.who ? ' for ' + c.who : '') + ' (' +
+    [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ') + ')';
+  if (!list.length) return head + '.\n\nNothing fits right now. Want me to widen the price or add Henderson / North Las Vegas?';
+  const lines = list.slice(0, 8).map(x => '• ' + (x.formattedAddress || x.addressLine1 || 'address n/a').replace(/, NV \d{5}$/, '') + '\n' +
+    [rcMoney(x.price), (x.bedrooms || '?') + ' bd / ' + (x.bathrooms || '?') + ' ba', x.squareFootage ? Number(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : '',
+      'HOA: ' + (rcHoa(x) || 'not listed'), x.daysOnMarket != null ? x.daysOnMarket + ' days on market' : ''].filter(Boolean).join(' · '));
+  const miss = [c.singleStory ? 'single story' : '', c.garage ? 'garage' : '', c.notes || ''].filter(Boolean);
+  return head + ':\n\n' + lines.join('\n\n') + (list.length > 8 ? '\n\n+' + (list.length - 8) + ' more.' : '') +
+    '\n\n⚠️ From RentCast (can lag the MLS a day or so). ' + (miss.length ? 'It doesn\'t show ' + miss.join(', ') + ' reliably, so ' : '') + 'confirm the finalists in the MLS before sending to a client.';
+}
+function compsText(text) {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('RENTCAST_API_KEY')) return rcNoKey();
+  const m = String(text).match(/(\d{2,6}\s+[^,\n?]+?(?:,\s*[A-Za-z .]+)?(?:,?\s*(?:NV|Nevada))?(?:\s+\d{5})?)\s*(?:[?.!]|$|\bworth\b|\bcomps?\b)/i);
+  let addr = m ? m[1].trim() : ''; if (!addr) return 'What\'s the address? Try: "comps 123 Main St, Henderson".';
+  if (!/\b(NV|Nevada)\b/i.test(addr)) addr += /,/.test(addr) ? ', NV' : ', Las Vegas, NV';
+  const r = rentcastGet('avm/value', {address: addr, compCount: 10});
+  if (r.code === 401 || r.code === 403) return '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.';
+  if (!r.data || !r.data.price) return 'RentCast couldn\'t value ' + addr + (r.error ? ' (' + r.error + ')' : '') + '. Check the address?';
+  const d = r.data, comps = (d.comparables || []).slice(0, 8);
+  return '📊 ' + addr + '\nEstimate ' + rcMoney(d.price) + (d.priceRangeLow ? ' (range ' + rcMoney(d.priceRangeLow) + ' to ' + rcMoney(d.priceRangeHigh) + ')' : '') +
+    (comps.length ? '\n\nComps:\n\n' + comps.map(x => '• ' + String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + '\n' + [rcMoney(x.price), x.status ? String(x.status).toLowerCase() : '',
+      (x.bedrooms || '?') + '/' + (x.bathrooms || '?'), x.squareFootage ? Number(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', x.squareFootage && x.price ? '$' + Math.round(x.price / x.squareFootage) + '/sq ft' : '',
+      x.distance != null ? (Math.round(x.distance * 10) / 10) + ' mi' : '', x.removedDate ? 'off market ' + String(x.removedDate).slice(0, 10) : x.listedDate ? 'listed ' + String(x.listedDate).slice(0, 10) : ''].filter(Boolean).join(' · ')).join('\n\n') : '') +
+    '\n\n⚠️ RentCast\'s automated estimate, not an appraisal. Check against the MLS before you talk numbers, and talk numbers on a call, not by text.';
+}
+
 /** Fridays 9am: how the week went, by text (and a copy by email to julianc@bcolv.com). */
 function weeklyScorecard() {
   const props = PropertiesService.getScriptProperties(), boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
@@ -5642,6 +5705,9 @@ Examples (all mean the same as the action shown):
   else if (/\b(remove|delete|take (down|out|off)|get rid of|clear|drop|erase)\b.{0,40}\b(photos?|pics?|pictures?|images?)\b/i.test(text) && !/\b(text|email|send)\b/i.test(text)) a = {action: 'listingphotos', message: text};  // Nov 15
   else if (/^\s*((use|show|switch to) (the )?(original|enhanced) (photos|pics|pictures)|(remove|delete|take (down|out|off)|get rid of|drop) (the )?(photo|pic|picture|image) ?#?\d+|.*\b(duplicate|dupe)s?\b.*\b(photo|pic|picture|image|listing)|.*\b(photo|pic|picture|image)s?\b.*\b(duplicate|dupe|look the same|are the same|repeat)|(try )?(re-?)?enhanc(e|ing) (the |my |all |those )?(listing )?(photos|pics|pictures)( again)?)/i.test(text)) a = {action: 'listingphotos', message: text};
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
+  // RentCast (Nov 21, Julián: "agents shouldn't have to search properties by hand"): home search + comps by text.
+  else if (/^\s*(comps?|cma|value|what('?s| is)\b.{0,60}\bworth)\b/i.test(text) && /\d{2,6}\s+\w/.test(text)) a = {action: 'comps', message: text};
+  else if (/\b(find|search|look(ing)? for|pull|show me|any)\b[^?]{0,40}\b(homes?|houses?|condos?|townhomes?|listings?|properties|places)\b/i.test(text) && /\$?\d{3}\s*k|\$\d|\d+\s*(bed|bd|br)|under|between|no hoa|for [A-Z]/i.test(text)) a = {action: 'homesearch', message: text};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
   else if (/^\s*social\s*pod( notes?)?\s*[:\-]/i.test(text)) a = {action: 'jot', folder: 'socialpod', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -5973,6 +6039,8 @@ Examples (all mean the same as the action shown):
     if (a.action === 'thanks') return say(['You got it 🙏🏾', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'textstatus') return say(textStatusText(a.who));
+    if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
+    if (a.action === 'comps') { say('On it 👀 pulling comps…'); return say(compsText(a.message || text)); }
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
       const raw = String(a.message || text), role = /\btitle\b|escrow (officer|company)/i.test(raw) ? 'title' : 'tc', x = parseParty(raw);

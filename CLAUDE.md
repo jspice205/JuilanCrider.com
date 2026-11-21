@@ -866,6 +866,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Shawna check-in (Text OK only, discloses AI, one personal question, "reply here and I'll set it up", no family questions) queued
   as an approval. Each pick is its own text via BOSS_REMINDERS, a minute apart after the 8am update. "Worth reaching out to" lines
   now add what the signal likely means (equity email → possible seller; RealScout → possible buyer).
+- RentCast (Nov 21, Julián: "agents shouldn't have to manually search for properties"): RENTCAST_API_KEY (Settings tab; free plan 50
+  requests/mo, then $0.20; paid API $74/1,000). `rentcastGet` (api.rentcast.io/v1, X-Api-Key; every call logged to "RentCast Log" tab
+  with a sample row, to verify field names: docs host was unreachable from Claude's container, so listing/AVM field names
+  hoa/daysOnMarket/comparables are from memory) → boss fast paths: "find homes for George, $180K to $250K, 2 bed, no HOA" →
+  `homeSearchText` (Groq parses criteria, listings/sale city+state+status Active limit 500, filtered in code, top 8); "comps 123 Main
+  St" / "what's 123 Main St worth" → `compsText` (avm/value compCount 10). Results to Julián only, "confirm in the MLS".
 - Hang-ups + recordings (Nov 18: 702-233-3301 called twice and said nothing → two "Someone called" alerts + two tasks, and
   "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
   summary) sends one "📞 Missed call from …, hung up before saying anything" + one call-back task per number per 15 min
