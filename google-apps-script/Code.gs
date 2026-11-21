@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-claude-commands';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-portal-streetview';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4491,8 +4491,54 @@ function rcHoa(x) { const f = x && x.hoa && (x.hoa.fee != null ? x.hoa.fee : x.h
 //     matches, newer build and bigger lot as tie-breakers; long-sitting homes (90+ days) are flagged (room to negotiate).
 //  5. Best 5 only, each with a one-line "why it fits" and anything to verify (single story, garage, yard aren't in the data).
 function rcPhotos(x) {
-  const raw = x.photos || x.photoUrls || x.images || x.media || (x.listing && x.listing.photos) || [];
+  const raw = x.photos || x.photoUrls || x.images || x.media || (x.listing && x.listing.photos) || (x._sv ? [x._sv] : []);
   return (Array.isArray(raw) ? raw : [raw]).map(p => typeof p === 'string' ? p : p && (p.url || p.href || p.mediaUrl)).filter(u => /^https?:\/\//.test(u || ''));
+}
+/** Google Street View photo of an address (GOOGLE_MAPS_KEY, Settings tab; restrict the key to juliancrider.com in Google
+ *  Cloud since it shows in the page). The metadata check is free and skips homes with no street imagery. '' if none. */
+function svPhoto(address) {
+  const key = PropertiesService.getScriptProperties().getProperty('GOOGLE_MAPS_KEY'), a = String(address || '').trim();
+  if (!key || !a) return '';
+  try {
+    const m = JSON.parse(UrlFetchApp.fetch('https://maps.googleapis.com/maps/api/streetview/metadata?location=' + encodeURIComponent(a) + '&key=' + key, {muteHttpExceptions: true}).getContentText());
+    if (m.status !== 'OK') return '';
+  } catch (e) { return ''; }
+  return 'https://maps.googleapis.com/maps/api/streetview?size=800x500&fov=80&location=' + encodeURIComponent(a) + '&key=' + key;
+}
+function zillowLink(address) { return 'https://www.zillow.com/homes/' + encodeURIComponent(String(address || '').replace(/,/g, '').trim().replace(/\s+/g, '-')) + '_rb/'; }
+/** Hands-off portal (Nov 21, Julián: "Shawna searches, pulls the photos, the client gets a polished portal… I just open the
+ *  link"): the search's top homes go on the client's private page (home cards: photo, price, facts, why it fits, a "see the
+ *  listing" link to Zillow). Only Julián gets the link; nothing goes to the client until he says "send George his page". */
+function portalFromSearch(who, homes, c) {
+  const ppl = (fubFetch('people?limit=6&fields=id,name,firstName,lastName,assignedUserId&q=' + encodeURIComponent(who), null, 'get').people || [])
+    .filter(p => new RegExp('\\b' + String(who).split(/\s+/)[0].replace(/[^A-Za-z]/g, '') + '\\b', 'i').test(p.name || ''));
+  if (ppl.length !== 1) return '🔗 ' + (ppl.length ? 'Several people named ' + who + ' (' + ppl.slice(0, 3).map(p => p.name).join(', ') + '). Say "find homes for <full name>…" and I\'ll build the portal.' : 'No ' + who + ' in Follow Up Boss, so no portal yet.');
+  const p = ppl[0], pg = clientPageFor(p, 'buyer', ''), sh = ensureTab(getSS(), CLIENT_TAB), rows = clientRows(pg.token), num = v => Number(v) || 0;
+  let added = 0;
+  homes.forEach(x => {
+    const addr = String(x.formattedAddress || x.addressLine1 || '').replace(/, NV \d{5}$/, ''), photo = rcPhotos(x)[0];
+    if (!photo || rows.some(r => r.kind === 'home' && sameAddr(r.title, addr))) return;
+    const facts = [num(x.bedrooms) + ' bd', num(x.bathrooms) + ' ba', num(x.squareFootage) ? num(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : ''].filter(Boolean).join(' · ');
+    sh.appendRow([pg.token, p.id, cell(p.name), 'home', new Date(), cell(addr + ' · ' + rcMoney(x.price)), zillowLink(x.formattedAddress || addr), photo, cell(facts + (x._sv ? ' · Street View photo; tap for the listing photos' : '')), '']);
+    added++;
+  });
+  CacheService.getScriptCache().remove('CPD_' + pg.token);
+  return '🔗 ' + p.name + '\'s portal (' + added + ' new home' + (added === 1 ? '' : 's') + ', only you have this link): ' + clientPageUrl(pg.token) +
+    '\nSay "take off 2 from ' + String(p.name).split(' ')[0] + '\'s page" to remove a home, or "send ' + String(p.name).split(' ')[0] + ' his page" when it looks right.';
+}
+/** "take off 2 and 4 from George's page": removes home cards (numbered in page order) from a client's portal. */
+function portalRemove(text) {
+  const m = String(text).match(/(?:from|on|off)\s+([A-Za-z]+)(?:'s|’s|s)?\s+(?:page|portal)/i);
+  if (!m) return 'whose page? Try "take off 2 from George\'s page".';
+  const p = (fubFetch('people?limit=6&fields=id,name&q=' + encodeURIComponent(m[1]), null, 'get').people || []).filter(x => new RegExp('\\b' + m[1] + '\\b', 'i').test(x.name || ''));
+  const tok = p.length === 1 ? PropertiesService.getScriptProperties().getProperty('CPAGE_' + p[0].id) : '';
+  if (!tok) return p.length > 1 ? 'which ' + m[1] + '? ' + p.slice(0, 3).map(x => x.name).join(', ') : m[1] + ' doesn\'t have a page yet.';
+  const homes = clientRows(tok).filter(r => r.kind === 'home'), nums = (String(text).replace(m[0], '').match(/\d+/g) || []).map(Number);
+  const del = nums.map(n => homes[n - 1]).filter(Boolean).sort((a, b) => b.row - a.row);
+  if (!del.length) return 'Those numbers aren\'t on ' + p[0].name + '\'s page (it has ' + homes.length + ' homes).';
+  const sh = ensureTab(getSS(), CLIENT_TAB); del.forEach(r => sh.deleteRow(r.row));
+  CacheService.getScriptCache().remove('CPD_' + tok);
+  return '✅ Took off ' + del.map(r => String(r.title).split(' · ')[0]).join(', ') + '. ' + (homes.length - del.length) + ' left: ' + clientPageUrl(tok);
 }
 function homeSearchText(text) {
   const props = PropertiesService.getScriptProperties();
@@ -4513,8 +4559,13 @@ function homeSearchText(text) {
     (!c.beds || num(x.bedrooms) >= c.beds) && (!c.baths || num(x.bathrooms) >= c.baths) &&
     (c.type ? true : !/manufactured|mobile|land|lot/i.test(String(x.propertyType || ''))) &&
     !(c.noHoa && hoaFee(x) > 0));
+  // No listing photos in the data → Google Street View (a real, licensed photo of the home's front), checked per home (Nov 21).
+  if (!all.some(x => rcPhotos(x).length) && props.getProperty('GOOGLE_MAPS_KEY')) {
+    fit.slice().sort((x, y) => (c.maxPrice && num(x.price) > c.maxPrice) - (c.maxPrice && num(y.price) > c.maxPrice) || num(x.price) - num(y.price))
+      .slice(0, 12).forEach(x => { const u = svPhoto(x.formattedAddress || x.addressLine1); if (u) x._sv = u; });
+  }
   const withPhotos = fit.filter(x => rcPhotos(x).length);
-  const anyPhotos = all.some(x => rcPhotos(x).length);
+  const anyPhotos = fit.some(x => rcPhotos(x).length);
   const head = (c.who ? c.who + '\'s search' : 'Search') + ': ' + params.city + ', ' +
     [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ');
   try { CacheService.getScriptCache().put('LAST_SEARCH', JSON.stringify({head: head, list: fit.slice(0, 10).map(x => String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + ' · ' + rcMoney(x.price) + ' · ' + num(x.bedrooms) + '/' + num(x.bathrooms) +
@@ -4545,7 +4596,9 @@ function homeSearchText(text) {
       [rcMoney(x.price), num(x.bedrooms) + ' bd / ' + num(x.bathrooms) + ' ba', num(x.squareFootage) ? num(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', pp ? '$' + pp + '/sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : '', rcPhotos(x).length + ' photos'].filter(Boolean).join(' · ') +
       (why.length ? '\nWhy: ' + why.join(', ') : '') + (check.length ? '\nVerify: ' + check.join(', ') : '');
   });
-  return '🏠 ' + head + '\nTop ' + lines.length + ' of ' + fit.length + ' with photos:\n\n' + lines.join('\n\n') +
+  let portal = '';
+  if (c.who) { try { portal = portalFromSearch(c.who, fit.slice(0, 5), c); } catch (e) { portal = '(couldn\'t build the portal: ' + e.message + ')'; } }
+  return '🏠 ' + head + '\nTop ' + lines.length + ' of ' + fit.length + ' with photos:\n\n' + lines.join('\n\n') + (portal ? '\n\n' + portal : '') +
     '\n\n⚠️ From RentCast (can lag the MLS a day or so). Confirm the "Verify" items in the MLS before sending to a client.';
 }
 function compsText(text) { return compsReport(text).text; }
@@ -5791,6 +5844,7 @@ Examples (all mean the same as the action shown):
   // RentCast (Nov 21, Julián: "agents shouldn't have to search properties by hand"): home search + comps by text.
   else if (/^\s*(comps?|cma|value|what('?s| is)\b.{0,60}\bworth)\b/i.test(text) && /\d{2,6}\s+\w/.test(text)) a = {action: 'comps', message: text};
   else if (/^\s*addresses only\s*[.!]?\s*$/i.test(text)) a = {action: 'searchaddr'};
+  else if (/\b(take|took)\s+(off|out)\b|\bremove\b/i.test(text) && /\b(page|portal)\b/i.test(text) && /\d/.test(text) && !/\d{3,}\s+\w/.test(text)) a = {action: 'portalremove', message: text};
   else if (/\b(find|search|look(ing)? for|pull|show me|any)\b[^?]{0,40}\b(homes?|houses?|condos?|townhomes?|listings?|properties|places)\b/i.test(text) && /\$?\d{3}\s*k|\$\d|\d+\s*(bed|bd|br)|under|between|no hoa|for [A-Z]/i.test(text)) a = {action: 'homesearch', message: text};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -6123,6 +6177,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'thanks') return say(['You got it 🙏🏾', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'textstatus') return say(textStatusText(a.who));
+    if (a.action === 'portalremove') return say(portalRemove(a.message || text));
     if (a.action === 'searchaddr') { const ls = JSON.parse(CacheService.getScriptCache().get('LAST_SEARCH') || 'null');
       return say(ls ? '📍 ' + ls.head + ' (addresses only, for YOU to check in the MLS, not for clients):\n\n' + ls.list.map((l, i) => (i + 1) + '. ' + l).join('\n\n') + '\n\nTap 📷 to see the photos on Zillow.' : 'No recent search. Send me one first.'); }
     if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
