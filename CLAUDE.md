@@ -631,6 +631,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   every 6 h: the page's HOMES (for sale + featured sold, agent) and CLOSED (date, sale/list, DOM, side) arrays → TEAM_INV property
   (≤8.5 KB) + cache; `teamInventoryText()` (15 newest closings) is appended to assistantKnowledge → client texts + Vapi prompt.
   Listed homes are verified facts; anything else stays "let me find out".
+- Conversation recap (Nov 21, George thread: Shawna carried it but never told Julián): every Shawna send records AI_CONVO_<personId>
+  {from, name, start, last, n, next}; when the client wraps up (closer, or new `closer2`: ≤8 words, no "?", thanks/agree word, no ask)
+  or 45 quiet min (recapQuietConversations in processAssistantQueue) → `conversationRecap`: router model reads the last 40 thread
+  lines → one text "📋 Recap" (summary / what they want / what we told them / 👉 next step) + FUB note "Conversation recap" + FUB
+  task due today when something is owed. Prompt PROMISES + PACE: she can't search MLS or send lists, so no "I'll pull MLS… today";
+  a call offer at most once per conversation; 👋🏾 only on the first text.
 - Texting only to people who gave consent. Sahara Investment Group (SIG) outreach needs
   compliance approval first.
 
