@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-photo-links';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-claude-commands';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5063,6 +5063,22 @@ function allowShawna(names) {
 }
 
 /** Hourly: a FUB note "Shawna allow" on contact 2221 (written by Claude) lists names Shawna may text; processed once. */
+/** Claude → Shawna (Nov 21, Julián's explicit OK: "yes, you could run Shawna commands"): a FUB note on his test contact 2221,
+ *  subject exactly "Shawna command", created by user 2, body = a command in his words. Runs as if he had texted it
+ *  (runBossCommand: logged in the Shawna Log tab like his own texts, answers go to his phone) within ~5 min; the note is
+ *  renamed "Shawna command - done" first so it never runs twice. One per tick, oldest first; notes older than 6 h skipped.
+ *  SHAWNA_COMMANDS=off turns it off. Approvals still go to him: nothing reaches a client without his YES. */
+function processShawnaCommands() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('SHAWNA_COMMANDS') === 'off') return;
+  const pid = Number(props.getProperty('REQUESTS_PERSON_ID') || 2221);
+  const n = (fubFetch('notes?personId=' + pid + '&limit=20', null, 'get').notes || [])
+    .filter(x => /^shawna command$/i.test(String(x.subject || '').trim()) && Number(x.createdById) === 2 && Date.now() - new Date(x.created).getTime() < 6 * 36e5)
+    .sort((a, b) => new Date(a.created) - new Date(b.created))[0];
+  if (!n) return;
+  fubFetch('notes/' + n.id, {subject: 'Shawna command - done'}, 'put');
+  runBossCommand('[from Claude] ' + String(n.body || '').trim());
+}
 function processAllowNotes() {
   const pid = Number(PropertiesService.getScriptProperties().getProperty('REQUESTS_PERSON_ID') || 2221);
   (fubFetch('notes?personId=' + pid + '&limit=20', null, 'get').notes || []).filter(n => /^shawna allow$/i.test(String(n.subject || '').trim())).forEach(n => {
@@ -5493,6 +5509,7 @@ function testNotify() {
 const REQUESTS_TAB = {name: 'Requests for Claude', color: '#6B4FBB', headers: ['When', 'Request', 'Status']};
 
 function bossCommand(text, tries) {
+  text = String(text || '').replace(/^\[from Claude\]\s*/, '');  // Claude-sent commands are tagged only in the Shawna Log
   const props = PropertiesService.getScriptProperties(), name = assistantName();
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO'));
   let wantVoice = false;  // "send me a voice memo": answer with a voice memo even though he typed (Nov 12)
@@ -7654,6 +7671,7 @@ function remindUpcoming() {
   try { runBirthdays(); } catch (e) { console.log('Birthdays: ' + e.message); }
   try { runOpenHouseOptIn(); } catch (e) { console.log('Open house texts: ' + e.message); }
   try { processFubOutbox(); } catch (e) { console.log('Outbox: ' + e.message); }
+  try { processShawnaCommands(); } catch (e) { console.log('Shawna commands: ' + e.message); }
   try { syncCalendars(); } catch (e) { console.log('Calendar sync: ' + e.message); }
   try { processPersonalEmailOutbox(); } catch (e) { console.log('Personal email: ' + e.message); }
   try { checkClientEmails(); } catch (e) { console.log('Email alerts: ' + e.message); }

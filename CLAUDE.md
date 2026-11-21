@@ -397,7 +397,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   today's calendar, add a contact (resolvePerson: a phone he gives is looked up first, then the name; nobody found → created right away
   via FUB events, tag "Added by Shawna", and the text/note/task/appointment still happens), or bigger work /
   anything she can't do → "Requests for Claude" sheet tab + FUB note subject "Claude request" on contact
-  2221 (REQUESTS_PERSON_ID; Julián's test contact, phone = his personal phone). An hourly scheduled task (9am-8pm PT)
+  2221 (REQUESTS_PERSON_ID; Julián's test contact, phone = his personal phone).
+  Reverse (Nov 21, his explicit OK "you could run Shawna commands"): FUB note on 2221 subject "Shawna command" (by user 2,
+  <6 h old) → `processShawnaCommands` (5-min tick, one per tick) → runBossCommand('[from Claude] …'; the tag shows in the Shawna
+  Log, stripped before routing) → answers go to his phone; note renamed "Shawna command - done". SHAWNA_COMMANDS=off stops it.
+  Approvals still need his YES. An hourly scheduled task (9am-8pm PT)
   wakes this Claude session: GET notes?personId=2221, do each "Claude request", PUT the note subject to
   "Claude request - done", and text him the result with a "Send text" note on 2221. Chat answers otherwise.
 - Shawna email: `google-apps-script/bcolv-mailer/Code.gs` runs in Julián's julianc@bcolv.com Google account as a web app
