@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-comps-pdf';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-search-rules';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4481,31 +4481,71 @@ function rentcastGet(path, params) {
 function rcNoKey() { return '🔑 RentCast isn\'t connected yet. Sign up free at rentcast.io, copy your API key, and put RENTCAST_API_KEY in column A of the Settings tab and the key in column B.'; }
 function rcMoney(n) { n = Number(n); return n ? '$' + (n >= 1e6 ? (Math.round(n / 1e4) / 100) + 'M' : Math.round(n).toLocaleString('en-US')) : ''; }
 function rcHoa(x) { const f = x && x.hoa && (x.hoa.fee != null ? x.hoa.fee : x.hoa); return f === 0 || f === '0' ? 'none listed' : Number(f) > 0 ? '$' + Math.round(Number(f)) + '/mo' : ''; }
+// SEARCH PLAYBOOK (Nov 21, Julián: "show Shawna how to search… not a blanket filter but a legitimate search… one big rule:
+// never show a property without photos"). How an agent actually searches, in order:
+//  1. RULE #1: no photos → never shown. (If the data source carries no photos at all, she says so instead of listing homes.)
+//  2. Hard must-haves: Active only; price inside the range (up to 3% over is kept but flagged "stretch"); beds/baths at least
+//     what he asked; property type when given (manufactured/mobile, land and lots never unless he asks).
+//  3. No-HOA asks: a known HOA fee > 0 is out; HOA unknown is kept but marked "HOA: verify" and ranked lower.
+//  4. Ranked by fit, not price: every must-have met, fresh listings first (new in 14 days), fair $/sq ft vs the other
+//     matches, newer build and bigger lot as tie-breakers; long-sitting homes (90+ days) are flagged (room to negotiate).
+//  5. Best 5 only, each with a one-line "why it fits" and anything to verify (single story, garage, yard aren't in the data).
+function rcPhotos(x) {
+  const raw = x.photos || x.photoUrls || x.images || x.media || (x.listing && x.listing.photos) || [];
+  return (Array.isArray(raw) ? raw : [raw]).map(p => typeof p === 'string' ? p : p && (p.url || p.href || p.mediaUrl)).filter(u => /^https?:\/\//.test(u || ''));
+}
 function homeSearchText(text) {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('RENTCAST_API_KEY')) return rcNoKey();
   let c = {};
   try { c = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
-    {role: 'system', content: 'Pull a home search out of a Realtor\'s text. JSON only: {"who": "client name if given", "city": "one city, default Las Vegas", "zip": "", "minPrice": number or null, "maxPrice": number or null, "beds": number or null (minimum), "baths": number or null (minimum), "type": "Single Family|Condo|Townhouse|Manufactured|Multi-Family or empty", "noHoa": true|false, "singleStory": true|false, "garage": true|false, "notes": "other wishes, short"}. "180 to 250" or "180k-250k" = 180000 to 250000. Never guess what he did not say.'},
+    {role: 'system', content: 'Pull a home search out of a Realtor\'s text. JSON only: {"who": "client name if given", "city": "one city, default Las Vegas", "zip": "", "minPrice": number or null, "maxPrice": number or null, "beds": number or null (minimum), "baths": number or null (minimum), "type": "Single Family|Condo|Townhouse|Manufactured|Multi-Family or empty", "noHoa": true|false, "singleStory": true|false, "garage": true|false, "yard": true|false, "notes": "other wishes, short"}. "180 to 250" or "180k-250k" = 180000 to 250000. Never guess what he did not say.'},
     {role: 'user', content: text}], {maxTokens: 400})); } catch (e) { return 'I couldn\'t read that search. Try: "find homes for George, Las Vegas, $180K to $250K, 2 bed, no HOA".'; }
   const params = {city: c.city || 'Las Vegas', state: 'NV', zipCode: c.zip || '', status: 'Active', propertyType: c.type || '', limit: 500};
   const r = rentcastGet('listings/sale', params);
   if (r.code === 401 || r.code === 403) return '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.';
-  if (!Array.isArray(r.data)) return 'RentCast didn\'t answer (' + (r.code || '') + ' ' + (r.error || '') + '). I\'ll try again later if you ask.';
-  let list = r.data.filter(x => (!c.minPrice || Number(x.price) >= c.minPrice) && (!c.maxPrice || Number(x.price) <= c.maxPrice) &&
-    (!c.beds || Number(x.bedrooms) >= c.beds) && (!c.baths || Number(x.bathrooms) >= c.baths));
-  const hoaKnown = x => x && x.hoa && (x.hoa.fee != null || typeof x.hoa === 'number');
-  if (c.noHoa) list = list.filter(x => !(hoaKnown(x) && Number(x.hoa.fee != null ? x.hoa.fee : x.hoa) > 0));
-  list.sort((x, y) => (hoaKnown(y) ? 1 : 0) - (hoaKnown(x) ? 1 : 0) || Number(x.price) - Number(y.price));
-  const head = '🏠 ' + list.length + ' active match' + (list.length === 1 ? '' : 'es') + ' in ' + params.city + (c.who ? ' for ' + c.who : '') + ' (' +
-    [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ') + ')';
-  if (!list.length) return head + '.\n\nNothing fits right now. Want me to widen the price or add Henderson / North Las Vegas?';
-  const lines = list.slice(0, 8).map(x => '• ' + (x.formattedAddress || x.addressLine1 || 'address n/a').replace(/, NV \d{5}$/, '') + '\n' +
-    [rcMoney(x.price), (x.bedrooms || '?') + ' bd / ' + (x.bathrooms || '?') + ' ba', x.squareFootage ? Number(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : '',
-      'HOA: ' + (rcHoa(x) || 'not listed'), x.daysOnMarket != null ? x.daysOnMarket + ' days on market' : ''].filter(Boolean).join(' · '));
-  const miss = [c.singleStory ? 'single story' : '', c.garage ? 'garage' : '', c.notes || ''].filter(Boolean);
-  return head + ':\n\n' + lines.join('\n\n') + (list.length > 8 ? '\n\n+' + (list.length - 8) + ' more.' : '') +
-    '\n\n⚠️ From RentCast (can lag the MLS a day or so). ' + (miss.length ? 'It doesn\'t show ' + miss.join(', ') + ' reliably, so ' : '') + 'confirm the finalists in the MLS before sending to a client.';
+  if (!Array.isArray(r.data)) return 'RentCast didn\'t answer (' + (r.code || '') + ' ' + (r.error || '') + '). Try again in a bit.';
+  const all = r.data, num = v => Number(v) || 0;
+  const hoaFee = x => { const h = x.hoa; const f = h && typeof h === 'object' ? h.fee : h; return f == null || f === '' ? null : num(f); };
+  const maxP = c.maxPrice ? c.maxPrice * 1.03 : 0;
+  let fit = all.filter(x => !/inactive|pending|sold|closed/i.test(String(x.status || 'Active')) &&
+    (!c.minPrice || num(x.price) >= c.minPrice) && (!maxP || num(x.price) <= maxP) &&
+    (!c.beds || num(x.bedrooms) >= c.beds) && (!c.baths || num(x.bathrooms) >= c.baths) &&
+    (c.type ? true : !/manufactured|mobile|land|lot/i.test(String(x.propertyType || ''))) &&
+    !(c.noHoa && hoaFee(x) > 0));
+  const withPhotos = fit.filter(x => rcPhotos(x).length);
+  const anyPhotos = all.some(x => rcPhotos(x).length);
+  const head = (c.who ? c.who + '\'s search' : 'Search') + ': ' + params.city + ', ' +
+    [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ');
+  try { CacheService.getScriptCache().put('LAST_SEARCH', JSON.stringify({head: head, list: fit.slice(0, 10).map(x => String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + ' · ' + rcMoney(x.price) + ' · ' + num(x.bedrooms) + '/' + num(x.bathrooms))}), 6 * 3600); } catch (e) {}
+  if (!anyPhotos) return '🏠 ' + head + '\n\n' + fit.length + ' active homes match on paper, but RentCast doesn\'t include listing photos, and your rule is never show a home without photos, so I\'m not listing them.\n\n' +
+    'Options: I can text you just the addresses to check in the MLS yourself (say "addresses only"), or we wait for the MLS feed, which has the photos.';
+  fit = withPhotos;
+  if (!fit.length) return '🏠 ' + head + '\n\nNothing with photos fits right now. Want me to widen the price or add Henderson / North Las Vegas?';
+  // rank by fit
+  const ppsf = fit.filter(x => num(x.squareFootage)).map(x => num(x.price) / num(x.squareFootage)).sort((a, b) => a - b);
+  const medPpsf = ppsf.length ? ppsf[Math.floor(ppsf.length / 2)] : 0, dom = x => x.daysOnMarket != null ? num(x.daysOnMarket) : null;
+  const score = x => { let s = 0; const d = dom(x), pp = num(x.squareFootage) ? num(x.price) / num(x.squareFootage) : 0;
+    if (!c.maxPrice || num(x.price) <= c.maxPrice) s += 3;                     // inside budget, not a stretch
+    if (!c.noHoa || hoaFee(x) === 0) s += 3;                                   // HOA confirmed none
+    if (d != null && d <= 14) s += 2;                                          // fresh
+    if (pp && medPpsf && pp <= medPpsf) s += 2;                                // fair or better price per sq ft
+    if (num(x.yearBuilt) >= 2000) s += 1; if (num(x.lotSize) >= 4000) s += 1;  // tie-breakers
+    return s; };
+  fit.sort((x, y) => score(y) - score(x) || num(x.price) - num(y.price));
+  const lines = fit.slice(0, 5).map((x, i) => {
+    const pp = num(x.squareFootage) ? Math.round(num(x.price) / num(x.squareFootage)) : 0, d = dom(x), why = [], check = [];
+    if (c.maxPrice && num(x.price) > c.maxPrice) why.push('a small stretch over budget'); else if (c.maxPrice) why.push('in budget');
+    if (c.noHoa) { if (hoaFee(x) === 0) why.push('no HOA listed'); else check.push('HOA'); }
+    if (d != null && d <= 14) why.push('new this week or two'); if (d != null && d >= 90) why.push(d + ' days on market (room to negotiate)');
+    if (pp && medPpsf && pp <= medPpsf) why.push('good price per sq ft');
+    if (c.singleStory) check.push('single story'); if (c.garage) check.push('garage'); if (c.yard) check.push('yard/courtyard');
+    return (i + 1) + '. ' + String(x.formattedAddress || x.addressLine1 || '').replace(/, NV \d{5}$/, '') + '\n' +
+      [rcMoney(x.price), num(x.bedrooms) + ' bd / ' + num(x.bathrooms) + ' ba', num(x.squareFootage) ? num(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', pp ? '$' + pp + '/sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : '', rcPhotos(x).length + ' photos'].filter(Boolean).join(' · ') +
+      (why.length ? '\nWhy: ' + why.join(', ') : '') + (check.length ? '\nVerify: ' + check.join(', ') : '');
+  });
+  return '🏠 ' + head + '\nTop ' + lines.length + ' of ' + fit.length + ' with photos:\n\n' + lines.join('\n\n') +
+    '\n\n⚠️ From RentCast (can lag the MLS a day or so). Confirm the "Verify" items in the MLS before sending to a client.';
 }
 function compsText(text) { return compsReport(text).text; }
 function compsReport(text) {
@@ -5732,6 +5772,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(market (memo|update)|memo script)\s*[.!?]*\s*$/i.test(text)) a = {action: 'memoscript'};
   // RentCast (Nov 21, Julián: "agents shouldn't have to search properties by hand"): home search + comps by text.
   else if (/^\s*(comps?|cma|value|what('?s| is)\b.{0,60}\bworth)\b/i.test(text) && /\d{2,6}\s+\w/.test(text)) a = {action: 'comps', message: text};
+  else if (/^\s*addresses only\s*[.!]?\s*$/i.test(text)) a = {action: 'searchaddr'};
   else if (/\b(find|search|look(ing)? for|pull|show me|any)\b[^?]{0,40}\b(homes?|houses?|condos?|townhomes?|listings?|properties|places)\b/i.test(text) && /\$?\d{3}\s*k|\$\d|\d+\s*(bed|bd|br)|under|between|no hoa|for [A-Z]/i.test(text)) a = {action: 'homesearch', message: text};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -6064,6 +6105,8 @@ Examples (all mean the same as the action shown):
     if (a.action === 'thanks') return say(['You got it 🙏🏾', 'Anytime!', 'Of course 😊', 'Happy to help!'][Math.floor(Math.random() * 4)]);
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'textstatus') return say(textStatusText(a.who));
+    if (a.action === 'searchaddr') { const ls = JSON.parse(CacheService.getScriptCache().get('LAST_SEARCH') || 'null');
+      return say(ls ? '📍 ' + ls.head + ' (addresses only, for YOU to check in the MLS, not for clients):\n\n' + ls.list.map((l, i) => (i + 1) + '. ' + l).join('\n') : 'No recent search. Send me one first.'); }
     if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
     if (a.action === 'comps') {  // Nov 21 (Julián: "text the PDF of the comp like I do in here"): text summary + a one-page PDF
       say('On it 👀 pulling comps…');

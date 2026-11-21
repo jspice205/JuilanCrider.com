@@ -870,7 +870,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   requests/mo, then $0.20; paid API $74/1,000). `rentcastGet` (api.rentcast.io/v1, X-Api-Key; every call logged to "RentCast Log" tab
   with a sample row, to verify field names: docs host was unreachable from Claude's container, so listing/AVM field names
   hoa/daysOnMarket/comparables are from memory) → boss fast paths: "find homes for George, $180K to $250K, 2 bed, no HOA" →
-  `homeSearchText` (Groq parses criteria, listings/sale city+state+status Active limit 500, filtered in code, top 8); "comps 123 Main
+  `homeSearchText` (SEARCH PLAYBOOK, Julián Nov 21: RULE #1 never show a home without photos (`rcPhotos`; if the source has no photos at all she says so and lists nothing); Active only, price range +3% stretch flagged, beds/baths minimums, no manufactured/land unless asked, known HOA>0 out on no-HOA asks; ranked by fit (in budget, HOA none, fresh ≤14 days, $/sq ft ≤ median, newer, bigger lot), top 5 with "Why" + "Verify" (single story/garage/yard not in data)); "comps 123 Main
   St" / "what's 123 Main St worth" → `compsReport` (avm/value compCount 10) → text summary + one-page PDF (`compsPdf`: HTML → PDF, his name/license footer, saved in Drive "Comps Reports", texted to him via bbPostAttachment). Results to Julián only, "confirm in the MLS".
 - Hang-ups + recordings (Nov 18: 702-233-3301 called twice and said nothing → two "Someone called" alerts + two tasks, and
   "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
