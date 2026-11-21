@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-search-rules';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-photo-links';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4517,7 +4517,8 @@ function homeSearchText(text) {
   const anyPhotos = all.some(x => rcPhotos(x).length);
   const head = (c.who ? c.who + '\'s search' : 'Search') + ': ' + params.city + ', ' +
     [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ');
-  try { CacheService.getScriptCache().put('LAST_SEARCH', JSON.stringify({head: head, list: fit.slice(0, 10).map(x => String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + ' · ' + rcMoney(x.price) + ' · ' + num(x.bedrooms) + '/' + num(x.bathrooms))}), 6 * 3600); } catch (e) {}
+  try { CacheService.getScriptCache().put('LAST_SEARCH', JSON.stringify({head: head, list: fit.slice(0, 10).map(x => String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + ' · ' + rcMoney(x.price) + ' · ' + num(x.bedrooms) + '/' + num(x.bathrooms) +
+    '\n📷 ' + 'https://www.zillow.com/homes/' + encodeURIComponent(String(x.formattedAddress || '').replace(/,/g, '').trim().replace(/\s+/g, '-')) + '_rb/')}), 6 * 3600); } catch (e) {}
   if (!anyPhotos) return '🏠 ' + head + '\n\n' + fit.length + ' active homes match on paper, but RentCast doesn\'t include listing photos, and your rule is never show a home without photos, so I\'m not listing them.\n\n' +
     'Options: I can text you just the addresses to check in the MLS yourself (say "addresses only"), or we wait for the MLS feed, which has the photos.';
   fit = withPhotos;
@@ -6106,7 +6107,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'textstatus') return say(textStatusText(a.who));
     if (a.action === 'searchaddr') { const ls = JSON.parse(CacheService.getScriptCache().get('LAST_SEARCH') || 'null');
-      return say(ls ? '📍 ' + ls.head + ' (addresses only, for YOU to check in the MLS, not for clients):\n\n' + ls.list.map((l, i) => (i + 1) + '. ' + l).join('\n') : 'No recent search. Send me one first.'); }
+      return say(ls ? '📍 ' + ls.head + ' (addresses only, for YOU to check in the MLS, not for clients):\n\n' + ls.list.map((l, i) => (i + 1) + '. ' + l).join('\n\n') + '\n\nTap 📷 to see the photos on Zillow.' : 'No recent search. Send me one first.'); }
     if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
     if (a.action === 'comps') {  // Nov 21 (Julián: "text the PDF of the comp like I do in here"): text summary + a one-page PDF
       say('On it 👀 pulling comps…');
