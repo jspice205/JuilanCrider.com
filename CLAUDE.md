@@ -871,7 +871,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   with a sample row, to verify field names: docs host was unreachable from Claude's container, so listing/AVM field names
   hoa/daysOnMarket/comparables are from memory) → boss fast paths: "find homes for George, $180K to $250K, 2 bed, no HOA" →
   `homeSearchText` (Groq parses criteria, listings/sale city+state+status Active limit 500, filtered in code, top 8); "comps 123 Main
-  St" / "what's 123 Main St worth" → `compsText` (avm/value compCount 10). Results to Julián only, "confirm in the MLS".
+  St" / "what's 123 Main St worth" → `compsReport` (avm/value compCount 10) → text summary + one-page PDF (`compsPdf`: HTML → PDF, his name/license footer, saved in Drive "Comps Reports", texted to him via bbPostAttachment). Results to Julián only, "confirm in the MLS".
 - Hang-ups + recordings (Nov 18: 702-233-3301 called twice and said nothing → two "Someone called" alerts + two tasks, and
   "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
   summary) sends one "📞 Missed call from …, hung up before saying anything" + one call-back task per number per 15 min
