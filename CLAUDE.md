@@ -883,6 +883,13 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   exactly one match) adds the top 5 as 'home' rows on his client page (title "addr · $price", link = `zillowLink`, photo, facts) and
   texts Julián the private link; "take off 2 and 4 from George's page" → `portalRemove`; "send George his page" (existing).
   Never copy/alter listing photos (copyright, misrepresentation; Julián asked about AI re-angling, declined Nov 21).
+- Search Report (Nov 21, Julián: "not just a list… branded, enriched… cross-reference Clark County"): every home search now builds a
+  private page juliancrider.com/?search=<token> (`searchReport` in index.html; GET ?action=search → `searchReportData`; tab "Search
+  Reports" [Token, When, Title, Client, Data JSON ≤49k]). `searchReportCreate` (top 5): aerial satellite iframe (maps.google.com
+  output=embed, no key) stands in for photos when the data has none; listing numbers (price, beds/baths, sq ft, $/sq ft vs the
+  group median, lot, year, DOM, HOA, price history `rcHistory`, MLS #, office); Clark County via propertyFactsFor (seller paid +
+  when + % vs list, assessed value, subdivision, land use, county sq ft/beds/baths, stories, garage, pool, APN; never owner) with
+  flags (sq ft >5% off, beds differ, mobile/manufactured) that also answer single story/garage; Zillow photo button.
 - Hang-ups + recordings (Nov 18: 702-233-3301 called twice and said nothing → two "Someone called" alerts + two tasks, and
   "recording 403" twice): vapiEndOfCall → a call where the caller never spoke (no "User:" line in the transcript, or a no-info
   summary) sends one "📞 Missed call from …, hung up before saying anything" + one call-back task per number per 15 min

@@ -158,12 +158,13 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-portal-streetview';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-search-report';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   if (e && e.parameter && e.parameter.action === 'client') return json(clientPageData(String(e.parameter.id || '')));
+  if (e && e.parameter && e.parameter.action === 'search') return json(searchReportData(String(e.parameter.id || '')));
   if (e && e.parameter && e.parameter.action === 'listing') return json(listingPageData(String(e.parameter.id || '')));
   if (e && e.parameter && e.parameter.action === 'photo') return json(listingPhotoData(String(e.parameter.id || ''), Number(e.parameter.i)));
   if (e && e.parameter && e.parameter.action === 'free') return json({status: 'ok', items: freeItems(30)});
@@ -4540,6 +4541,55 @@ function portalRemove(text) {
   CacheService.getScriptCache().remove('CPD_' + tok);
   return '✅ Took off ' + del.map(r => String(r.title).split(' · ')[0]).join(', ') + '. ' + (homes.length - del.length) + ' left: ' + clientPageUrl(tok);
 }
+// SEARCH REPORT (Nov 21, Julián: "make the pull not just a list but branded, enriched… cross-reference Clark County"). A private
+// page juliancrider.com/?search=<token>: each home = aerial (satellite) view of the lot, listing numbers from RentCast (price,
+// beds/baths, sq ft, lot, year, days on market, price history, HOA, $/sq ft vs the other matches), Clark County public record
+// (what the seller paid and when, assessed value, subdivision, land use, county sq ft/beds/baths, stories, garage, pool; never the
+// owner) with mismatch flags, "why it fits" / "verify", and a Zillow link for the real photos. Tab "Search Reports".
+const SEARCH_TAB = {name: 'Search Reports', color: '#7c3aed', headers: ['Token', 'When', 'Title', 'Client', 'Data']};
+function rcHistory(x) {
+  const h = x.history || {}, list = Array.isArray(h) ? h : Object.keys(h).map(k => Object.assign({date: k}, h[k]));
+  return list.map(e => ({date: String(e.date || e.listedDate || '').slice(0, 10), event: e.event || e.listingType || '', price: Number(e.price) || 0}))
+    .filter(e => e.date).sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 5);
+}
+function searchReportCreate(head, c, homes, medPpsf) {
+  const num = v => Number(v) || 0, out = [];
+  homes.forEach(x => {
+    const addr = String(x.formattedAddress || x.addressLine1 || ''), sq = num(x.squareFootage), pp = sq ? Math.round(num(x.price) / sq) : 0;
+    let f = {}; try { f = propertyFactsFor(addr) || {}; } catch (e) {} delete f.owner;
+    const rec = f.record || {}, why = [], verify = [], flags = [];
+    if (c.maxPrice && num(x.price) <= c.maxPrice) why.push('in budget'); else if (c.maxPrice) why.push('a small stretch over budget');
+    if (pp && medPpsf) { const d = Math.round((pp - medPpsf) / medPpsf * 100); why.push(d <= 0 ? Math.abs(d) + '% below the group\'s average $/sq ft' : d + '% above the group\'s average $/sq ft'); }
+    if (x.daysOnMarket != null && num(x.daysOnMarket) >= 60) why.push(num(x.daysOnMarket) + ' days on market: room to negotiate');
+    const csq = num(String(f.sqft || '').replace(/,/g, ''));
+    if (sq && csq && Math.abs(sq - csq) / csq > 0.05) flags.push('Listing says ' + sq.toLocaleString('en-US') + ' sq ft, county says ' + csq.toLocaleString('en-US') + ' (addition or typo? matters for appraisal)');
+    if (f.beds && num(x.bedrooms) && Number(f.beds) !== num(x.bedrooms)) flags.push('Listing says ' + num(x.bedrooms) + ' bd, county says ' + f.beds);
+    if (rec.landUse && /mobile|manufactured/i.test(rec.landUse)) flags.push('County land use: ' + rec.landUse);
+    if (c.singleStory) { if (/one|single/i.test(f.style || '')) why.push('single story (county)'); else if (f.style) flags.push('County lists it as ' + f.style); else verify.push('single story'); }
+    if (c.garage) { if (f.garage) why.push(f.garage + ' garage (county)'); else verify.push('garage'); }
+    if (c.yard) verify.push('yard / courtyard');
+    const hoaRaw = x.hoa && typeof x.hoa === 'object' ? x.hoa.fee : x.hoa, hoa = hoaRaw == null || hoaRaw === '' ? null : num(hoaRaw);
+    if (c.noHoa && hoa == null) verify.push('HOA');
+    const sale = num(String(rec.lastSale || '').replace(/[$,]/g, ''));
+    out.push({addr: addr, price: num(x.price), beds: num(x.bedrooms), baths: num(x.bathrooms), sqft: sq, ppsf: pp, lot: num(x.lotSize), year: x.yearBuilt || f.year || '',
+      type: x.propertyType || '', dom: x.daysOnMarket != null ? num(x.daysOnMarket) : null, listed: String(x.listedDate || '').slice(0, 10), hoa: hoa,
+      lat: x.latitude || '', lng: x.longitude || '', mls: x.mlsNumber || '', office: (x.listingOffice && x.listingOffice.name) || '',
+      history: rcHistory(x), zillow: zillowLink(addr), why: why, verify: verify, flags: flags,
+      county: {sqft: f.sqft || '', beds: f.beds || '', baths: f.baths || '', year: f.year || '', lot: f.lot || '', style: f.style || '', garage: f.garage || '', pool: f.pool || '',
+        subdivision: rec.subdivision || f.subdivision || '', lastSale: rec.lastSale || '', lastSaleDate: rec.lastSaleDate || '', taxable: rec.taxable || '', taxYear: rec.taxYear || '',
+        landUse: rec.landUse || '', apn: rec.apn || '', gain: sale && num(x.price) ? Math.round((num(x.price) - sale) / sale * 100) : null}});
+  });
+  const token = Utilities.getUuid().replace(/-/g, '').slice(0, 18);
+  ensureTab(getSS(), SEARCH_TAB).appendRow([token, new Date(), cell(head), cell(c.who || ''), JSON.stringify({title: head, who: c.who || '', made: new Date().toISOString(), homes: out}).slice(0, 49000)]);
+  return 'https://juliancrider.com/?search=' + token;
+}
+function searchReportData(token) {
+  if (!/^[a-f0-9]{12,}$/.test(String(token || ''))) return {status: 'error'};
+  const sh = ensureTab(getSS(), SEARCH_TAB), last = sh.getLastRow();
+  const row = (last > 1 ? sh.getRange(2, 1, last - 1, 5).getValues() : []).filter(r => String(r[0]) === String(token))[0];
+  if (!row) return {status: 'error'};
+  try { return Object.assign({status: 'ok'}, JSON.parse(row[4])); } catch (e) { return {status: 'error'}; }
+}
 function homeSearchText(text) {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('RENTCAST_API_KEY')) return rcNoKey();
@@ -4570,10 +4620,11 @@ function homeSearchText(text) {
     [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ');
   try { CacheService.getScriptCache().put('LAST_SEARCH', JSON.stringify({head: head, list: fit.slice(0, 10).map(x => String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + ' · ' + rcMoney(x.price) + ' · ' + num(x.bedrooms) + '/' + num(x.bathrooms) +
     '\n📷 ' + 'https://www.zillow.com/homes/' + encodeURIComponent(String(x.formattedAddress || '').replace(/,/g, '').trim().replace(/\s+/g, '-')) + '_rb/')}), 6 * 3600); } catch (e) {}
-  if (!anyPhotos) return '🏠 ' + head + '\n\n' + fit.length + ' active homes match on paper, but RentCast doesn\'t include listing photos, and your rule is never show a home without photos, so I\'m not listing them.\n\n' +
-    'Options: I can text you just the addresses to check in the MLS yourself (say "addresses only"), or we wait for the MLS feed, which has the photos.';
-  fit = withPhotos;
-  if (!fit.length) return '🏠 ' + head + '\n\nNothing with photos fits right now. Want me to widen the price or add Henderson / North Las Vegas?';
+  // No photos in the data (RentCast has none): the homes go in a private Search Report with an aerial (satellite) view of each
+  // lot instead, plus Clark County records; real listing photos are one tap away on Zillow (Nov 21, Julián's OK).
+  const aerial = !anyPhotos;
+  if (!aerial) fit = withPhotos;
+  if (!fit.length) return '🏠 ' + head + '\n\nNothing fits right now. Want me to widen the price or add Henderson / North Las Vegas?';
   // rank by fit
   const ppsf = fit.filter(x => num(x.squareFootage)).map(x => num(x.price) / num(x.squareFootage)).sort((a, b) => a - b);
   const medPpsf = ppsf.length ? ppsf[Math.floor(ppsf.length / 2)] : 0, dom = x => x.daysOnMarket != null ? num(x.daysOnMarket) : null;
@@ -4593,12 +4644,13 @@ function homeSearchText(text) {
     if (pp && medPpsf && pp <= medPpsf) why.push('good price per sq ft');
     if (c.singleStory) check.push('single story'); if (c.garage) check.push('garage'); if (c.yard) check.push('yard/courtyard');
     return (i + 1) + '. ' + String(x.formattedAddress || x.addressLine1 || '').replace(/, NV \d{5}$/, '') + '\n' +
-      [rcMoney(x.price), num(x.bedrooms) + ' bd / ' + num(x.bathrooms) + ' ba', num(x.squareFootage) ? num(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', pp ? '$' + pp + '/sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : '', rcPhotos(x).length + ' photos'].filter(Boolean).join(' · ') +
+      [rcMoney(x.price), num(x.bedrooms) + ' bd / ' + num(x.bathrooms) + ' ba', num(x.squareFootage) ? num(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', pp ? '$' + pp + '/sq ft' : '', x.yearBuilt ? 'built ' + x.yearBuilt : ''].filter(Boolean).join(' · ') +
       (why.length ? '\nWhy: ' + why.join(', ') : '') + (check.length ? '\nVerify: ' + check.join(', ') : '');
   });
-  let portal = '';
-  if (c.who) { try { portal = portalFromSearch(c.who, fit.slice(0, 5), c); } catch (e) { portal = '(couldn\'t build the portal: ' + e.message + ')'; } }
-  return '🏠 ' + head + '\nTop ' + lines.length + ' of ' + fit.length + ' with photos:\n\n' + lines.join('\n\n') + (portal ? '\n\n' + portal : '') +
+  let portal = '', report = '';
+  try { report = '📊 Full Search Report (private, aerial views + Clark County records): ' + searchReportCreate(head, c, fit.slice(0, 5), medPpsf); } catch (e) { report = '(Search Report failed: ' + e.message + ')'; }
+  if (c.who && !aerial) { try { portal = portalFromSearch(c.who, fit.slice(0, 5), c); } catch (e) { portal = '(couldn\'t build the portal: ' + e.message + ')'; } }
+  return '🏠 ' + head + '\nTop ' + lines.length + ' of ' + fit.length + ':\n\n' + lines.join('\n\n') + '\n\n' + report + (portal ? '\n\n' + portal : '') +
     '\n\n⚠️ From RentCast (can lag the MLS a day or so). Confirm the "Verify" items in the MLS before sending to a client.';
 }
 function compsText(text) { return compsReport(text).text; }
