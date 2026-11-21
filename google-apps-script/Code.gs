@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-rentcast';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-comps-pdf';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4507,21 +4507,46 @@ function homeSearchText(text) {
   return head + ':\n\n' + lines.join('\n\n') + (list.length > 8 ? '\n\n+' + (list.length - 8) + ' more.' : '') +
     '\n\n⚠️ From RentCast (can lag the MLS a day or so). ' + (miss.length ? 'It doesn\'t show ' + miss.join(', ') + ' reliably, so ' : '') + 'confirm the finalists in the MLS before sending to a client.';
 }
-function compsText(text) {
+function compsText(text) { return compsReport(text).text; }
+function compsReport(text) {
   const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('RENTCAST_API_KEY')) return rcNoKey();
+  if (!props.getProperty('RENTCAST_API_KEY')) return {text: rcNoKey()};
   const m = String(text).match(/(\d{2,6}\s+[^,\n?]+?(?:,\s*[A-Za-z .]+)?(?:,?\s*(?:NV|Nevada))?(?:\s+\d{5})?)\s*(?:[?.!]|$|\bworth\b|\bcomps?\b)/i);
-  let addr = m ? m[1].trim() : ''; if (!addr) return 'What\'s the address? Try: "comps 123 Main St, Henderson".';
+  let addr = m ? m[1].trim() : ''; if (!addr) return {text: 'What\'s the address? Try: "comps 123 Main St, Henderson".'};
   if (!/\b(NV|Nevada)\b/i.test(addr)) addr += /,/.test(addr) ? ', NV' : ', Las Vegas, NV';
   const r = rentcastGet('avm/value', {address: addr, compCount: 10});
-  if (r.code === 401 || r.code === 403) return '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.';
-  if (!r.data || !r.data.price) return 'RentCast couldn\'t value ' + addr + (r.error ? ' (' + r.error + ')' : '') + '. Check the address?';
+  if (r.code === 401 || r.code === 403) return {text: '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.'};
+  if (!r.data || !r.data.price) return {text: 'RentCast couldn\'t value ' + addr + (r.error ? ' (' + r.error + ')' : '') + '. Check the address?'};
   const d = r.data, comps = (d.comparables || []).slice(0, 8);
-  return '📊 ' + addr + '\nEstimate ' + rcMoney(d.price) + (d.priceRangeLow ? ' (range ' + rcMoney(d.priceRangeLow) + ' to ' + rcMoney(d.priceRangeHigh) + ')' : '') +
+  const msg = '📊 ' + addr + '\nEstimate ' + rcMoney(d.price) + (d.priceRangeLow ? ' (range ' + rcMoney(d.priceRangeLow) + ' to ' + rcMoney(d.priceRangeHigh) + ')' : '') +
     (comps.length ? '\n\nComps:\n\n' + comps.map(x => '• ' + String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + '\n' + [rcMoney(x.price), x.status ? String(x.status).toLowerCase() : '',
       (x.bedrooms || '?') + '/' + (x.bathrooms || '?'), x.squareFootage ? Number(x.squareFootage).toLocaleString('en-US') + ' sq ft' : '', x.squareFootage && x.price ? '$' + Math.round(x.price / x.squareFootage) + '/sq ft' : '',
       x.distance != null ? (Math.round(x.distance * 10) / 10) + ' mi' : '', x.removedDate ? 'off market ' + String(x.removedDate).slice(0, 10) : x.listedDate ? 'listed ' + String(x.listedDate).slice(0, 10) : ''].filter(Boolean).join(' · ')).join('\n\n') : '') +
     '\n\n⚠️ RentCast\'s automated estimate, not an appraisal. Check against the MLS before you talk numbers, and talk numbers on a call, not by text.';
+  let pdf = null; try { pdf = compsPdf(addr, d, comps); } catch (e) { console.log('Comps PDF: ' + e.message); }
+  return {text: msg + (pdf ? '\n\n📄 PDF below (also saved in Drive > Comps Reports).' : ''), pdf: pdf};
+}
+/** One-page comps report as a PDF (his branding, plain table), saved in Drive "Comps Reports". */
+function compsPdf(addr, d, comps) {
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const day = s => s ? Utilities.formatDate(new Date(s), 'America/Los_Angeles', 'MMM d, yyyy') : '';
+  const rows = comps.map(x => '<tr><td>' + esc(String(x.formattedAddress || '').replace(/, NV \d{5}$/, '')) + '</td><td class="r">' + rcMoney(x.price) + '</td><td class="c">' + esc(x.bedrooms || '') + '/' + esc(x.bathrooms || '') +
+    '</td><td class="r">' + (x.squareFootage ? Number(x.squareFootage).toLocaleString('en-US') : '') + '</td><td class="r">' + (x.squareFootage && x.price ? '$' + Math.round(x.price / x.squareFootage) : '') +
+    '</td><td class="r">' + (x.distance != null ? (Math.round(x.distance * 10) / 10) + ' mi' : '') + '</td><td>' + esc(x.status || '') + '</td><td>' + day(x.removedDate || x.listedDate) + '</td></tr>').join('');
+  const html = '<html><head><meta charset="utf-8"><style>body{font-family:Helvetica,Arial,sans-serif;color:#111;margin:28px}h1{font-size:20px;margin:0 0 2px}' +
+    '.sub{color:#666;font-size:11px;margin-bottom:18px}.box{border:1px solid #ddd;border-radius:8px;padding:14px 16px;margin-bottom:16px}.big{font-size:26px;font-weight:bold}' +
+    'table{width:100%;border-collapse:collapse;font-size:10.5px}th{text-align:left;border-bottom:2px solid #111;padding:6px 4px;font-size:10px;text-transform:uppercase;color:#444}' +
+    'td{border-bottom:1px solid #eee;padding:6px 4px}.r{text-align:right}.c{text-align:center}.foot{margin-top:18px;font-size:9.5px;color:#666;line-height:1.5}.red{color:#c0392b}</style></head><body>' +
+    '<h1>Comparable Sales Report</h1><div class="sub">' + esc(addr) + ' &middot; prepared ' + day(new Date()) + '</div>' +
+    '<div class="box"><div style="font-size:11px;color:#666">Estimated value</div><div class="big">' + rcMoney(d.price) + '</div>' +
+    (d.priceRangeLow ? '<div style="font-size:12px">Range ' + rcMoney(d.priceRangeLow) + ' to ' + rcMoney(d.priceRangeHigh) + '</div>' : '') + '</div>' +
+    (rows ? '<table><tr><th>Address</th><th class="r">Price</th><th class="c">Bd/Ba</th><th class="r">Sq ft</th><th class="r">$/sq ft</th><th class="r">Dist.</th><th>Status</th><th>Date</th></tr>' + rows + '</table>' : '') +
+    '<div class="foot">Automated estimate from public records and listing data (RentCast). Not an appraisal; verify against the MLS. ' +
+    '<br><b>Julián J. Crider</b>, Realtor&reg; &middot; The DeBenedetto Team at Boeckle &amp; Co. &middot; NV S.0177760 &middot; 702-498-2571 &middot; julianc@bcolv.com &middot; juliancrider.com</div></body></html>';
+  const name = 'Comps ' + addr.replace(/[\/:*?"<>|]/g, '').slice(0, 60) + ' ' + Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd') + '.pdf';
+  const pdf = Utilities.newBlob(html, 'text/html', 'comps.html').getAs('application/pdf').setName(name);
+  try { const it = DriveApp.getFoldersByName('Comps Reports'), f = it.hasNext() ? it.next() : DriveApp.createFolder('Comps Reports'); f.createFile(pdf.copyBlob()).setName(name); } catch (e) {}
+  return pdf;
 }
 
 /** Fridays 9am: how the week went, by text (and a copy by email to julianc@bcolv.com). */
@@ -6040,7 +6065,12 @@ Examples (all mean the same as the action shown):
     if (a.action === 'freevegas') return say(addFreeItem(a.message || text));
     if (a.action === 'textstatus') return say(textStatusText(a.who));
     if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
-    if (a.action === 'comps') { say('On it 👀 pulling comps…'); return say(compsText(a.message || text)); }
+    if (a.action === 'comps') {  // Nov 21 (Julián: "text the PDF of the comp like I do in here"): text summary + a one-page PDF
+      say('On it 👀 pulling comps…');
+      const rep = compsReport(a.message || text), out = say(rep.text);
+      if (rep.pdf) { try { Utilities.sleep(1500); bbPostAttachment(boss, '', rep.pdf); } catch (e) { say('The PDF didn\'t go through (' + e.message + '). It\'s saved in Drive > Comps Reports.'); } }
+      return out;
+    }
     if (a.action === 'clientpage') { if (a.who) { const q = findOne(a.who); if (q && q.many) return askWhich(q.many); } return say(clientPageCommand(a, text)); }
     if (a.action === 'dealparty') {  // "TC for Lisa's deal is Jane Doe jane@x.com", "title for Lisa is First American, Maria", "default TC is …"
       const raw = String(a.message || text), role = /\btitle\b|escrow (officer|company)/i.test(raw) ? 'title' : 'tc', x = parseParty(raw);
