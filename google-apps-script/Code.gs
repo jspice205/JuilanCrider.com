@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-team-inventory';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-recaps';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3792,6 +3792,13 @@ function assistantReply(person, from, text) {
   const endHour = Number(props.getProperty('ASSISTANT_END_HOUR') || 22);
   // The client closed the conversation ("thanks!", "ok", "sounds good", 👍): they get the last word, no reply (Nov 13).
   const closer = /^\s*(?:(?:ok(?:ay)?|great|sounds good|perfect)[,!.\s]*)?(?:we|i)(?:'ll| will) (?:let you know|be in touch|reach out|get back to you)[^?]*$/i.test(text) || /^\s*(?:(?:ok(?:ay)?|yes|yeah|yep|yup|great|perfect|awesome|got it|sure)[,!.…\s]+)?(ok(ay)?|k|thanks?( (you|so much|again|a lot))?|thank you( (so much|again|julian|julián))?|ty|thx|sounds good|perfect|great|got it|will do|cool|awesome|you too|same to you|bye|talk soon|have a good (one|day|night)|👍|🙏|❤️|😊|🙂|👌)[\s.!…🙏👍😊🙂❤️]*$/i.test(text);
+  // Nov 21 (George: "Sounds good brotha ty 😊" got a 🙏 reply): any short text with no question and no ask that only thanks or
+  // agrees ends the conversation too.
+  const words = String(text).trim().split(/\s+/).length;
+  const closer2 = !closer && words <= 8 && !/\?/.test(text) && /\b(thanks?|thank you|ty|thx|tysm|appreciate|sounds good|perfect|got it|will do|bet|cool|awesome|great)\b/i.test(text) &&
+    !/\b(can|could|would|will) you\b|\b(what|when|where|how|which|need|want|send|call|text me|email|look|find|show|tour|price|list)\b/i.test(text);
+  if (closer2) { try { conversationRecap(person.id, 'they wrapped it up'); } catch (e) { console.log('Recap: ' + e.message); } return true; }
+  if (closer) { try { conversationRecap(person.id, 'they wrapped it up'); } catch (e) { console.log('Recap: ' + e.message); } }
   // Alert wording (Nov 13): either she's answering (he can jump in) or it's his (she did NOT reply). Never both.
   const willAnswer = ok && !closer && hour >= 8 && hour < endHour && (mode === 'auto' || mode === 'backup' || invited);
   const pulling = ASSISTANT.pullout.test(text);
@@ -3839,7 +3846,50 @@ function assistantReply(person, from, text) {
   bbSendParts(from, intro + reply);
   props.setProperty('AI_INTRO_' + person.id, '1'); props.setProperty(cnt, today + '|' + (n + 1));
   fubFetch('notes', {personId: person.id, subject: textSentSubject(), body: intro + reply + '\n\n(sent by ' + name + ')' + (out.next ? '\nNext step: ' + out.next : '')});
+  try {  // remember the conversation so Julián gets one recap when it ends (conversationRecap)
+    const ck = 'AI_CONVO_' + person.id, c = JSON.parse(props.getProperty(ck) || 'null');
+    const fresh = !c || Date.now() - c.last > 3 * 36e5;
+    props.setProperty(ck, JSON.stringify({from: from, name: [first, p.lastName].filter(Boolean).join(' '), start: fresh ? Date.now() : c.start,
+      last: Date.now(), n: fresh ? 1 : c.n + 1, next: out.next || (c && !fresh ? c.next : '')}));
+  } catch (e) {}
   return true;
+}
+
+/** Conversation recap (Nov 21, Julián: "she carried the conversation but she didn't recap me… a recap after it's closed").
+ *  When a conversation Shawna handled ends (the client wraps it up, or 45 quiet minutes after her last reply, checked by
+ *  processAssistantQueue), Julián gets ONE text: what they want, what was promised to them and his next step. Saved as a
+ *  FUB note "Conversation recap" and, when something is owed, a FUB task due today. */
+function conversationRecap(personId, why) {
+  const props = PropertiesService.getScriptProperties(), ck = 'AI_CONVO_' + personId;
+  const c = JSON.parse(props.getProperty(ck) || 'null'); if (!c) return false;
+  props.deleteProperty(ck);
+  const key = props.getProperty('GROQ_API_KEY'); if (!key) return false;
+  let thread = ''; try { thread = bbThread(c.from) || ''; } catch (e) {}
+  const lines = String(thread).split('\n'); thread = lines.slice(-40).join('\n');
+  let r = {}; try {
+    r = JSON.parse(groqChat(key, props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+      {role: 'system', content: 'You summarize a text conversation between a client and Julián\'s assistant (texting as Julián) for Julián, a Las Vegas Realtor. Use ONLY what is in the thread. Return JSON: {"summary": "1-2 plain sentences", "wants": "what the client wants, with every detail they gave (price, beds, baths, areas, must-haves, timing, money down)", "promised": "anything we told them we would do or send, else empty", "next": "Julián\'s one concrete next step, else empty", "task": true if Julián owes them something}'},
+      {role: 'user', content: 'Client: ' + c.name + '\nConversation (oldest first):\n' + thread + (c.next ? '\nAssistant\'s note: ' + c.next : '')}], {maxTokens: 700}));
+  } catch (e) { r = {summary: 'Shawna texted with ' + c.name + ' (' + c.n + ' replies).', next: c.next || ''}; }
+  const first = String(c.name || 'them').split(' ')[0];
+  const msg = '📋 Recap: ' + (c.name || 'a client') + ' (I handled it, ' + c.n + ' repl' + (c.n === 1 ? 'y' : 'ies') + ')\n\n' + (r.summary || '') +
+    (r.wants ? '\n\nWhat ' + first + ' wants:\n' + r.wants : '') + (r.promised ? '\n\nWe told ' + first + ':\n' + r.promised : '') +
+    (r.next ? '\n\n👉 Your next step:\n' + r.next : '');
+  bossTextSafe(msg);
+  try { fubFetch('notes', {personId: personId, subject: 'Conversation recap', body: msg.replace(/^📋 /, '') + '\n\n(' + (why || 'conversation ended') + ')'}); } catch (e) {}
+  if (r.next && r.task !== false) {
+    try { fubFetch('tasks', {personId: personId, assignedUserId: 2, name: String(r.next).slice(0, 240), type: 'Follow Up',
+      dueDate: Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd')}); } catch (e) {}
+  }
+  return true;
+}
+/** processAssistantQueue hook: recap conversations that went quiet 45+ minutes after Shawna's last reply. */
+function recapQuietConversations() {
+  const props = PropertiesService.getScriptProperties(), all = props.getProperties();
+  Object.keys(all).filter(k => /^AI_CONVO_\d+$/.test(k)).forEach(k => {
+    try { const c = JSON.parse(all[k]); if (Date.now() - c.last > 45 * 6e4) conversationRecap(k.replace('AI_CONVO_', ''), 'quiet 45 minutes'); }
+    catch (e) { props.deleteProperty(k); }
+  });
 }
 
 /** How long a person would take to answer (seconds, before the queue's own 0-60 s tick): time to read their text,
@@ -5005,6 +5055,7 @@ ${CLIENT_QUESTIONS}
 ${SALES_RULES}
 LET THEM END IT (Julián, Nov 13): never close the conversation yourself. No wrap-up sign-offs like "talk soon", "have a great day", "take care" or "let me know if you need anything" as the last line. Leave the door open with something easy to answer or a natural next step, so the client decides when the conversation is over.
 WELL ROUNDED: you know real estate and lending inside out and explain it in plain words: loan types (conventional, FHA, VA, jumbo, ARM), pre approval, down payment, PMI, points, DTI, closing costs, earnest money, inspection, appraisal, escrow, title, HOAs, Nevada and Las Vegas specifics, the steps of buying and selling. You also chat easily about Las Vegas, sports, food, pop culture and what's going on in the world, like a well read friend. For anything current (today's rates, the market, news, scores, events) use only the LIVE INFO given and say where it's from; if there's none, say you'll confirm. Rates: share today's averages, say their own rate depends on credit, down payment and loan type, and offer to connect them with a great lender.
+PROMISES + PACE (Julián, Nov 21, George thread: she promised "I'll pull the latest MLS data and get back to you today" three times, offered a call three times, opened every text with 👋🏾): you cannot search the MLS, send listings or pull reports yourself. Never say you'll pull MLS data, run a search or send a list today. Say what Julián will do without a deadline ("I'll have Julián put a list together for you" / as Julián: "Let me put a few options together for you"), and set important true with next = exactly what Julián must do (e.g. "Send George non-HOA homes, $180K to $250K, 2 bd, garage, single story, courtyard"). Ask for a call at most ONCE in a conversation; if they didn't take it, don't ask again. 👋🏾 only in the very first text of a conversation, never as an opener after that. When they've given what's needed, confirm it in ONE short line and stop asking questions.
 RULES: never invent facts, listings, prices, availability, rates or promises. General education about loans and the process is great; no personal lending, legal or tax advice (point to their lender or CPA, or offer a call). Fair Housing: never comment on who lives in an area, schools' quality, safety or crime, religion, race, family status, disability or any protected class. If they bring up an offer, contract, negotiation, commission, a complaint, anything legal, they're upset, or you're unsure, set escalate true and reply with a short, warm holding line (as Julián: "Got it, let me look at that and call you today.").
 NAMES: if the contact's name is unknown, never guess or use a placeholder (never "No", "Name" or "there"); when it fits naturally, ask who you're talking with, once.
 Return JSON only: {"important": true if Julián should know about this soon (you told them you'd find out or check on something, they want to see homes or talk now, a price/offer/contract question, ready to list or buy, upset, urgent or time sensitive), else false, "why": "a few words on why it's important", "reply": "...", "escalate": true|false, "reason": "why Julián needs to step in (if escalate)", "next": "short next step for Julián", "name": "their full name ONLY if they told you in this conversation, else empty", "intent": "not_now if they say not right now, maybe later, not ready yet or check back later; not_interested if they clearly say no, not interested, already bought or stop contacting me; otherwise empty", "deal": "offer if they say they are making or made an offer; under_contract if they're under contract or in escrow; closed if they closed or got the keys; listing if they want to list or sell their home now; otherwise empty", "tags": "comma separated, only what they clearly told you, else empty: moved_away (they moved out of Las Vegas), agent (they're a real estate agent), referral_partner (an agent or business pro who offers to send or swap referrals; a client saying they know someone who might be interested is NOT a referral partner), relocation (moving to Las Vegas from out of state), seller (thinking about selling their home), investor (buying rentals or investments), has_agent (working with another agent), bought_elsewhere (already bought), renter (renting, not buying), past_client (Julián helped them buy or sell before)"}
@@ -5179,6 +5230,7 @@ function processAssistantQueue() {
     if (due.length) { props.setProperty('BOSS_REMINDERS', JSON.stringify(rs.filter(r => r.at > Date.now()))); due.forEach(r => bossTextSafe(r.msg)); }
   } catch (e) { console.log('Reminders: ' + e.message); }
   try { processListingPhotos(); } catch (e) { console.log('Listing photos: ' + e.message); }
+  try { recapQuietConversations(); } catch (e) { console.log('Recaps: ' + e.message); }
   try {
     const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 24 * 36e5);  // a day, so alerts survive a long Mac outage
     if (out.length) {
