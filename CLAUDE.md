@@ -885,7 +885,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Never copy/alter listing photos (copyright, misrepresentation; Julián asked about AI re-angling, declined Nov 21).
 - Search Report (Nov 21, Julián: "not just a list… branded, enriched… cross-reference Clark County"): every home search now builds a
   private page juliancrider.com/?search=<token> (`searchReport` in index.html; GET ?action=search → `searchReportData`; tab "Search
-  Reports" [Token, When, Title, Client, Data JSON ≤49k]). `searchReportCreate` (top 5): aerial satellite iframe (maps.google.com
+  Reports" [Token, When, Title, Client, Data JSON ≤49k]). `searchReportCreate` (top 5; SEARCH_TOP setting, max 10): aerial satellite iframe (maps.google.com
   output=embed, no key) stands in for photos when the data has none; listing numbers (price, beds/baths, sq ft, $/sq ft vs the
   group median, lot, year, DOM, HOA, price history `rcHistory`, MLS #, office); Clark County via propertyFactsFor (seller paid +
   when + % vs list, assessed value, subdivision, land use, county sq ft/beds/baths, stories, garage, pool, APN; never owner) with
