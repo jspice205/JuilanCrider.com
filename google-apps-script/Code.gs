@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-search-top';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-21-search-ranges';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4590,18 +4590,31 @@ function searchReportData(token) {
   if (!row) return {status: 'error'};
   try { return Object.assign({status: 'ok'}, JSON.parse(row[4])); } catch (e) { return {status: 'error'}; }
 }
-function homeSearchText(text) {
+function homeSearchText(text, widen) {
   const props = PropertiesService.getScriptProperties();
   if (!props.getProperty('RENTCAST_API_KEY')) return rcNoKey();
   let c = {};
-  try { c = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
+  if (widen && widen.c) c = widen.c; else try { c = JSON.parse(groqChat(props.getProperty('GROQ_API_KEY'), props.getProperty('GROQ_ROUTER_MODEL') || 'openai/gpt-oss-20b', [
     {role: 'system', content: 'Pull a home search out of a Realtor\'s text. JSON only: {"who": "client name if given", "city": "one city, default Las Vegas", "zip": "", "minPrice": number or null, "maxPrice": number or null, "beds": number or null (minimum), "baths": number or null (minimum), "type": "Single Family|Condo|Townhouse|Manufactured|Multi-Family or empty", "noHoa": true|false, "singleStory": true|false, "garage": true|false, "yard": true|false, "notes": "other wishes, short"}. "180 to 250" or "180k-250k" = 180000 to 250000. Never guess what he did not say.'},
     {role: 'user', content: text}], {maxTokens: 400})); } catch (e) { return 'I couldn\'t read that search. Try: "find homes for George, Las Vegas, $180K to $250K, 2 bed, no HOA".'; }
-  const params = {city: c.city || 'Las Vegas', state: 'NV', zipCode: c.zip || '', status: 'Active', propertyType: c.type || '', limit: 500};
-  const r = rentcastGet('listings/sale', params);
-  if (r.code === 401 || r.code === 403) return '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.';
-  if (!Array.isArray(r.data)) return 'RentCast didn\'t answer (' + (r.code || '') + ' ' + (r.error || '') + '). Try again in a bit.';
-  const all = r.data, num = v => Number(v) || 0;
+  // Widen (his "yes" after nothing fit): +10% on the price and Henderson + North Las Vegas too.
+  if (widen) { if (c.maxPrice) c.maxPrice = Math.round(c.maxPrice * 1.1); if (c.minPrice) c.minPrice = Math.round(c.minPrice * 0.9); }
+  const cities = widen ? [c.city || 'Las Vegas', 'Henderson', 'North Las Vegas'].filter((v, i, a) => a.indexOf(v) === i) : [c.city || 'Las Vegas'];
+  // RentCast returns at most 500 per request and Las Vegas has thousands for sale (Nov 21: the first search only saw a random 500
+  // and "nothing fit"), so price/beds/baths are filtered by RentCast itself (range syntax min:max). Unknown → retry plain.
+  const params = {city: cities[0], state: 'NV', zipCode: c.zip || '', status: 'Active', propertyType: c.type || '', limit: 500,
+    price: c.minPrice || c.maxPrice ? (c.minPrice || 0) + ':' + (c.maxPrice ? Math.round(c.maxPrice * 1.03) : '*') : '',
+    bedrooms: c.beds ? c.beds + ':*' : '', bathrooms: c.baths ? c.baths + ':*' : ''};
+  let all = [], r = null;
+  for (let i = 0; i < cities.length; i++) {
+    const pr = Object.assign({}, params, {city: cities[i]});
+    r = rentcastGet('listings/sale', pr);
+    if (r.code === 400 && (pr.price || pr.bedrooms || pr.bathrooms)) { pr.price = pr.bedrooms = pr.bathrooms = ''; r = rentcastGet('listings/sale', pr); }
+    if (r.code === 401 || r.code === 403) return '🔑 RentCast didn\'t accept the key (' + r.code + '). Check RENTCAST_API_KEY in the Settings tab.';
+    if (Array.isArray(r.data)) all = all.concat(r.data);
+  }
+  if (!all.length && !Array.isArray(r && r.data)) return 'RentCast didn\'t answer (' + ((r && r.code) || '') + ' ' + ((r && r.error) || '') + '). Try again in a bit.';
+  const num = v => Number(v) || 0;
   const hoaFee = x => { const h = x.hoa; const f = h && typeof h === 'object' ? h.fee : h; return f == null || f === '' ? null : num(f); };
   const maxP = c.maxPrice ? c.maxPrice * 1.03 : 0;
   let fit = all.filter(x => !/inactive|pending|sold|closed/i.test(String(x.status || 'Active')) &&
@@ -4616,7 +4629,7 @@ function homeSearchText(text) {
   }
   const withPhotos = fit.filter(x => rcPhotos(x).length);
   const anyPhotos = fit.some(x => rcPhotos(x).length);
-  const head = (c.who ? c.who + '\'s search' : 'Search') + ': ' + params.city + ', ' +
+  const head = (c.who ? c.who + '\'s search' : 'Search') + ': ' + cities.join(' + ') + ', ' +
     [c.minPrice || c.maxPrice ? rcMoney(c.minPrice) + ' to ' + rcMoney(c.maxPrice) : '', c.beds ? c.beds + '+ bd' : '', c.baths ? c.baths + '+ ba' : '', c.noHoa ? 'no HOA' : ''].filter(Boolean).join(', ');
   try { CacheService.getScriptCache().put('LAST_SEARCH', JSON.stringify({head: head, list: fit.slice(0, 10).map(x => String(x.formattedAddress || '').replace(/, NV \d{5}$/, '') + ' · ' + rcMoney(x.price) + ' · ' + num(x.bedrooms) + '/' + num(x.bathrooms) +
     '\n📷 ' + 'https://www.zillow.com/homes/' + encodeURIComponent(String(x.formattedAddress || '').replace(/,/g, '').trim().replace(/\s+/g, '-')) + '_rb/')}), 6 * 3600); } catch (e) {}
@@ -4624,7 +4637,11 @@ function homeSearchText(text) {
   // lot instead, plus Clark County records; real listing photos are one tap away on Zillow (Nov 21, Julián's OK).
   const aerial = !anyPhotos;
   if (!aerial) fit = withPhotos;
-  if (!fit.length) return '🏠 ' + head + '\n\nNothing fits right now. Want me to widen the price or add Henderson / North Las Vegas?';
+  if (!fit.length) {
+    if (widen) return '🏠 ' + head + '\n\nStill nothing fits, even 10% wider with Henderson and North Las Vegas. In that price range, most homes have an HOA. Want to try it with HOA allowed?';
+    try { CacheService.getScriptCache().put('SEARCH_WIDEN', JSON.stringify({text: text, c: c}), 1800); } catch (e) {}
+    return '🏠 ' + head + '\n\nNothing fits right now. Want me to widen it (10% on price, plus Henderson and North Las Vegas)?';
+  }
   // rank by fit
   const ppsf = fit.filter(x => num(x.squareFootage)).map(x => num(x.price) / num(x.squareFootage)).sort((a, b) => a - b);
   const medPpsf = ppsf.length ? ppsf[Math.floor(ppsf.length / 2)] : 0, dom = x => x.daysOnMarket != null ? num(x.daysOnMarket) : null;
@@ -5665,6 +5682,11 @@ function bossCommand(text, tries) {
     if (nums && nums.length) { nums.forEach(n => { try { bossCommand('yes ' + n, 1); } catch (e) { console.log('Approve #' + n + ': ' + e.message); } }); return; }
   }
   const ym = text.match(/^\s*(?:yes|y|yeah|yep|yup|sure|send|send it|go|go ahead|ok|okay|bet|run it|do it|do that|sounds good|perfect|approved?)(?:\s+please)?\s*(?:to|for)?\s*(?:#|number|no\.)?\s*(\d)?\s*[.!👍🏾👍]*\s*$/i);
+  // "Yes" right after "Nothing fits… widen?" (Nov 21: his Yes hit an old expired approval instead) → widen the search.
+  if ((ym || /\b(widen|wider|add henderson|expand)\b/i.test(text)) && !(ym && ym[1])) {
+    const sw = CacheService.getScriptCache().get('SEARCH_WIDEN');
+    if (sw) { CacheService.getScriptCache().remove('SEARCH_WIDEN'); const w = JSON.parse(sw); say('On it 👀 widening the search…'); return say(homeSearchText(w.text, w)); }
+  }
   // "no all" / "cancel all": clear every approval that's waiting.
   if (/^\s*(no|cancel|clear|nah)\s+(them\s+)?all\s*(approvals?)?\s*[.!]*\s*$/i.test(text) && /^\s*(no|nah|cancel)|approval/i.test(text)) {
     const qn = pendingQueue().length; props.deleteProperty('BOSS_QUEUE'); props.deleteProperty('BOSS_PENDING');
