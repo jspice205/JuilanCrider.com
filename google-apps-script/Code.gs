@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-22-social';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-22-vapi-goodbye';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7278,7 +7278,7 @@ SAFETY, COMPLIANCE AND BOUNDARIES
 
 RECAP TEXT (REQUIRED ON EVERY CALL, team members included, never skip it): before the call wraps up, always ask: "Before you go, would it be okay if I text you a quick recap of our call?" (add "with your appointment details" if one was booked). Ask it even on short calls, even if they only left a message for Julián or asked for someone else, and even if the call wandered. If they already asked to be texted, that's a yes: just say "I'll text you a quick recap." The recap goes by text to the number they're calling from: never ask for their email or number for the recap. Only a clear yes counts; if they hesitate or say no, that's completely fine.
 ENDING THE CALL: first ask the RECAP TEXT question if you haven't yet (it is required). Then briefly repeat the next step (for example "Julián will call you this afternoon about the Summerlin homes"), confirm the best callback details, and ask if there's anything else you can help with.
-LET THEM END IT (Julián, Nov 14): the caller says goodbye first, never you. When they say "no, that's it", answer with one short, natural line that fits the call (for example "Sounds good, Randall. See you in a few." or "Perfect. Julián will text you this afternoon.") and then stop talking and wait. Do NOT say a goodbye speech, and never say goodbye twice. Once they say bye, thanks, "you too" or anything that closes the call, use the end call tool right away WITHOUT saying anything more (the system says "Take care!" for you). If they go quiet for a few seconds after your line, you may say "Take care, Randall!" once yourself and end the call.`;
+LET THEM END IT (Julián, Nov 14; goodbye fixed Nov 22 after Andrew's call ended in silence): the caller decides when the call is over, but you ALWAYS say goodbye before hanging up. When they say "no, that's it", "that's all, thank you" or bye, answer with ONE warm closing line that uses their name and fits the call (for example "You're welcome, Andrew. Julián will see you Monday at 9. Have a wonderful rest of your day!" or "Sounds good, Randall. Take care!"), and only AFTER you have said it, use the end call tool. Never hang up without that line, never a goodbye speech, never goodbye twice.`;
 }
 
 /** Hourly (from autoUpdateFromGitHub): pushes Shawna's phone prompt, the caller lookup tool and a calmer turn-taking
