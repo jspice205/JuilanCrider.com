@@ -986,6 +986,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Tour a home (Nov 20, his ask): picking it shows "Which home(s) would you like to tour?" (address/MLS inputs + "Add another home",
   blank = Julián helps pick) → showingFlow(homes joined by "; ", {pre, agent, back}) skips the repeat questions and goes to day/time. Seller timelines start "Now / This month".
 
+- Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
+  last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
+  when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this
+  week / followers" → `socialReportText` reads the newest one; older than 36 h → files a "Claude request" to refresh (SOCIAL_REQ 2 h).
+
 ## Later, when Julián starts paying for tools (Nov 13)
 ChatGPT photo enhancement (OPENAI_API_KEY; code ready Nov 15, steps: platform.openai.com billing + org verification + key in Settings tab), ManyChat Pro (Instagram DM → External Request → instagramWebhook/igReply; until then the free ManyChat flow sends people to
 juliancrider.com/?signin), Mac mini for BlueBubbles (Shawna's texting Mac), Opus Clips, Metricool paid plan, Vercel.

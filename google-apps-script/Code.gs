@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-21-search-ranges';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-22-social';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5201,6 +5201,23 @@ function processShawnaCommands() {
   fubFetch('notes/' + n.id, {subject: 'Shawna command - done'}, 'put');
   runBossCommand('[from Claude] ' + String(n.body || '').trim());
 }
+/** Social media numbers (Nov 22, Julián: "have Shawna pull my social media over the last week from Metricool"). Metricool's API
+ *  needs its paid Advanced plan, so Claude (who has a Metricool connection) writes a FUB note "Social report" on contact 2221
+ *  every morning (scheduled task); Shawna reads the newest one. Older than 36 h → she also files a "Claude request" to refresh it. */
+function socialReportText() {
+  const pid = Number(PropertiesService.getScriptProperties().getProperty('REQUESTS_PERSON_ID') || 2221);
+  const n = (fubFetch('notes?personId=' + pid + '&limit=50', null, 'get').notes || [])
+    .filter(x => /^social report$/i.test(String(x.subject || '').trim())).sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+  const age = n ? Date.now() - new Date(n.created).getTime() : Infinity, c = CacheService.getScriptCache();
+  let ask = '';
+  if (age > 36 * 36e5 && !c.get('SOCIAL_REQ')) {
+    try { fubFetch('notes', {personId: pid, subject: 'Claude request', body: 'Refresh the social media report: Metricool, last 7 days (Instagram, YouTube, TikTok). Save it as the "Social report" note and text it to Julián.', isHtml: false}, 'post');
+      c.put('SOCIAL_REQ', '1', 2 * 3600); ask = '\n\nI asked Claude for fresh numbers; they\'ll come by text within the hour (9am-9pm).'; } catch (e) {}
+  }
+  if (!n) return '📱 I don\'t have your social numbers yet.' + (ask || ' Claude refreshes them every morning.');
+  const when = Utilities.formatDate(new Date(n.created), 'America/Los_Angeles', 'EEE MMM d, h:mm a');
+  return String(n.body || '').trim() + '\n\n(from Metricool, ' + when + ')' + ask;
+}
 function processAllowNotes() {
   const pid = Number(PropertiesService.getScriptProperties().getProperty('REQUESTS_PERSON_ID') || 2221);
   (fubFetch('notes?personId=' + pid + '&limit=20', null, 'get').notes || []).filter(n => /^shawna allow$/i.test(String(n.subject || '').trim())).forEach(n => {
@@ -5919,6 +5936,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(comps?|cma|value|what('?s| is)\b.{0,60}\bworth)\b/i.test(text) && /\d{2,6}\s+\w/.test(text)) a = {action: 'comps', message: text};
   else if (/^\s*addresses only\s*[.!]?\s*$/i.test(text)) a = {action: 'searchaddr'};
   else if (/\b(take|took)\s+(off|out)\b|\bremove\b/i.test(text) && /\b(page|portal)\b/i.test(text) && /\d/.test(text) && !/\d{3,}\s+\w/.test(text)) a = {action: 'portalremove', message: text};
+  else if (/\b(social( media)?|instagram|insta|ig|metricool|reels?|youtube|tiktok|followers?)\b/i.test(text) && /\b(stats?|numbers?|report|week|weekly|doing|how|views?|pull|update|followers?|growth)\b/i.test(text) && !/\b(post|schedule|caption|text|email)\s+(this|it|a|the)\b/i.test(text)) a = {action: 'social'};
   else if (/\b(find|search|look(ing)? for|pull|show me|any)\b[^?]{0,40}\b(homes?|houses?|condos?|townhomes?|listings?|properties|places)\b/i.test(text) && /\$?\d{3}\s*k|\$\d|\d+\s*(bed|bd|br)|under|between|no hoa|for [A-Z]/i.test(text)) a = {action: 'homesearch', message: text};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
   else if (FREE_LIVE && /^\s*free( in vegas)?\s*[:\-]/i.test(text)) a = {action: 'freevegas', message: text.replace(/^\s*[^:\-]+[:\-]\s*/, '')};
@@ -6254,6 +6272,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'portalremove') return say(portalRemove(a.message || text));
     if (a.action === 'searchaddr') { const ls = JSON.parse(CacheService.getScriptCache().get('LAST_SEARCH') || 'null');
       return say(ls ? '📍 ' + ls.head + ' (addresses only, for YOU to check in the MLS, not for clients):\n\n' + ls.list.map((l, i) => (i + 1) + '. ' + l).join('\n\n') + '\n\nTap 📷 to see the photos on Zillow.' : 'No recent search. Send me one first.'); }
+    if (a.action === 'social') return say(socialReportText());
     if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
     if (a.action === 'comps') {  // Nov 21 (Julián: "text the PDF of the comp like I do in here"): text summary + a one-page PDF
       say('On it 👀 pulling comps…');
