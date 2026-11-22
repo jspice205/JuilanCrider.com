@@ -987,6 +987,12 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   blank = Julián helps pick) → showingFlow(homes joined by "; ", {pre, agent, back}) skips the repeat questions and goes to day/time. Seller timelines start "Now / This month".
 
 - Vapi goodbye (Nov 22, Andrew Mays 735 call ended silent after "that's all, thank you": the old rule said hang up silently and let endCallMessage speak, but it didn't play when she used the end call tool): vapiPrompt LET THEM END IT now = one warm closing line with their name, THEN the end call tool.
+- Morning update v2 (Nov 22, his asks): morningBriefing sends one text per section (greeting+calendar, still needs you, to-dos,
+  worth reaching out, deals; morningUpdateText({parts:true})). "Still needs you" skips conversation enders via `convoEnded`
+  (tapbacks/reactions/edits, emoji-only, ≤8-word thank-you/agree texts with no ask). "Worth reaching out to" adds the contact's
+  FUB address + Google Maps link, and for possible sellers "text me: comps <street>". Has Agent / Not Now / Not Interested /
+  Bought Elsewhere / Moved Away never make the Top 200; a fresh Has Agent tag (applyShawnaTags) pauses running drips and drops
+  Top 200. Not Now = Long-Term Nurture plan 26 (~2 years of monthly/60-day emails). Emily Travis 293: Has Agent, plan 23 paused.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this

@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-22-vapi-goodbye';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-22-morning-split';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -1162,6 +1162,8 @@ function scoreFubDatabase() {
   const topOk = r => { const t = r.p.tags || [], has = x => t.indexOf(x) >= 0;
     if (isTestPerson(r.p) || /^(unknown|no name)$/i.test(String(r.p.name || '').trim())) return false;
     if (['Unsubscribed', 'Do Not Email', 'Not Interested', 'Bad Email', 'Text Opt-Out'].some(has) && !has('Text OK')) return false;
+    // Nov 22 (Julián: "if they have a realtor… or they're not looking right now… definitely take them out of the top 100 or 200").
+    if (['Has Agent', 'Not Now', 'Not Interested', 'Bought Elsewhere', 'Moved Away'].some(has)) return false;
     if (has('Bounced') && !has('Opened Email')) return false;
     if ((has('Farm') || has('Not DNC checked')) && r.s.tier === 'Nurture' && !has('Opened Email') && !has('Clicked Email')) return false;
     return true; };
@@ -4245,13 +4247,26 @@ function pipelineText(ask) {
  *  something: today's calendar + tomorrow's first items, what still needs him (unanswered texts, callers to call back,
  *  unread emails, to-dos, approvals), who to reach out to in Follow Up Boss, his open deals, and a system warning only
  *  when something is actually down. Turn off with Script Property MORNING_BRIEFING = off. */
+/** A text that ends the conversation rather than asking for a reply (Nov 22, Julián: "Shawna needs to know the difference between
+ *  a reply and an ending of the conversation"): tapbacks/reactions, edits, emoji-only, and short thank-you/agree texts with no ask. */
+function convoEnded(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  if (/^(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned|reacted\s+\S+\s+to|removed an? \S+ from|edited to)\s+[“"']/i.test(t)) return true;
+  if (!t.replace(/[\s\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f!.]/gu, '')) return true;
+  const words = t.split(/\s+/).length;
+  return words <= 8 && !/\?/.test(t) && /\b(thanks?|thank you|ty|thx|tysm|appreciate|sounds good|perfect|got it|will do|bet|cool|awesome|great|you too)\b/i.test(t) &&
+    !/\b(can|could|would|will) you\b|\b(what|when|where|how|which|need|want|send|call|text me|email|look|find|show|tour|price|list)\b/i.test(t);
+}
 function morningBriefing() {
   const props = PropertiesService.getScriptProperties();
   if (props.getProperty('MORNING_BRIEFING') === 'off') return;
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (!boss) return;
-  const msg = morningUpdateText({morning: true});
-  try { bbSend(boss, humanize(msg)); bossMemory('assistant', msg); } catch (e) { console.log('Morning briefing: ' + e.message); }
+  // Nov 22 (Julián: "it did send within one long text again"): one text per section, a few seconds apart.
+  const parts = morningUpdateText({morning: true, parts: true});
+  parts.forEach((m, i) => { try { if (i) Utilities.sleep(2500); bbSend(boss, humanize(m)); } catch (e) { console.log('Morning briefing: ' + e.message); bossTextSafe(m); } });
+  try { bossMemory('assistant', parts.join('\n\n')); } catch (e) {}
 }
 
 /** opts.morning: the 8am text (greeting + Shawna's drafted follow-ups for people in the database). opts.week: this
@@ -4282,6 +4297,7 @@ function morningUpdateText(opts) {
         const ph = x.phone || '', k = ph || x.who;
         if (!ph || seen[k] || need.length >= 5) return; seen[k] = 1;
         if (/^\s*(?:(?:ok(?:ay)?|great|perfect|awesome|got it|sounds good|yes|yep|cool)[,!.\s]*)*(?:thanks?|thank you|thank you so much|ty|appreciate (?:it|you))?[\s!.…🙏🏾🙏👍🏾👍❤️😊]*$/i.test(String(x.text || ''))) return;
+        if (convoEnded(x.text)) return;  // Nov 22: "Liked …", "Reacted 🙏🏾 to …", "Sounds good brotha ty 😊" ended the talk, nothing to answer
         let th = []; try { th = bbThread(ph).split('\n').filter(Boolean); } catch (e) {}
         if (th.length && /Julián: /.test(th[th.length - 1])) return;  // Julián or Shawna already answered
         let who = x.who;
@@ -4324,12 +4340,17 @@ function morningUpdateText(opts) {
     const picks = [];
     const add = (id, why) => {
       if (!id || seen[id] || picks.length >= 6) return; seen[id] = 1;
-      let p = null; try { p = fubFetch('people/' + id + '?fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones', null, 'get'); } catch (e) { return; }
+      let p = null; try { p = fubFetch('people/' + id + '?fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones,addresses', null, 'get'); } catch (e) { return; }
       if (skip(p)) return;
       const tags = p.tags || [], tier = tags.indexOf('Tier A') >= 0 ? 'Hot' : tags.indexOf('Tier B') >= 0 ? 'Warm' : '';
       const ph = (p.phones || [])[0] ? String(p.phones[0].value || '') : '';
       const how = tags.indexOf('Not DNC checked') >= 0 ? 'email only (not DNC checked)' : tags.indexOf('Text OK') >= 0 ? 'call or text ' + ph : ph ? 'call ' + ph : 'email';
-      picks.push('• ' + nameOf(p) + (tier ? ' (' + tier + ')' : '') + ': ' + why + '\n' + how);
+      // Nov 22 (Julián: "their address or a link to their home address so I can pull their information… like a market analysis").
+      const a = (p.addresses || [])[0] || {}, street = String(a.street || '').trim();
+      const addr = street ? [street, a.city, [a.state, a.code].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
+      const home = addr ? '\n🏠 ' + addr + '\nhttps://maps.google.com/?q=' + encodeURIComponent(addr) +
+        (/seller|worth/i.test(why) ? '\n💡 For a value report, text me: comps ' + street + (a.city ? ', ' + a.city : '') : '') : '';
+      picks.push('• ' + nameOf(p) + (tier ? ' (' + tier + ')' : '') + ': ' + why + '\n' + how + home);
     };
     const sh = getSS().getSheetByName(EMAIL_OPENS_TAB.name);
     if (sh && sh.getLastRow() > 1) {
@@ -4364,6 +4385,11 @@ function morningUpdateText(opts) {
   if (props.getProperty('BB_DOWN_SINCE')) parts.push('⚠️ the texting Mac is offline, so I can\'t send or read texts. Wake it up or restart BlueBubbles.');
   if (parts.filter(Boolean).length <= 2 && /nothing on your calendars/.test(parts[1])) parts.push('🎉 Nothing open. Clear day.');
   props.setProperty('WHATSNEW_AT', String(now));
+  if (opts.parts) {  // greeting + today's calendar + tomorrow together, then each section on its own
+    const ps = parts.filter(Boolean), head = [];
+    while (ps.length && (head.length === 0 || /^(Good morning|📅)/.test(ps[0]))) head.push(ps.shift());
+    return [head.join('\n\n')].concat(ps);
+  }
   return parts.filter(Boolean).join('\n\n');
 }
 
@@ -5142,6 +5168,13 @@ function applyShawnaTags(personId, keys, where) {
   if (!fresh.length) return [];
   fubFetch('people/' + personId, {tags: have.concat(fresh)}, 'put');
   fubFetch('notes', {personId: personId, subject: 'Shawna tagged: ' + fresh.join(', '), body: 'From ' + where + '. Remove the tag to undo.'});
+  // Nov 22 (Julián: "if they have a realtor already put them in the opt out"): Has Agent = no more marketing. Running drips pause,
+  // the funnel/texts/blasts already skip the tag, and the nightly sifter drops them from the Top 200. Remove the tag to undo.
+  if (fresh.indexOf('Has Agent') >= 0) {
+    try { (fubFetch('actionPlansPeople?personId=' + personId, null, 'get').actionPlansPeople || []).filter(a => a.status === 'Running')
+      .forEach(a => fubFetch('actionPlansPeople/' + a.id, {status: 'Paused'}, 'put')); } catch (e) {}
+    try { fubFetch('people/' + personId, {tags: have.concat(fresh).filter(t => t !== 'Top 200')}, 'put'); } catch (e) {}
+  }
   return fresh;
 }
 
