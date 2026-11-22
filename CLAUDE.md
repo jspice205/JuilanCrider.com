@@ -993,6 +993,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   FUB address + Google Maps link, and for possible sellers "text me: comps <street>". Has Agent / Not Now / Not Interested /
   Bought Elsewhere / Moved Away never make the Top 200; a fresh Has Agent tag (applyShawnaTags) pauses running drips and drops
   Top 200. Not Now = Long-Term Nurture plan 26 (~2 years of monthly/60-day emails). Emily Travis 293: Has Agent, plan 23 paused.
+- Property enrich (Nov 22, his ask, Top 200 only): `enrichTop200` (hourly hook, ENRICH_PER_HOUR 8, ENRICH=off) → `enrichPerson`: FUB
+  address → parcelForAddress; no address → `ownerSearch` (Assessor ownr.aspx POST with viewstate, current owners, "LAST FIRST" in
+  owner/owner2, no LLC/INC; several homes → only the one whose mailing address = the home). Owner ≠ contact → "renter?" (no tags).
+  Match → tags Homeowner (+ Owned 7+ Years), address added only if FUB had none, note "Property record (Clark County)", tab "Property
+  Enrich", ENR_<id> (90-day recheck). Morning "worth reaching out to" adds `enrichLine` ("🏛 owns … since …, bought …").
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this

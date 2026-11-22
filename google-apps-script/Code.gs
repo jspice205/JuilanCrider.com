@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-22-morning-split';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-22-enrich';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -439,6 +439,7 @@ function autoUpdateFromGitHub() {
   try { syncVapiAssistant(); } catch (e) { console.log('Vapi sync: ' + e.message); }
   try { if (PropertiesService.getScriptProperties().getProperty('PROP_DISCOVERED') !== '3') propertyDiscover(); } catch (e) { console.log('Property discover: ' + e.message); }
   try { if (PropertiesService.getScriptProperties().getProperty('BOUNCED_TRASHED') !== '1') trashBouncedOnce(); } catch (e) { console.log('Bounced trash: ' + e.message); }
+  try { enrichTop200(); } catch (e) { console.log('Property enrich: ' + e.message); }
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
@@ -535,6 +536,95 @@ function devLeadsDueText() {
 /** One time (Julián, Nov 17: "move them to Trash"): contacts whose email bounced go to stage Trash with tag "Bad Email".
  *  Kept out of Trash (tag only): anyone who opened an email, past clients, referrers / VIPs, Top 200, and anyone who
  *  isn't a plain Lead. Only his own contacts. */
+// PROPERTY ENRICH (Nov 22, Julián: "cross reference or enrich their contact information by pulling tax records… property values…
+// only for anyone in the top 200 or entering the top 200"). Every hour up to ENRICH_PER_HOUR (default 8) Top 200 contacts are
+// checked against Clark County's public Assessor records: with an address on file → that parcel's record; without one → the
+// Assessor's owner-name search, used ONLY when exactly one home matches "LAST FIRST" (common names, LLCs and several homes are
+// skipped, never guessed). Saved: FUB note "Property record (Clark County)", the address (only if FUB had none), tags Homeowner /
+// Owned 7+ Years, a row in the "Property Enrich" tab and ENR_<id> (compact facts for the morning update). Re-checked every 90 days.
+// Never the owner's mailing address for anyone else; Clark County only. ENRICH=off stops it.
+const ENRICH_TAB = {name: 'Property Enrich', color: '#8d6e63', headers: ['Checked', 'Person ID', 'Name', 'Result', 'Address', 'Parcel', 'Owned since', 'Bought for', 'County taxable value', 'Size', 'Beds / baths', 'Year built']};
+function enrichTop200() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('ENRICH') === 'off') return;
+  const per = Number(props.getProperty('ENRICH_PER_HOUR') || 8), started = Date.now();
+  let people = []; try { people = blastPeople(['Top 200']); } catch (e) { return; }
+  const due = people.filter(p => !isTestPerson(p) && !(Date.now() - Number((JSON.parse(props.getProperty('ENR_' + p.id) || '{}')).at || 0) < 90 * 864e5));
+  due.slice(0, per).forEach(p => { if (Date.now() - started < 240e3) { try { enrichPerson(p.id); } catch (e) { console.log('Enrich ' + p.id + ': ' + e.message); } } });
+}
+/** Clark County owner-name search ("LAST", "FIRST") → [{owner, owner2, apn}] (current owners only). */
+function ownerSearch(last, first) {
+  const u = 'https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ownr.aspx';
+  const r1 = UrlFetchApp.fetch(u, {muteHttpExceptions: true}), h = r1.getContentText();
+  const f = n => (h.match(new RegExp('name="' + n + '"[^>]*value="([^"]*)"')) || [])[1] || '';
+  const ck = [].concat(r1.getAllHeaders()['Set-Cookie'] || []).map(c => String(c).split(';')[0]).join('; ');
+  const r2 = UrlFetchApp.fetch(u, {method: 'post', muteHttpExceptions: true, headers: ck ? {Cookie: ck} : {},
+    payload: {__VIEWSTATE: f('__VIEWSTATE'), __VIEWSTATEGENERATOR: f('__VIEWSTATEGENERATOR'), __EVENTVALIDATION: f('__EVENTVALIDATION'),
+      txtBxLastName: last, txtBxFirstName: first, r1: 'rdCurrent', btnSubmit: 'Submit'}});
+  const t = r2.getContentText(), out = [], clean = x => String(x || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();
+  (t.match(/<tr>[\s\S]*?<\/tr>/g) || []).forEach(row => {
+    const td = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || [], apn = (row.match(/hdnParcel=(\d{11})/) || [])[1];
+    if (apn && td.length >= 4) out.push({owner: clean(td[0]), owner2: clean(td[1]), apn: apn});
+  });
+  return out;
+}
+function enrichPerson(id) {
+  const props = PropertiesService.getScriptProperties();
+  const p = fubFetch('people/' + id + '?fields=id,firstName,lastName,name,tags,addresses', null, 'get');
+  const first = String(p.firstName || '').trim(), last = String(p.lastName || '').trim(), name = [first, last].join(' ').trim() || p.name || '';
+  const save = (result, rec) => {
+    props.setProperty('ENR_' + id, JSON.stringify(Object.assign({at: Date.now(), r: result}, rec || {})));
+    try { ensureTab(getSS(), ENRICH_TAB).appendRow([new Date(), id, name, result].concat(rec ? [rec.addr || '', rec.apn || '', rec.since || '', rec.paid || '', rec.tax || '', rec.sqft || '', rec.bb || '', rec.yr || ''] : [])); } catch (e) {}
+  };
+  const a = (p.addresses || []).filter(x => String(x.street || '').trim())[0];
+  const W = x => String(x || '').toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  let apn = '', how = '';
+  if (a) {
+    const w = parcelForAddress(a.street + (a.city ? ', ' + a.city : ''));
+    if (w && w.apn) { apn = w.apn; how = 'address on file'; } else return save('address on file not found in Clark County');
+  } else {
+    if (W(last).length < 2 || W(first).length < 2 || /^(caller|unknown|no name)/i.test(name)) return save('name too short to search');
+    const key = W(last) + ' ' + W(first).split(' ')[0];
+    const rows = ownerSearch(W(last), W(first).split(' ')[0]);
+    const hits = {}; rows.forEach(r => { if ([r.owner, r.owner2].some(o => (' ' + W(o) + ' ').indexOf(' ' + key + ' ') >= 0) && !/\b(L L C|LLC|INC|CORP|CO|LP|LTD|BANK|ASSN)\b/.test(W(r.owner))) hits[r.apn] = 1; });
+    const list = Object.keys(hits);
+    if (!list.length) return save('no home in Clark County under ' + key);
+    if (list.length > 1) {  // several: keep the one they live in (mailing address = the home), if exactly one
+      const live = list.slice(0, 5).filter(x => { const raw = parcelRecord(x), own = (raw.split('Owner and Mailing Address')[1] || '').split('Location Address')[0] || '',
+        loc = ((raw.split('Location Address')[1] || '').split('City/Unincorporated Town')[0] || '').trim(); return loc && W(own).indexOf(W(loc).split(' ').slice(0, 2).join(' ')) >= 0; });
+      if (live.length !== 1) return save(list.length + ' homes under ' + key + ', not sure which (skipped)');
+      apn = live[0];
+    } else apn = list[0];
+    how = 'owner-name match "' + key + '"';
+  }
+  const raw = parcelRecord(apn), f = parcelFacts(raw), r = f.record || {};
+  const own = ((raw.split('Owner and Mailing Address')[1] || '').split('Location Address')[0] || '').trim();
+  const loc = ((raw.split('Location Address')[1] || '').split('City/Unincorporated Town')[0] || '').trim();
+  const ownsIt = W(own).indexOf(W(last)) >= 0;
+  const zip = (own.match(/\b(\d{5})(?:-\d{4})?\s*$/) || [])[1] || '', mailCity = (own.match(/\b(NORTH LAS VEGAS|LAS VEGAS|HENDERSON|BOULDER CITY|MESQUITE|LAUGHLIN|[A-Z]+)\s+NV\s+\d{5}/) || [])[1] || '';
+  const livesThere = loc && W(own).indexOf(W(loc).split(' ').slice(0, 2).join(' ')) >= 0;
+  const city = livesThere && mailCity ? mailCity.trim() : (f.city || 'Las Vegas');
+  const nice = x => String(x || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  const addr = nice(loc) + ', ' + nice(city) + ', NV' + (livesThere && zip ? ' ' + zip : '');
+  const sinceYear = Number((String(r.lastSaleDate || r.recorded || '').match(/(\d{4})/) || [])[1] || 0);
+  const rec = {addr: addr, apn: r.apn || apn, since: r.lastSaleDate || r.recorded || '', paid: r.lastSale || '', tax: r.taxable || '', sqft: f.sqft || '',
+    bb: [f.beds, f.baths].filter(Boolean).join(' / '), yr: f.year || '', owns: ownsIt, years: sinceYear ? new Date().getFullYear() - sinceYear : 0};
+  if (!ownsIt) { save('address on file, but the county owner is someone else (renter?)', rec); return; }
+  const tags = ['Homeowner'].concat(rec.years >= 7 ? ['Owned 7+ Years'] : []).filter(t => (p.tags || []).indexOf(t) < 0);
+  try { if (tags.length) fubFetch('people/' + id + '?mergeTags=true', {tags: tags}, 'put'); } catch (e) {}
+  if (!a) { try { fubFetch('people/' + id, {addresses: [{type: 'home', street: nice(loc), city: nice(city), state: 'NV', code: livesThere ? zip : ''}]}, 'put'); } catch (e) {} }
+  try { fubFetch('notes', {personId: id, subject: 'Property record (Clark County)', body: [addr, rec.since ? 'Owned since ' + rec.since : '', rec.paid ? 'Bought for ' + rec.paid : '',
+    rec.tax ? 'County taxable value ' + rec.tax + ' (runs well below market value)' : '', [rec.sqft ? rec.sqft + ' sq ft' : '', rec.bb ? rec.bb + ' bd/ba' : '', rec.yr ? 'built ' + rec.yr : ''].filter(Boolean).join(' · '),
+    'Parcel ' + rec.apn, '', 'Found by ' + how + ' in the public Assessor records' + (a ? '' : '; address added to Follow Up Boss') + '. For a market value, text Shawna: comps ' + nice(loc)].filter(x => x !== null && x !== undefined).join('\n')}); } catch (e) {}
+  save('matched (' + how + ')', rec);
+}
+/** One short line for the morning update from ENR_<id>, or ''. */
+function enrichLine(id) {
+  try { const e = JSON.parse(PropertiesService.getScriptProperties().getProperty('ENR_' + id) || 'null');
+    if (!e || !e.owns) return '';
+    return '\n🏛 owns ' + e.addr + (e.since ? ' since ' + String(e.since).replace(/^[A-Z][a-z]{2} \d{1,2} /, '') : '') + (e.paid ? ', bought ' + e.paid : '') + (e.years >= 7 ? ' (7+ yrs: likely equity)' : '');
+  } catch (e) { return ''; }
+}
 function trashBouncedOnce() {
   const props = PropertiesService.getScriptProperties();
   const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id;
@@ -4350,7 +4440,7 @@ function morningUpdateText(opts) {
       const addr = street ? [street, a.city, [a.state, a.code].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
       const home = addr ? '\n🏠 ' + addr + '\nhttps://maps.google.com/?q=' + encodeURIComponent(addr) +
         (/seller|worth/i.test(why) ? '\n💡 For a value report, text me: comps ' + street + (a.city ? ', ' + a.city : '') : '') : '';
-      picks.push('• ' + nameOf(p) + (tier ? ' (' + tier + ')' : '') + ': ' + why + '\n' + how + home);
+      picks.push('• ' + nameOf(p) + (tier ? ' (' + tier + ')' : '') + ': ' + why + '\n' + how + home + enrichLine(p.id));
     };
     const sh = getSS().getSheetByName(EMAIL_OPENS_TAB.name);
     if (sh && sh.getLastRow() > 1) {
