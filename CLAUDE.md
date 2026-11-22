@@ -986,6 +986,7 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Tour a home (Nov 20, his ask): picking it shows "Which home(s) would you like to tour?" (address/MLS inputs + "Add another home",
   blank = Julián helps pick) → showingFlow(homes joined by "; ", {pre, agent, back}) skips the repeat questions and goes to day/time. Seller timelines start "Now / This month".
 
+- Vapi goodbye (Nov 22, Andrew Mays 735 call ended silent after "that's all, thank you": the old rule said hang up silently and let endCallMessage speak, but it didn't play when she used the end call tool): vapiPrompt LET THEM END IT now = one warm closing line with their name, THEN the end call tool.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this
