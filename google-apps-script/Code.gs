@@ -4611,7 +4611,7 @@ function findOpportunities(max) {
       const t = humanize(d.text) + (x.first ? FIRST_TEXT_OPTOUT + ' || [contact card]' : '');
       const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t, at: now, long: true, firstText: x.first});
       msg = '📈 Worth reaching out: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
-        (d.meaning ? '\n' + humanize(d.meaning) : '') + home + '\n\nText from you:\n"' + t + '"\n\n' + viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
+        (d.meaning ? '\n' + humanize(d.meaning) : '') + home + '\n\nText from you:\n"' + t.replace(/\s*\|\|\s*\[contact card\]/, '') + '"' + (x.first ? '\n👋 First text to them: it ends with "reply STOP" and your contact card goes with it.' : '') + '\n\n' + viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
     } else if (x.call) {
       msg = '📞 Worth a call: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
         (d.meaning ? '\n' + humanize(d.meaning) : '') + (d.opener ? '\n\nOpener: "' + humanize(d.opener) + '"' : '') +
@@ -4621,7 +4621,7 @@ function findOpportunities(max) {
       const t = humanize(d.text);
       if (greetMismatch && greetMismatch(t, x.p)) return;
       const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t + (x.first ? FIRST_TEXT_OPTOUT + ' || [contact card]' : ''), at: now, long: true, fromShawna: true, firstText: x.first});
-      msg = '💬 Check-in from me: ' + x.who + ' (' + x.tier + ')\nNo buying or selling signs lately, so this one doesn\'t need your time. I\'d text as your AI assistant:\n\n"' + t + '"\n\n' +
+      msg = '💬 Check-in from me: ' + x.who + ' (' + x.tier + ')\nNo buying or selling signs lately, so this one doesn\'t need your time. I\'d text as your AI assistant:\n\n"' + t + (x.first ? FIRST_TEXT_OPTOUT : '') + '"' + (x.first ? '\n👋 First text to them: your contact card goes with it.' : '') + '\n\n' +
         viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
     }
     rs.push({at: now + (++k) * 60 * 1000, msg: msg});
