@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-23-paid';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-23-opp-first';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -4572,10 +4572,15 @@ function findOpportunities(max) {
     const why = c.act.why.filter(w => !/^quiet/.test(w));
     const interest = (p.tags || []).filter(t => /^(Buyer|Likely Seller|Relocation|Luxury Buyer|Open House Neighbor|Investor|Seller|Luxury Relocation 60 Days)$/i.test(t));
     const call = c.act.pts >= 10;   // they did something themselves recently: worth Julián's time
-    const textOk = phone && has(p, /^Text OK$/) && !has(p, /^Not DNC checked$/);
+    // Nov 23 (Julián: "clients in the top 200… they engaged, they get a text even when they haven't agreed to text, just ask them to
+    // opt out or stop within the text"): Top 200 without Text OK may get a FIRST text (his approval each time) that ends with the STOP
+    // line + his contact card; once sent they're tagged Text OK. Never: opt-outs/unsubscribed/has agent (filtered above), NO_TEXT_TAGS,
+    // or "Not DNC checked" (federal Do Not Call: no inquiry on record).
+    const first = !!phone && !has(p, /^Text OK$/) && has(p, /^Top 200$/) && !(p.tags || []).some(t => NO_TEXT_TAGS.test(t));
+    const textOk = phone && (has(p, /^Text OK$/) || first) && !has(p, /^Not DNC checked$/);
     if (!call && !textOk) return;   // a plain check-in only goes by text from Shawna
     const ctx = notes.filter(n => !/^(Shawna tagged|Funnel|Tier)/i.test(n.subject || '')).slice(0, 4).map(n => (n.subject || '') + ': ' + String(n.body || '').replace(/\s+/g, ' ').slice(0, 200)).join(' | ');
-    picks.push({p: p, phone: phone, textOk: textOk, call: call, why: why, interest: interest, touched: touched, ctx: ctx,
+    picks.push({p: p, phone: phone, textOk: textOk, first: first && textOk, call: call, why: why, interest: interest, touched: touched, ctx: ctx,
       first: realFirst(p), who: [realFirst(p), p.lastName].join(' ').trim() || p.name, tier: has(p, /^(Tier A|Hot)$/) ? 'Hot' : 'Warm'});
   });
   if (!picks.length) return out;
@@ -4603,10 +4608,10 @@ function findOpportunities(max) {
     if (x.call && x.textOk && d.text && !(greetMismatch && greetMismatch(humanize(d.text), x.p))) {
       // Nov 23 (Julián: "for those opportunity iMessages that are calls, let's send them a text that I can approve… that way I'm only
       // calling people that respond"): a drafted text from him, waiting for his yes. OPP_AUTO=on later = sent without asking.
-      const t = humanize(d.text);
-      const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t, at: now, long: true});
+      const t = humanize(d.text) + (x.first ? FIRST_TEXT_OPTOUT + ' || [contact card]' : '');
+      const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t, at: now, long: true, firstText: x.first});
       msg = '📈 Worth reaching out: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
-        (d.meaning ? '\n' + humanize(d.meaning) : '') + home + '\n\nText from you:\n"' + t + '"\n\n' + viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
+        (d.meaning ? '\n' + humanize(d.meaning) : '') + home + '\n\nText from you:\n"' + t.replace(/\s*\|\|\s*\[contact card\]/, '') + '"' + (x.first ? '\n👋 First text to them: it ends with "reply STOP" and your contact card goes with it.' : '') + '\n\n' + viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
     } else if (x.call) {
       msg = '📞 Worth a call: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
         (d.meaning ? '\n' + humanize(d.meaning) : '') + (d.opener ? '\n\nOpener: "' + humanize(d.opener) + '"' : '') +
@@ -4615,8 +4620,8 @@ function findOpportunities(max) {
       if (!d.text) return;
       const t = humanize(d.text);
       if (greetMismatch && greetMismatch(t, x.p)) return;
-      const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t, at: now, long: true, fromShawna: true});
-      msg = '💬 Check-in from me: ' + x.who + ' (' + x.tier + ')\nNo buying or selling signs lately, so this one doesn\'t need your time. I\'d text as your AI assistant:\n\n"' + t + '"\n\n' +
+      const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t + (x.first ? FIRST_TEXT_OPTOUT + ' || [contact card]' : ''), at: now, long: true, fromShawna: true, firstText: x.first});
+      msg = '💬 Check-in from me: ' + x.who + ' (' + x.tier + ')\nNo buying or selling signs lately, so this one doesn\'t need your time. I\'d text as your AI assistant:\n\n"' + t + (x.first ? FIRST_TEXT_OPTOUT : '') + '"' + (x.first ? '\n👋 First text to them: your contact card goes with it.' : '') + '\n\n' +
         viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
     }
     rs.push({at: now + (++k) * 60 * 1000, msg: msg});
@@ -5985,6 +5990,7 @@ function bossCommand(text, tries) {
     props.setProperty('AI_SENDING_' + pend.phone, String(Date.now()));
     bbSendParts(pend.phone, pend.message);
     fubFetch('notes', {personId: pend.personId, subject: textSentSubject(), body: pend.message + '\n\n(sent by ' + name + ' at Julián\'s request)'});
+    if (pend.firstText && pend.personId) { try { markTextOk({id: pend.personId}, 'Top 200 opportunity text Julián approved'); } catch (e) {} }
     if (pend.taskId) { try { fubFetch('tasks/' + pend.taskId, {isCompleted: true}, 'put'); } catch (e) {} }
     return say(name + ': sent to ' + pend.who + '. ✅');
   }

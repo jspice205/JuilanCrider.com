@@ -1000,7 +1000,8 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   Enrich", ENR_<id> (90-day recheck). Morning "worth reaching out to" adds `enrichLine` ("🏛 owns … since …, bought …").
 - Nov 23 (his asks): opportunity "Worth a call" picks with Text OK now come as "📈 Worth reaching out" + a drafted text AS Julián
   (Groq "text" for kind call; no mention of email opens; no prices) queued for his YES (addPending); no Text OK → the old call card.
-  Later: OPP_AUTO=on (not built yet) to send without asking. Opportunity + "worth reaching out" lines show `enrichLine` (owns/since/
+  Top 200 people without Text OK (not Not DNC checked / NO_TEXT_TAGS) may get that FIRST opportunity text (his ask, Nov 23): it ends with
+  FIRST_TEXT_OPTOUT + [contact card]; pend.firstText → markTextOk after his YES. Later: OPP_AUTO=on (not built yet) to send without asking. Opportunity + "worth reaching out" lines show `enrichLine` (owns/since/
   paid); people without a record are looked up on the fly (≤4 per run). Price buckets by purchase price: tags Paid $1M+ / Paid
   $500K-1M / Paid under $500K (`priceBucket`, BUCKETS; backfilled once for older records). Boss "top 200 prices" / "what people paid"
   / "price mix" → `homePriceMixText`. After the Top 200, enrichTop200 continues through his whole database (100/page via
