@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-22-enrich';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-23-paid';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -549,7 +549,19 @@ function enrichTop200() {
   if (props.getProperty('ENRICH') === 'off') return;
   const per = Number(props.getProperty('ENRICH_PER_HOUR') || 8), started = Date.now();
   let people = []; try { people = blastPeople(['Top 200']); } catch (e) { return; }
-  const due = people.filter(p => !isTestPerson(p) && !(Date.now() - Number((JSON.parse(props.getProperty('ENR_' + p.id) || '{}')).at || 0) < 90 * 864e5));
+  // Records made before the price buckets existed (Nov 23) get their Paid tag once, no new lookups.
+  people.forEach(p => { try { const e = JSON.parse(props.getProperty('ENR_' + p.id) || 'null'); if (e && e.owns && e.paid && !e.b) { e.b = priceBucket(e.paid);
+    if (e.b) { fubFetch('people/' + p.id + '?mergeTags=true', {tags: [e.b]}, 'put'); props.setProperty('ENR_' + p.id, JSON.stringify(e)); } } } catch (x) {} });
+  let due = people.filter(p => !isTestPerson(p) && !(Date.now() - Number((JSON.parse(props.getProperty('ENR_' + p.id) || '{}')).at || 0) < 90 * 864e5));
+  // Top 200 done → the rest of his database, 100 contacts a page (Nov 23, Julián: "I would love to go through the whole data base").
+  if (!due.length && props.getProperty('ENRICH_ALL') !== 'off') {
+    try { const me = Number(props.getProperty('FUB_ME') || 0) || fubFetch('me', null, 'get').id, cur = props.getProperty('ENRICH_NEXT') || '';
+      const r = fubFetch('people?limit=100&sort=id&fields=id,firstName,lastName,name,tags,assignedUserId,stage' + (cur ? '&next=' + cur : ''), null, 'get');
+      due = (r.people || []).filter(p => Number(p.assignedUserId) === Number(me) && !isTestPerson(p) && !/^(Trash)$/i.test(String(p.stage || '')) &&
+        !(p.tags || []).some(t => /^(Deceased|Agent|Partner)$/i.test(t)) && !props.getProperty('ENR_' + p.id));
+      const nx = (r._metadata || {}).next || ''; if (!due.length || due.length <= per) props.setProperty('ENRICH_NEXT', nx);
+    } catch (e) { console.log('Enrich all: ' + e.message); }
+  }
   due.slice(0, per).forEach(p => { if (Date.now() - started < 240e3) { try { enrichPerson(p.id); } catch (e) { console.log('Enrich ' + p.id + ': ' + e.message); } } });
 }
 /** Clark County owner-name search ("LAST", "FIRST") → [{owner, owner2, apn}] (current owners only). */
@@ -573,7 +585,9 @@ function enrichPerson(id) {
   const p = fubFetch('people/' + id + '?fields=id,firstName,lastName,name,tags,addresses', null, 'get');
   const first = String(p.firstName || '').trim(), last = String(p.lastName || '').trim(), name = [first, last].join(' ').trim() || p.name || '';
   const save = (result, rec) => {
-    props.setProperty('ENR_' + id, JSON.stringify(Object.assign({at: Date.now(), r: result}, rec || {})));
+    // Compact (Script Properties hold ~500 KB in all and the whole database may be checked): full details live in the tab + FUB note.
+    const small = rec && rec.owns ? {addr: rec.addr, since: rec.since, paid: rec.paid, years: rec.years, owns: true, b: rec.b} : {};
+    props.setProperty('ENR_' + id, JSON.stringify(Object.assign({at: Date.now(), r: /^matched/.test(result) ? 'm' : 'x'}, small)));
     try { ensureTab(getSS(), ENRICH_TAB).appendRow([new Date(), id, name, result].concat(rec ? [rec.addr || '', rec.apn || '', rec.since || '', rec.paid || '', rec.tax || '', rec.sqft || '', rec.bb || '', rec.yr || ''] : [])); } catch (e) {}
   };
   const a = (p.addresses || []).filter(x => String(x.street || '').trim())[0];
@@ -610,13 +624,38 @@ function enrichPerson(id) {
   const rec = {addr: addr, apn: r.apn || apn, since: r.lastSaleDate || r.recorded || '', paid: r.lastSale || '', tax: r.taxable || '', sqft: f.sqft || '',
     bb: [f.beds, f.baths].filter(Boolean).join(' / '), yr: f.year || '', owns: ownsIt, years: sinceYear ? new Date().getFullYear() - sinceYear : 0};
   if (!ownsIt) { save('address on file, but the county owner is someone else (renter?)', rec); return; }
-  const tags = ['Homeowner'].concat(rec.years >= 7 ? ['Owned 7+ Years'] : []).filter(t => (p.tags || []).indexOf(t) < 0);
-  try { if (tags.length) fubFetch('people/' + id + '?mergeTags=true', {tags: tags}, 'put'); } catch (e) {}
+  rec.b = priceBucket(rec.paid);
+  const tags = ['Homeowner'].concat(rec.years >= 7 ? ['Owned 7+ Years'] : [], rec.b ? [rec.b] : []).filter(t => (p.tags || []).indexOf(t) < 0);
+  try {
+    const stale = (p.tags || []).filter(t => BUCKETS.indexOf(t) >= 0 && t !== rec.b);
+    if (stale.length) fubFetch('people/' + id, {tags: (p.tags || []).filter(t => stale.indexOf(t) < 0).concat(tags)}, 'put');
+    else if (tags.length) fubFetch('people/' + id + '?mergeTags=true', {tags: tags}, 'put');
+  } catch (e) {}
   if (!a) { try { fubFetch('people/' + id, {addresses: [{type: 'home', street: nice(loc), city: nice(city), state: 'NV', code: livesThere ? zip : ''}]}, 'put'); } catch (e) {} }
   try { fubFetch('notes', {personId: id, subject: 'Property record (Clark County)', body: [addr, rec.since ? 'Owned since ' + rec.since : '', rec.paid ? 'Bought for ' + rec.paid : '',
     rec.tax ? 'County taxable value ' + rec.tax + ' (runs well below market value)' : '', [rec.sqft ? rec.sqft + ' sq ft' : '', rec.bb ? rec.bb + ' bd/ba' : '', rec.yr ? 'built ' + rec.yr : ''].filter(Boolean).join(' · '),
     'Parcel ' + rec.apn, '', 'Found by ' + how + ' in the public Assessor records' + (a ? '' : '; address added to Follow Up Boss') + '. For a market value, text Shawna: comps ' + nice(loc)].filter(x => x !== null && x !== undefined).join('\n')}); } catch (e) {}
   save('matched (' + how + ')', rec);
+}
+// Price buckets by what they paid (Nov 23, Julián: "I've always specialized in luxury $1M or more… I could have a top 200 with home owners
+// all under $500k and I don't even know it"). Tags let him filter in Follow Up Boss. Purchase price, not today's value.
+const BUCKETS = ['Paid $1M+', 'Paid $500K-1M', 'Paid under $500K'];
+function priceBucket(paid) { const n = Number(String(paid || '').replace(/[^\d]/g, '')); return !n ? '' : n >= 1e6 ? BUCKETS[0] : n >= 5e5 ? BUCKETS[1] : BUCKETS[2]; }
+/** Boss "top 200 prices": what his Top 200 homeowners paid, by bucket, with the $1M+ names. */
+function homePriceMixText() {
+  const all = PropertiesService.getScriptProperties().getProperties(), recs = [];
+  Object.keys(all).filter(k => /^ENR_\d+$/.test(k)).forEach(k => { try { const e = JSON.parse(all[k]); e.id = k.slice(4); recs.push(e); } catch (x) {} });
+  if (!recs.length) return 'I haven\'t checked anyone\'s property records yet. They start filling in within the hour.';
+  const own = recs.filter(e => e.owns && e.paid), money = e => Number(String(e.paid).replace(/[^\d]/g, ''));
+  const by = b => own.filter(e => priceBucket(e.paid) === b);
+  const sorted = own.map(money).sort((a, b) => a - b), med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const top = own.filter(e => money(e) >= 1e6).sort((a, b) => money(b) - money(a)).slice(0, 8);
+  let names = {}; try { if (top.length) (fubFetch('people?id=' + top.map(e => e.id).join(',') + '&fields=id,firstName,lastName,name', null, 'get').people || []).forEach(p => names[p.id] = [p.firstName, p.lastName].join(' ').trim() || p.name); } catch (e) {}
+  return '🏛 What your contacts paid for their homes (Clark County records)\n\nChecked: ' + recs.length + ' · homeowners with a sale price: ' + own.length +
+    '\n\n💎 $1M+: ' + by(BUCKETS[0]).length + '\n🏡 $500K to $1M: ' + by(BUCKETS[1]).length + '\n🏠 Under $500K: ' + by(BUCKETS[2]).length +
+    (med ? '\n\nMiddle price paid: ' + rcMoney(med) : '') +
+    (top.length ? '\n\n$1M+ owners:\n' + top.map(e => '• ' + (names[e.id] || 'contact ' + e.id) + ': ' + e.paid + (e.since ? ' (' + e.since + ')' : '')).join('\n') : '') +
+    '\n\nIt\'s what they paid, not today\'s value. In Follow Up Boss, filter by the tags Paid $1M+, Paid $500K-1M or Paid under $500K.';
 }
 /** One short line for the morning update from ENR_<id>, or ''. */
 function enrichLine(id) {
@@ -4427,7 +4466,7 @@ function morningUpdateText(opts) {
   const seen = {};
   if (opts.morning) { try { const o = findOpportunities(3); o.ids.forEach(id => seen[id] = 1); if (o.text) parts.push(o.text); } catch (e) { console.log('Opportunities: ' + e.message); } }
   try {
-    const picks = [];
+    const picks = []; let enrichNow = 0;
     const add = (id, why) => {
       if (!id || seen[id] || picks.length >= 6) return; seen[id] = 1;
       let p = null; try { p = fubFetch('people/' + id + '?fields=id,name,firstName,lastName,tags,stage,assignedUserId,phones,addresses', null, 'get'); } catch (e) { return; }
@@ -4440,6 +4479,7 @@ function morningUpdateText(opts) {
       const addr = street ? [street, a.city, [a.state, a.code].filter(Boolean).join(' ')].filter(Boolean).join(', ') : '';
       const home = addr ? '\n🏠 ' + addr + '\nhttps://maps.google.com/?q=' + encodeURIComponent(addr) +
         (/seller|worth/i.test(why) ? '\n💡 For a value report, text me: comps ' + street + (a.city ? ', ' + a.city : '') : '') : '';
+      if (!props.getProperty('ENR_' + p.id) && enrichNow < 4 && Date.now() - now < 150e3) { enrichNow++; try { enrichPerson(p.id); } catch (e) {} }
       picks.push('• ' + nameOf(p) + (tier ? ' (' + tier + ')' : '') + ': ' + why + '\n' + how + home + enrichLine(p.id));
     };
     const sh = getSS().getSheetByName(EMAIL_OPENS_TAB.name);
@@ -4539,12 +4579,14 @@ function findOpportunities(max) {
       first: realFirst(p), who: [realFirst(p), p.lastName].join(' ').trim() || p.name, tier: has(p, /^(Tier A|Hot)$/) ? 'Hot' : 'Warm'});
   });
   if (!picks.length) return out;
+  picks.forEach(x => { if (!props.getProperty('ENR_' + x.p.id)) { try { enrichPerson(x.p.id); } catch (e) {} } });
   let drafts = [];
   try {
     drafts = JSON.parse(groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
       {role: 'system', content: 'You help Julián, a real estate agent, advisor and developer in Las Vegas and Henderson, follow up with his Hot and Warm leads. For each person:\n' +
         '- kind "call": write "meaning": one plain sentence on what their activity likely means for a deal or referral (e.g. "Opening your equity email five times usually means they\'re wondering what the house is worth"), and "opener": the first thing Julián could say on the call, Chris Voss style (a label or a no-oriented question), never pushy.\n' +
         '- kind "shawna": write "text": a short text from Shawna, Julián\'s AI assistant, who says so plainly in the first sentence ("Hi Ruth, it\'s Shawna, Julián\'s AI assistant 👋🏾"). Warm, human, 2 or 3 sentences, ONE easy personal question about them (plans for the holidays, how the year is treating them, how the new place is), then "If you ever want to talk with Julián, just reply here and I\'ll set it up." No selling, no homes, no prices.\n' +
+        '- kind "call" ALSO write "text": a short text AS Julián (first person, his voice, no intro, never say you saw their email opens or site visits), 1 or 2 sentences, ONE calibrated or no-oriented question that fits their likely interest (e.g. "Would it be crazy to look at what your place could sell for this spring?"). No prices or numbers.\n' +
         'Never invent facts, homes, prices or dates; use only what is given. Notes are private: never quote scores, tiers, tags or form answers. Fair Housing: never ask about family status, children, religion, age or who they live with. No dashes.\n' +
         'Return JSON: {"items":[{"id":<person id>,"meaning":"...","opener":"...","text":"..."}]}'},
       {role: 'user', content: picks.map(x => 'id ' + x.p.id + ' (' + x.who + ', ' + x.tier + ', kind ' + (x.call ? 'call' : 'shawna') + '). ' +
@@ -4557,10 +4599,18 @@ function findOpportunities(max) {
   picks.forEach(x => {
     const d = drafts.filter(d => String(d.id) === String(x.p.id))[0] || {};
     let msg;
-    if (x.call) {
+    const home = enrichLine(x.p.id);
+    if (x.call && x.textOk && d.text && !(greetMismatch && greetMismatch(humanize(d.text), x.p))) {
+      // Nov 23 (Julián: "for those opportunity iMessages that are calls, let's send them a text that I can approve… that way I'm only
+      // calling people that respond"): a drafted text from him, waiting for his yes. OPP_AUTO=on later = sent without asking.
+      const t = humanize(d.text);
+      const n = addPending({personId: x.p.id, who: x.who, phone: x.phone, message: t, at: now, long: true});
+      msg = '📈 Worth reaching out: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
+        (d.meaning ? '\n' + humanize(d.meaning) : '') + home + '\n\nText from you:\n"' + t + '"\n\n' + viaText(x.phone) + '\nWant me to send it? ' + yesHint(n);
+    } else if (x.call) {
       msg = '📞 Worth a call: ' + x.who + ' (' + x.tier + ')\n\nWhy: ' + (x.why.join(', ') || 'recent activity') + (x.interest.length ? ' · ' + x.interest.join(', ') : '') +
         (d.meaning ? '\n' + humanize(d.meaning) : '') + (d.opener ? '\n\nOpener: "' + humanize(d.opener) + '"' : '') +
-        '\n\n' + (x.phone ? prettyPhone(x.phone) : 'no phone on file, email only') + (x.touched ? '\nLast personal touch: ' + Math.floor((now - x.touched) / 864e5) + ' days ago' : '\nNobody has followed up personally yet');
+        home + '\n\n' + (x.phone ? prettyPhone(x.phone) : 'no phone on file, email only') + (x.touched ? '\nLast personal touch: ' + Math.floor((now - x.touched) / 864e5) + ' days ago' : '\nNobody has followed up personally yet');
     } else {
       if (!d.text) return;
       const t = humanize(d.text);
@@ -6059,6 +6109,7 @@ Examples (all mean the same as the action shown):
   else if (/^\s*(comps?|cma|value|what('?s| is)\b.{0,60}\bworth)\b/i.test(text) && /\d{2,6}\s+\w/.test(text)) a = {action: 'comps', message: text};
   else if (/^\s*addresses only\s*[.!]?\s*$/i.test(text)) a = {action: 'searchaddr'};
   else if (/\b(take|took)\s+(off|out)\b|\bremove\b/i.test(text) && /\b(page|portal)\b/i.test(text) && /\d/.test(text) && !/\d{3,}\s+\w/.test(text)) a = {action: 'portalremove', message: text};
+  else if (/\b(price mix|top ?200 (prices|homes|price|paid)|what (did )?(my|people|everyone|they) paid|paid for their homes?|luxury mix|how many .*(\$?1 ?m|million))/i.test(text)) a = {action: 'pricemix'};
   else if (/\b(social( media)?|instagram|insta|ig|metricool|reels?|youtube|tiktok|followers?)\b/i.test(text) && /\b(stats?|numbers?|report|week|weekly|doing|how|views?|pull|update|followers?|growth)\b/i.test(text) && !/\b(post|schedule|caption|text|email)\s+(this|it|a|the)\b/i.test(text)) a = {action: 'social'};
   else if (/\b(find|search|look(ing)? for|pull|show me|any)\b[^?]{0,40}\b(homes?|houses?|condos?|townhomes?|listings?|properties|places)\b/i.test(text) && /\$?\d{3}\s*k|\$\d|\d+\s*(bed|bd|br)|under|between|no hoa|for [A-Z]/i.test(text)) a = {action: 'homesearch', message: text};
   else if (/^\s*(hold|pause|stop)\b(?!\s+texting)/i.test(text) && text.length < 60 && JSON.parse(props.getProperty('AUTO_LAST') || '[]').length) a = {action: 'holdauto', message: text};
@@ -6396,6 +6447,7 @@ Examples (all mean the same as the action shown):
     if (a.action === 'searchaddr') { const ls = JSON.parse(CacheService.getScriptCache().get('LAST_SEARCH') || 'null');
       return say(ls ? '📍 ' + ls.head + ' (addresses only, for YOU to check in the MLS, not for clients):\n\n' + ls.list.map((l, i) => (i + 1) + '. ' + l).join('\n\n') + '\n\nTap 📷 to see the photos on Zillow.' : 'No recent search. Send me one first.'); }
     if (a.action === 'social') return say(socialReportText());
+    if (a.action === 'pricemix') return say(homePriceMixText());
     if (a.action === 'homesearch') { say('On it 👀 searching homes…'); return say(homeSearchText(a.message || text)); }
     if (a.action === 'comps') {  // Nov 21 (Julián: "text the PDF of the comp like I do in here"): text summary + a one-page PDF
       say('On it 👀 pulling comps…');
