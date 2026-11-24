@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-23-opp-first';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-24-parts';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3286,7 +3286,8 @@ let BB_LAST_SERVICE = '';
 function textSentSubject(base) {
   const b = base || 'Text sent';
   if (BB_LAST_SERVICE === 'duplicate') return b.replace(/^Text sent/, 'Text NOT sent') + ' · duplicate blocked';
-  return BB_LAST_SERVICE ? b + ' · ' + (/^SMS/i.test(BB_LAST_SERVICE) ? '🟢 green (SMS)' : '🔵 blue (iMessage)') : b;
+  const fails = BB_PART_FAILS.length ? ' · ⚠️ didn\'t go through: ' + BB_PART_FAILS.join(', ') : '';
+  return (BB_LAST_SERVICE ? b + ' · ' + (/^SMS/i.test(BB_LAST_SERVICE) ? '🟢 green (SMS)' : '🔵 blue (iMessage)') : b) + fails;
 }
 function bbSendNow(phone, text) {
   // iPhone users sometimes text from their Apple ID email instead of their number: reply to that address too.
@@ -3394,18 +3395,43 @@ function listingPhoto(url) {
 }
 
 /** Sends "bubble || [voice] || bubble || [contact card]" as separate messages, in order. Returns the first send. */
+// Parts that didn't go through in the last bbSendParts (Nov 24: Darryl Curry got the open-house text + contact card over green
+// SMS, but the website link and the voice note never arrived and nothing said so). textSentSubject shows them on the FUB note.
+let BB_PART_FAILS = [];
+/** Last message we sent in this chat failed? (Messages marks it with an error code, e.g. "Not Delivered".) */
+function bbLastSendFailed(phone, service) {
+  Utilities.sleep(6000);
+  try { const m = (bbApi('chat/' + encodeURIComponent((service || 'iMessage') + ';-;' + bbE164(phone)) + '/message?limit=1&sort=DESC').data || [])[0];
+    return !!(m && m.isFromMe && Number(m.error) > 0); } catch (e) { return false; }
+}
 function bbSendParts(phone, msg) {
   // [welcome voice] = Drive file "Welcome hello" (a general hello for online sign-ups); skipped quietly until it exists.
   const files = {'[voice]': OPEN_HOUSE_VOICE, '[welcome voice]': 'Welcome hello', '[contact card]': CONTACT_CARD};
   let first = null;
+  BB_PART_FAILS = [];
+  // A bare link (e.g. "juliancrider.com/?relocate") rides at the end of the text bubble before it instead of its own bubble:
+  // lone-link texts were the ones getting lost over SMS.
+  const parts = [];
   String(msg).split(/\s*\|\|\s*/).filter(Boolean).forEach(part => {
+    const prev = parts[parts.length - 1];
+    if (/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(part) && prev && !/^\[.*\]$/.test(prev) && !/https?:\/\/|\.com\//i.test(prev)) parts[parts.length - 1] = prev + '\n\n' + part;
+    else parts.push(part);
+  });
+  parts.forEach(part => {
     const fileTok = part.match(/^\[file:\s*(.+?)\s*\]$/i);  // [file: Drive file name or id], e.g. a CMA PDF
     if (files[part.toLowerCase()] || fileTok) {
       if (!first) throw new Error('The first bubble has to be text');
-      try { bbSendAudio(phone, first.service, fileTok ? fileTok[1] : files[part.toLowerCase()]); Utilities.sleep(1500); }
-      catch (err) { if (fileTok) throw err; console.log(part + ' not sent: ' + err.message); }
+      const name = fileTok ? fileTok[1] : files[part.toLowerCase()], sms = /^SMS/i.test(first.service || '');
+      let ok = false;
+      for (let t = 0; t < (sms ? 2 : 1) && !ok; t++) {
+        try { bbSendAudio(phone, first.service, name); ok = !(sms && bbLastSendFailed(phone, 'SMS')); Utilities.sleep(1500); }
+        catch (err) { if (fileTok) throw err; console.log(part + ' not sent: ' + err.message); }
+      }
+      if (!ok) BB_PART_FAILS.push(part === '[voice]' || part === '[welcome voice]' ? 'voice note' : part === '[contact card]' ? 'contact card' : 'file');
     } else {
-      const r = bbSend(phone, part); first = first || r; Utilities.sleep(1500);
+      let r = null;
+      try { r = bbSend(phone, part); } catch (e) { if (!first) throw e; BB_PART_FAILS.push('"' + part.slice(0, 30) + '"'); console.log('Part not sent: ' + e.message); return; }
+      first = first || r; Utilities.sleep(1500);
       // A home link in the message: send its photo right under it, so it reads like a listing card.
       const url = (part.match(/https?:\/\/[^\s)]+/) || [])[0];
       if (url && /zillow|redfin|realtor\.com|homes\.com|realscout|compass|trulia|lvrealtors|gvar|idx|listing|property|homedetails/i.test(url)) {

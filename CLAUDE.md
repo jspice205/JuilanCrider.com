@@ -1006,6 +1006,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   $500K-1M / Paid under $500K (`priceBucket`, BUCKETS; backfilled once for older records). Boss "top 200 prices" / "what people paid"
   / "price mix" → `homePriceMixText`. After the Top 200, enrichTop200 continues through his whole database (100/page via
   ENRICH_NEXT; ENRICH_ALL=off stops). ENR_<id> is compact now ({at, r:'m'|'x', addr, since, paid, years, owns, b}).
+- Multi-part texts (Nov 24, Darryl Curry 2512: open-house 2h text + card arrived over green SMS, but the link and voice note never did,
+  silently): bbSendParts glues a bare-link part onto the text bubble before it; on SMS, attachments are checked with
+  `bbLastSendFailed` (Messages error code) and retried once; failed parts go in BB_PART_FAILS and textSentSubject appends
+  "⚠️ didn't go through: voice note…" to the FUB note. A failing later text part no longer aborts the rest.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this
