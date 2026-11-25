@@ -1019,6 +1019,9 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   to text just add an opt out stop"): Sign-Ins rows not made on juliancrider.com (no consent box) with a phone, no Has Agent/Agent →
   queueOpenHouseTexts(..., {firstText: true}): same guest/neighbor series, first step renamed "<step>-first" with FIRST_TEXT_OPTOUT +
   [contact card]; processTextQueue sends it via sendApprovedText and then tags Text OK + "Text consent" note; later steps need Text OK.
+- Dropped calls (Nov 25, his 1:39am test call "went to voicemail"; FUB "Call with Shawna (0 min)", no transcript): vapiEndOfCall keeps
+  Vapi's endedReason in the note ("Ended: …") and texts Julián "⚠️ Shawna's phone line dropped a call…" when a call ends under 10 s
+  with no caller words (not customer-ended), even for his own test calls.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this

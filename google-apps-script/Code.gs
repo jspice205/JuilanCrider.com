@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-25-oldform';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-25-calldrop';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION, lastAiError: (function () { try { const x = JSON.parse(PropertiesService.getScriptProperties().getProperty('LAST_AI_ERROR') || 'null'); return x ? {at: x.at, why: x.why} : null; } catch (e) { return null; } })()});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -7247,6 +7247,14 @@ function vapiEndOfCall(m, props) {
   // Julián, Nov 14: like a voicemail, the call recording comes to him by text right after the summary (queued, so a
   // sleeping Mac doesn't lose it; processAssistantQueue sends it within a minute or two).
   if (rec) { try { queueCallAudio(rec, num, mins, String((m.call || {}).id || m.callId || '')); } catch (e) { console.log('Call audio: ' + e.message); } }
+  // Nov 25 (Julián: "I called Shawna at 1:40am and it went to my voicemail"; FUB showed "Call with Shawna (0 min)", no transcript):
+  // a call that ends within seconds with nothing said is a failed answer, not a hang-up we can explain. Keep Vapi's endedReason
+  // and tell Julián right away (his own test calls too), so a broken phone line never goes unnoticed.
+  const ended = String(m.endedReason || call.endedReason || '');
+  if (!/User:/i.test(transcript) && Number(m.durationSeconds || 0) < 10 && !/customer-ended-call|customer-did-not-answer/.test(ended)) {
+    try { bossTextSafe('⚠️ Shawna\'s phone line dropped a call from ' + (num ? num.slice(2).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3') : 'a caller') + ' after ' + Math.round(Number(m.durationSeconds || 0)) + ' seconds' +
+      (ended ? ' (Vapi says: ' + ended + ')' : '') + '. If it keeps happening, check Vapi → Call Logs and your Vapi credit balance.'); } catch (e) {}
+  }
   let callerName = '', recapInfo = null;
   if (transcript && props.getProperty('GROQ_API_KEY')) {
     try {
@@ -7310,7 +7318,7 @@ function vapiEndOfCall(m, props) {
     return json({status: 'not mine'});
   }
   fubFetch('notes', {personId: person.id, subject: 'Call with ' + assistantName() + (mins ? ' (' + mins + ')' : ''),
-    body: (summary || 'No summary.') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
+    body: (summary || 'No summary.') + (ended ? '\nEnded: ' + ended : '') + (rec ? '\n\nRecording: ' + rec : '') + (transcript ? '\n\nTranscript:\n' + transcript : '')});
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (num && num === boss) {  // Julián testing from his own phone: no call-back task, but show him what a caller would get
     // Julián testing from his own phone: logged in FUB, no alert (Nov 13: he doesn't want updates about his own tests).
