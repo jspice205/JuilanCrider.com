@@ -1022,6 +1022,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
 - Dropped calls (Nov 25, his 1:39am test call "went to voicemail"; FUB "Call with Shawna (0 min)", no transcript): vapiEndOfCall keeps
   Vapi's endedReason in the note ("Ended: …") and texts Julián "⚠️ Shawna's phone line dropped a call…" when a call ends under 10 s
   with no caller words (not customer-ended), even for his own test calls.
+- Domain lapsed (Nov 25; Julián renews juliancrider.com on Dec 4): ASSET_BASE = raw.githubusercontent.com/jspice205/JuilanCrider.com/main/
+  for the email footer photo (EMAIL_FOOTER_VERSION v3 re-applied to 141-180), CONTACT_CARD and HTML templates 181+ (`swapTemplateAssets`,
+  hourly hook, once per ASSET_BASE). AFTER THE RENEWAL: set ASSET_BASE back to 'https://juliancrider.com/' and bump EMAIL_FOOTER_VERSION
+  (swapTemplateAssets then moves 181+ back). Site links in texts/emails (?book, ?relocate, client pages, blog) stay dead until then.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this

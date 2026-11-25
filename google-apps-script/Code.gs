@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-25-calldrop';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-25-assets';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION, lastAiError: (function () { try { const x = JSON.parse(PropertiesService.getScriptProperties().getProperty('LAST_AI_ERROR') || 'null'); return x ? {at: x.at, why: x.why} : null; } catch (e) { return null; } })()});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -443,6 +443,7 @@ function autoUpdateFromGitHub() {
   try {  // one-time: put the current signature footer on the plain-text drip emails
     const props = PropertiesService.getScriptProperties();
     if (props.getProperty('EMAIL_FOOTER') !== EMAIL_FOOTER_VERSION) { applyEmailFooter(); props.setProperty('EMAIL_FOOTER', EMAIL_FOOTER_VERSION); }
+    if (props.getProperty('ASSET_SWAP') !== ASSET_BASE) { swapTemplateAssets(); props.setProperty('ASSET_SWAP', ASSET_BASE); }
   } catch (e) { console.log('Email footer: ' + e.message); }
 }
 
@@ -732,15 +733,34 @@ function trackEmailOpens() {
 // Signature footer for the plain-text drip emails (Hot/Warm/Legacy 141-152, Nurture 153-176, Farm 177-180).
 // Small and simple on purpose: it keeps the personal look but has the brokerage, address, license and opt-out the law
 // requires. Change the text and bump EMAIL_FOOTER_VERSION; the hourly update re-applies it to every template.
-const EMAIL_FOOTER_VERSION = 'v2';
+// Nov 25: juliancrider.com lapsed until Julián renews it (Dec 4), so email photos and the contact card load from the GitHub repo.
+// After the renewal, set ASSET_BASE back to 'https://juliancrider.com/' and bump EMAIL_FOOTER_VERSION.
+const ASSET_BASE = 'https://raw.githubusercontent.com/jspice205/JuilanCrider.com/main/';
+const EMAIL_FOOTER_VERSION = 'v3';
 const EMAIL_FOOTER = '<!--jc-footer--><table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:22px;border-top:1px solid #e5e5e5;padding-top:12px"><tr>' +
-  '<td valign="top" style="padding:12px 12px 0 0"><img src="https://juliancrider.com/emails/img/julian-sq.jpg" width="56" height="56" alt="Julián Crider" style="display:block;width:56px;height:56px;border-radius:50%;border:0"></td>' +
+  '<td valign="top" style="padding:12px 12px 0 0"><img src="' + ASSET_BASE + 'emails/img/julian-sq.jpg" width="56" height="56" alt="Julián Crider" style="display:block;width:56px;height:56px;border-radius:50%;border:0"></td>' +
   '<td valign="top" style="padding-top:12px;font:13px/1.55 Helvetica,Arial,sans-serif;color:#111">' +
   '<b>Julián J. Crider</b><br>REALTOR® · Developer · Advisor<br>The DeBenedetto Team at Boeckle &amp; Co.<br>' +
   '<a href="tel:+17024982571" style="color:#111">702-498-2571</a> · <a href="https://juliancrider.com" style="color:#111">juliancrider.com</a> · ' +
   '<a href="https://www.instagram.com/juliancriderestates/" style="color:#111">Instagram</a></td></tr></table>' +
   '<p style="margin:8px 0 0 0;font:11px/1.5 Helvetica,Arial,sans-serif;color:#888">4775 W Teco Ave #220, Las Vegas, NV 89118 · NV S.0177760<br>' +
   'Prefer fewer emails? Just reply "stop."</p>';
+
+/** HTML templates (181 and up: welcome, re-intro, neighbor, newsletters) load their photos from ASSET_BASE. Runs once whenever
+ *  ASSET_BASE changes (Nov 25: site domain lapsed → GitHub; back to juliancrider.com after the renewal). */
+function swapTemplateAssets() {
+  const hosts = ['https://juliancrider.com/', 'https://www.juliancrider.com/', 'https://raw.githubusercontent.com/jspice205/JuilanCrider.com/main/'];
+  let n = 0;
+  for (let id = 181; id <= 200; id++) {
+    try {
+      const t = fubFetch('templates/' + id, null, 'get'); if (!t || !t.body) continue;
+      let b = String(t.body);
+      hosts.forEach(h => { if (h !== ASSET_BASE) ['emails/', 'img/', 'social/'].forEach(dir => { b = b.split(h + dir).join(ASSET_BASE + dir); }); });
+      if (b !== t.body) { fubFetch('templates/' + id, {name: t.name, subject: t.subject, body: b}, 'put'); n++; Utilities.sleep(250); }
+    } catch (err) { /* no template with this id */ }
+  }
+  console.log('Template photos pointed at ' + ASSET_BASE + ' in ' + n + ' templates.');
+}
 
 function applyEmailFooter() {
   let n = 0;
@@ -7623,7 +7643,7 @@ const TEXT_QUEUE_TAB = {name: 'Text Queue', color: '#1C1C1E',
 
 /** Open-house follow-up texts, Chris Voss style. {first} and {street} are filled in. */
 const OPEN_HOUSE_VOICE = 'Quick hello';  // Google Drive voice note (the file name is what people see, so keep it casual)
-const CONTACT_CARD = 'https://juliancrider.com/emails/julian-crider.vcf';  // HD contact card hosted on the site
+const CONTACT_CARD = ASSET_BASE + 'emails/julian-crider.vcf';  // HD contact card hosted on the site
 // Each text can be several bubbles separated by " || ". [voice] = the voice note, [contact card] = the contact card.
 // The first bubble has to be a text (Messages can't start a new conversation with a file on this Mac).
 const OPEN_HOUSE_TEXTS = {
