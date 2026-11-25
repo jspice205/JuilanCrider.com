@@ -158,9 +158,9 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-24-parts';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-25-replyfix';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
-  if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION});
+  if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION, lastAiError: (function () { try { const x = JSON.parse(PropertiesService.getScriptProperties().getProperty('LAST_AI_ERROR') || 'null'); return x ? {at: x.at, why: x.why} : null; } catch (e) { return null; } })()});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
   if (e && e.parameter && e.parameter.action === 'agreement') return getAgreement(String(e.parameter.id || ''));
   if (e && e.parameter && e.parameter.action === 'client') return json(clientPageData(String(e.parameter.id || '')));
@@ -3927,12 +3927,35 @@ function assistantReply(person, from, text) {
   const tags = p.tags || [];
   const notes = personHistory(person.id);
   const thread = bbThread(from), first = realFirst(p);
-  const r = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [
-    {role: 'system', content: assistantPrompt(name, assistantPersona(from))},
-    {role: 'user', content: 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown, never guess one)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ') +
-      (thread ? '\nThe text conversation so far (oldest first, from the phone):\n' + thread : '') +
-      '\nFollow Up Boss notes, emails and calls (oldest first):\n' + notes + (function () { const c = personCampaigns(p.id); return c ? '\nCAMPAIGNS (set to go out to them):\n' + c : ''; })() + (function () { try { const f = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); const m = emailHistory((f.emails || []).map(e => e.value), 14); return m ? '\nTheir recent emails (oldest first):\n' + m : ''; } catch (e) { return ''; } })() +
-      liveInfo(text) + '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.'}]);
+  // Nov 25 ("Shawna isn't responding to clients": George and Justin got silence since Nov 23): everything she reads before a
+  // reply (rules, team inventory, his recent texts, the thread, notes, emails) outgrew the free Groq plan's per-request size
+  // limit, every model refused it and the error was only logged. Now: the full context is capped, a refusal retries with a
+  // slim context, and if she still can't answer, Julián is told right away (never silence).
+  const head = 'Contact: ' + (first ? [first, p.lastName].join(' ') : '(name unknown, never guess one)') + '\nStage: ' + (p.stage || '') + '\nTags: ' + tags.join(', ');
+  const ask = '\n\nThey just texted: "' + text + '"\n\nReply as JSON only.';
+  const fullCtx = () => (thread ? '\nThe text conversation so far (oldest first, from the phone):\n' + String(thread).split('\n').slice(-40).join('\n').slice(-6000) : '') +
+    '\nFollow Up Boss notes, emails and calls (oldest first):\n' + String(notes).slice(-3500) + (function () { try { const c = personCampaigns(p.id); return c ? '\nCAMPAIGNS (set to go out to them):\n' + String(c).slice(0, 800) : ''; } catch (e) { return ''; } })() + (function () { try { const f = fubFetch('people/' + p.id + '?fields=emails', null, 'get'); const m = emailHistory((f.emails || []).map(e => e.value), 14); return m ? '\nTheir recent emails (oldest first):\n' + String(m).slice(-2000) : ''; } catch (e) { return ''; } })() +
+    String(liveInfo(text) || '').slice(0, 1500);
+  const slimCtx = () => (thread ? '\nThe text conversation so far (latest lines, oldest first):\n' + String(thread).split('\n').slice(-12).join('\n').slice(-2000) : '') +
+    '\nRecent Follow Up Boss notes:\n' + String(notes).split('\n').slice(-5).join('\n').slice(-1200);
+  const sys = assistantPrompt(name, assistantPersona(from));
+  const slimSys = String(sys).replace(/\n\nTEAM INVENTORY[\s\S]*?Full portfolio: thedebenedettoteamlv\.com\/#\/portfolio/, '')
+    .replace(/\nHOW JULIÁN REALLY TEXTS[^\n]*(\n• [^\n]*)*/, '');
+  let r;
+  try {
+    r = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: sys}, {role: 'user', content: head + fullCtx() + ask}]);
+  } catch (err1) {
+    console.log('Assistant full context failed: ' + err1.message);
+    try {
+      r = groqChat(key, props.getProperty('GROQ_MODEL') || ASSISTANT.model, [{role: 'system', content: slimSys}, {role: 'user', content: head + slimCtx() + ask}], {maxTokens: 600});
+    } catch (err2) {
+      const why = String(err2.message || err2).replace(/sk-[\w-]+|gsk_[\w]+|AIza[\w-]+/g, '…').slice(0, 220);
+      props.setProperty('LAST_AI_ERROR', JSON.stringify({at: new Date().toISOString(), who: person.id, why: why}));
+      shawnaLog('error', 'Reply to ' + ([first, p.lastName].join(' ').trim() || from) + ' failed', why);
+      try { notifyJulian('🙋 ' + (first || 'A client') + ' texted and I couldn\'t answer', (first || 'They') + ' texted: "' + String(text).slice(0, 160) + '"\n\nMy AI didn\'t respond (' + why.slice(0, 90) + '). This one\'s yours for now.', '', [first, p.lastName].join(' ').trim()); } catch (e) {}
+      throw err2;
+    }
+  }
   let out; try { out = JSON.parse(r); } catch (e) { out = {reply: '', escalate: true, reason: 'unreadable AI answer'}; }
   learnFromReply(p, out, 'a text');
   if (out.important || out.escalate) stat('neededYou');

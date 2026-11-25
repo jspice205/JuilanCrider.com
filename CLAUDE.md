@@ -1010,6 +1010,11 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   silently): bbSendParts glues a bare-link part onto the text bubble before it; on SMS, attachments are checked with
   `bbLastSendFailed` (Messages error code) and retried once; failed parts go in BB_PART_FAILS and textSentSubject appends
   "⚠️ didn't go through: voice note…" to the FUB note. A failing later text part no longer aborts the rest.
+- Silent Shawna (Nov 25, "Shawna isn't responding to clients": Justin 2510 Nov 23 and George 427 Nov 25 got no reply, only an
+  "Answer today" task 6 s later; last client reply was Kim Nov 21): assistantReply's context (rules, team inventory, his texts, thread,
+  notes, emails) is now capped; if the AI call fails it retries with a slim context (no team inventory / his-voice samples, last 12
+  thread lines, 5 notes); if that fails too → Shawna Log row "error", LAST_AI_ERROR (shown in GET ?action=version as lastAiError)
+  and notifyJulian "🙋 X texted and I couldn't answer (reason)". Check ?action=version first when she goes quiet.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this
