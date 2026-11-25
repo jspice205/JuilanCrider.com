@@ -1015,6 +1015,10 @@ yourself (Julián approved this workflow). Never commit private contact data or 
   notes, emails) is now capped; if the AI call fails it retries with a slim context (no team inventory / his-voice samples, last 12
   thread lines, 5 notes); if that fails too → Shawna Log row "error", LAST_AI_ERROR (shown in GET ?action=version as lastAiError)
   and notifyJulian "🙋 X texted and I couldn't answer (reason)". Check ?action=version first when she goes quiet.
+- Old sign-in link (Nov 25, Julián at an open house with jcsignin.vercel.app while the site was down: "even though there's no okay
+  to text just add an opt out stop"): Sign-Ins rows not made on juliancrider.com (no consent box) with a phone, no Has Agent/Agent →
+  queueOpenHouseTexts(..., {firstText: true}): same guest/neighbor series, first step renamed "<step>-first" with FIRST_TEXT_OPTOUT +
+  [contact card]; processTextQueue sends it via sendApprovedText and then tags Text OK + "Text consent" note; later steps need Text OK.
 - Social numbers (Nov 22, his ask): Metricool's API needs its paid plan, so a daily scheduled task (Claude, ~7:40am PT) pulls the
   last 7 days from Metricool (brand 5871119: Instagram followers/gained/reach/reel views/saves/shares + best post; YouTube/TikTok
   when connected) and writes FUB note "Social report" on 2221 (plain text, short). Boss text "how's my social / instagram this

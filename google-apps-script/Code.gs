@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-25-replyfix';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-25-oldform';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION, lastAiError: (function () { try { const x = JSON.parse(PropertiesService.getScriptProperties().getProperty('LAST_AI_ERROR') || 'null'); return x ? {at: x.at, why: x.why} : null; } catch (e) { return null; } })()});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -965,6 +965,15 @@ function sendToFub(tabName, d) {
       : /Signed up: online/.test(d.notes || '') ? 'online' : 'guest';
     try { const id = personId(); if (id) queueOpenHouseTexts(id, d, kind); }
     catch (err) { console.error('Open house texts: ' + err); }
+  }
+  // Nov 25 (Julián, at an open house with the old sign-in link jcsignin.vercel.app while the site was down: "even though
+  // there's no okay to text just add an opt out stop to the text messages so I still can use the old link"): sign-ins from
+  // a form without the text-consent box (anything not made on juliancrider.com) get the same open-house texts; the first
+  // one (oh-2h-first) carries the "reply STOP" line and, once sent, tags them Text OK + a "Text consent" note.
+  else if (tabName === 'Sign-Ins' && d.phone && !/juliancrider\.com/.test(d.notes || '') && !/Text OK: No|do not text/i.test(d.notes || '') &&
+    person.tags.indexOf('Has Agent') < 0 && person.tags.indexOf('Agent') < 0 && !/Working with agent: Yes/i.test(d.notes || '')) {
+    try { const id = personId(); if (id) queueOpenHouseTexts(id, d, person.tags.indexOf('Open House Neighbor') >= 0 ? 'neighbor' : 'guest', {firstText: true}); }
+    catch (err) { console.error('Open house texts (old form): ' + err); }
   }
   // Website forms: a welcome text from Julián's number (the forms carry the text-consent line). Bookings and showing
   // requests skip it because they get a booking confirmation text instead.
@@ -7643,14 +7652,23 @@ const OPEN_HOUSE_TEXTS = {
     {step: 'oh-2h', hours: 2, text: "Hey {first}, Julián here 👋🏾 Thanks for previewing the home today. Any feedback from you or your buyers? It really helps the sellers."}]
 };
 
-function queueOpenHouseTexts(personId, d, kind) {
+function queueOpenHouseTexts(personId, d, kind, opts) {
+  opts = opts || {};
   const first = String(d.name || '').trim().split(/\s+/)[0] || 'there';
   const street = String(d.property || '').split(',')[0].trim() || 'the open house';
   const sheet = ensureTab(getSS(), TEXT_QUEUE_TAB);
-  (OPEN_HOUSE_TEXTS[kind] || OPEN_HOUSE_TEXTS.guest).forEach(t => sheet.appendRow([
-    new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), t.step, 'pending', 0, '',
-    t.text.replace(/\{first\}/g, first).replace(/\{on_street\}/g, street === 'the open house' ? '' : ' on ' + street)
-      .replace(/\{street\}/g, street)]));
+  (OPEN_HOUSE_TEXTS[kind] || OPEN_HOUSE_TEXTS.guest).forEach((t, i) => {
+    let text = t.text.replace(/\{first\}/g, first).replace(/\{on_street\}/g, street === 'the open house' ? '' : ' on ' + street)
+      .replace(/\{street\}/g, street);
+    let step = t.step;
+    if (opts.firstText && i === 0) {  // no consent box on their form: the first text says "reply STOP" and carries his card
+      const parts = text.split(' || ');
+      parts[0] = parts[0] + FIRST_TEXT_OPTOUT;
+      if (parts.indexOf('[contact card]') < 0) parts.splice(1, 0, '[contact card]');
+      text = parts.join(' || '); step = t.step + '-first';
+    }
+    sheet.appendRow([new Date(Date.now() + t.hours * 3600e3), personId, String(d.name || ''), step, 'pending', 0, '', text]);
+  });
   ensureTextQueueTrigger();
 }
 
@@ -8133,8 +8151,8 @@ function processTextQueue() {
           const r = sendFromBcolv(to, sub, body); if (!r.ok) throw new Error(r.error || 'email failed');
           fubFetch('notes', {personId: id, subject: 'Email sent', body: 'To ' + to + ' (automatic): "' + sub + '"\n\n' + body}); res = 'sent'; }
       } else if (/^ohopt-/.test(step) && ((fubFetch('people/' + id + '?fields=id,tags', null, 'get').tags || []).indexOf('Text OK') >= 0)) res = 'skipped: already on the texting list';
-      else res = step === 'scheduled' || step === 'call-thanks' || /^(auto|memo|ohopt)-/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
-      if (res === 'sent' && /^ohopt-/.test(step)) { try {  // open-house first text went (with the opt-out line): they're textable now
+      else res = step === 'scheduled' || step === 'call-thanks' || /^(auto|memo|ohopt)-/.test(step) || /-first$/.test(step) ? sendApprovedText(id, text) : bbTextPerson(id, text);
+      if (res === 'sent' && (/^ohopt-/.test(step) || /-first$/.test(step))) { try {  // open-house first text went (with the opt-out line): they're textable now
         fubFetch('people/' + id + '?mergeTags=true', {tags: ['Text OK']}, 'put');
         fubFetch('notes', {personId: id, subject: 'Text consent', body: 'Open house visitor. First text sent ' + new Date().toISOString().slice(0, 10) + ' with "reply STOP" opt-out (Julián\'s open-house texting rule, Nov 20). STOP → Text Opt-Out.'}); } catch (e) {} }
       cell(5, res); if (res === 'sent') { cell(7, new Date()); sentNow++; if (group) { groupNow++; groupTextSent(); } Utilities.sleep(group ? textGap() : 3000); }
