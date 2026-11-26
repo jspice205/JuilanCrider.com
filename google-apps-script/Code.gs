@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-25-noresend';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-26-pause';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION, lastAiError: (function () { try { const x = JSON.parse(PropertiesService.getScriptProperties().getProperty('LAST_AI_ERROR') || 'null'); return x ? {at: x.at, why: x.why} : null; } catch (e) { return null; } })()});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -3323,6 +3323,7 @@ function bbSendNow(phone, text) {
   const to = bbE164(phone) || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(phone || '').trim()) ? String(phone).trim().toLowerCase() : '');
   if (!to) throw new Error('Not a US mobile number: ' + phone);
   text = darkHands(text);
+  if (bossTextsPaused(to)) { console.log('Text to Julián held (his phone is off until ' + BOSS_PAUSE_UNTIL + '): ' + String(text).slice(0, 80)); return {service: 'paused', result: null}; }
   // Never double-send (Julián, Nov 20, after Emilee and 6 others got the Thanksgiving text twice): the same text to the same
   // number within 6 hours is refused, whatever sent it (logged "Text NOT sent · duplicate blocked").
   const dupKey = 'SENT_' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, to + '|' + String(text).replace(/\s+/g, ' ').trim()));
@@ -3494,7 +3495,19 @@ function bbSendAudio(phone, service, driveName) {
   return bbPostAttachment(phone, service, blob.setName(name));
 }
 
+// Nov 26 (Julián: "something's wrong with my phone, just stop Shawna text messages until Dec 4th"; AT&T service off): texts and
+// attachments to HIS phones are held (logged, not sent) until BOSS_PAUSE_UNTIL (Script Property overrides; "off" ends it early).
+// Clients still get their texts from the business line. Alerts still go into ALERT_LOG for "what do I have today".
+const BOSS_PAUSE_UNTIL = '2026-12-04';
+function bossTextsPaused(to) {
+  const props = PropertiesService.getScriptProperties(), until = props.getProperty('BOSS_PAUSE_UNTIL') || BOSS_PAUSE_UNTIL;
+  if (!until || until === 'off') return false;
+  if (Utilities.formatDate(new Date(), 'America/Los_Angeles', 'yyyy-MM-dd') >= until) return false;
+  const mine = [props.getProperty('ALERT_TEXT_TO'), props.getProperty('TEST_TEXT_TO')].map(x => bbE164(x || '')).filter(Boolean);
+  return mine.indexOf(bbE164(to) || to) >= 0;
+}
 function bbPostAttachment(phone, service, blob) {
+  if (bossTextsPaused(phone)) { console.log('Attachment to Julián held (phone off): ' + blob.getName()); return; }
   const name = blob.getName();
   const p = PropertiesService.getScriptProperties(), url = p.getProperty('BB_URL'), pw = p.getProperty('BB_PASSWORD');
   const res = UrlFetchApp.fetch(url.replace(/\/+$/, '') + '/api/v1/message/attachment?password=' + encodeURIComponent(pw), {
