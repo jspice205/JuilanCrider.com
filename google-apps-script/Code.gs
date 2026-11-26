@@ -158,7 +158,7 @@ function doPost(e) {
   }
 }
 
-const CODE_VERSION = '2026-11-25-assets';  // bump when a change must be confirmed live (GET ?action=version)
+const CODE_VERSION = '2026-11-25-noresend';  // bump when a change must be confirmed live (GET ?action=version)
 function doGet(e) {
   if (e && e.parameter && e.parameter.action === 'version') return json({status: 'ok', version: CODE_VERSION, lastAiError: (function () { try { const x = JSON.parse(PropertiesService.getScriptProperties().getProperty('LAST_AI_ERROR') || 'null'); return x ? {at: x.at, why: x.why} : null; } catch (e) { return null; } })()});
   if (e && e.parameter && e.parameter.action === 'rates') return rates();
@@ -5712,12 +5712,15 @@ function queueCallAudio(url, num, mins, callId) {
 }
 function sendCallAudio() {
   const props = PropertiesService.getScriptProperties();
-  let list = JSON.parse(props.getProperty('CALL_AUDIO') || '[]').filter(x => Date.now() - x.at < 12 * 36e5 && x.tries < 20);
+  // Nov 25 (Julián's personal phone was off: one recording showed up ~50 times as "Not Delivered"): an attempt is counted and saved
+  // BEFORE anything is sent, so a run that dies mid-upload can't resend forever; at most 3 attempts per recording.
+  let list = JSON.parse(props.getProperty('CALL_AUDIO') || '[]').filter(x => Date.now() - x.at < 12 * 36e5 && x.tries < 3);
   if (!list.length) { props.deleteProperty('CALL_AUDIO'); return; }
   const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || '');
   if (!boss) return;
   const x = list[0];
   if (Date.now() - x.at < 45 * 1000) return;  // let the summary text land first
+  x.tries = (x.tries || 0) + 1; props.setProperty('CALL_AUDIO', JSON.stringify(list));
   try {
     // Nov 17 (Lori's call: the link in the FUB note didn't open): Vapi's private recording links need its key, and a fresh
     // link can be read from the call itself. Tries plain, then with the key, then every recording URL on the call.
@@ -5758,7 +5761,6 @@ function sendCallAudio() {
     bbPostAttachment(boss, 'iMessage', blob.setName('Call with ' + String(who).replace(/[\/:*?"<>|]/g, '') + '.' + ext));
     list.shift();
   } catch (e) {
-    x.tries++;
     console.log('Call audio not sent yet: ' + e.message);
     if (e.message === 'private' && x.tries >= 2) {  // Vapi's HIPAA setting keeps recordings in a private bucket nobody can download
       list.shift();
@@ -5783,7 +5785,8 @@ function processAssistantQueue() {
     const out = JSON.parse(props.getProperty('BOSS_OUTBOX') || '[]').filter(x => Date.now() - x.at < 24 * 36e5);  // a day, so alerts survive a long Mac outage
     if (out.length) {
       const boss = bbE164(props.getProperty('ALERT_TEXT_TO') || props.getProperty('TEST_TEXT_TO') || ''), left = [];
-      out.forEach((x, i) => { if (left.length) { left.push(x); return; } try { bbSend(boss, x.m); } catch (e) { left.push(x); } });
+      // Each alert gets at most 4 tries (Nov 25: his phone was off and the same Doug alert landed 3 times as "Not Delivered").
+      out.forEach((x, i) => { if (left.length) { left.push(x); return; } x.n = (x.n || 0) + 1; try { bbSend(boss, x.m); } catch (e) { if (x.n < 4) left.push(x); } });
       props.setProperty('BOSS_OUTBOX', JSON.stringify(left));
     } else props.deleteProperty('BOSS_OUTBOX');
   } catch (e) {}
